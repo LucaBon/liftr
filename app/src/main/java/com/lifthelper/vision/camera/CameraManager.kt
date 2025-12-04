@@ -31,12 +31,25 @@ class CameraManager @Inject constructor(
 
     private var frameCount = 0
     private var lastLogTime = System.currentTimeMillis()
+    private var currentCameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private var currentLifecycleOwner: LifecycleOwner? = null
+    private var currentPreviewView: PreviewView? = null
+    private var currentOnFrameAnalyzed: ((ImageProxy) -> Unit)? = null
 
     fun startCamera(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
-        onFrameAnalyzed: (ImageProxy) -> Unit
+        onFrameAnalyzed: (ImageProxy) -> Unit,
+        useFrontCamera: Boolean = false
     ) {
+        currentCameraSelector = if (useFrontCamera) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        currentLifecycleOwner = lifecycleOwner
+        currentPreviewView = previewView
+        currentOnFrameAnalyzed = onFrameAnalyzed
         Log.d(TAG_CAMERA, "startCamera() called - camera=$camera, isInitializing=$isInitializing")
 
         // Prevent multiple camera bindings
@@ -87,9 +100,8 @@ class CameraManager @Inject constructor(
                     }
                 Log.d(TAG_CAMERA, "ImageAnalysis use case configured with RGBA_8888 format")
 
-                // Select back camera
-                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                Log.d(TAG_CAMERA, "Using back camera")
+                // Use selected camera
+                Log.d(TAG_CAMERA, "Using ${if (currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "front" else "back"} camera")
 
                 // Unbind all and bind new use cases
                 cameraProvider?.unbindAll()
@@ -97,7 +109,7 @@ class CameraManager @Inject constructor(
 
                 camera = cameraProvider?.bindToLifecycle(
                     lifecycleOwner,
-                    cameraSelector,
+                    currentCameraSelector,
                     preview,
                     imageAnalysis
                 )
@@ -114,6 +126,37 @@ class CameraManager @Inject constructor(
                 Timber.e(e, "Camera initialization failed")
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    fun switchCamera() {
+        Log.d(TAG_CAMERA, "switchCamera() called")
+        val newCameraSelector = if (currentCameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+
+        // Restart camera with new selector
+        stopCamera()
+        currentLifecycleOwner?.let { lifecycleOwner ->
+            currentPreviewView?.let { previewView ->
+                currentOnFrameAnalyzed?.let { onFrameAnalyzed ->
+                    startCamera(
+                        lifecycleOwner = lifecycleOwner,
+                        previewView = previewView,
+                        onFrameAnalyzed = onFrameAnalyzed,
+                        useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if currently using front camera
+     */
+    fun isFrontCamera(): Boolean {
+        return currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
     }
 
     fun stopCamera() {

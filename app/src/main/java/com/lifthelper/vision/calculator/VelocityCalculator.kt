@@ -27,6 +27,9 @@ class VelocityCalculator @Inject constructor(
     private val shouldersPositionHistory = CircularBuffer<PositionData>(Constants.VELOCITY_HISTORY_SIZE)
     private val headPositionHistory = CircularBuffer<PositionData>(Constants.VELOCITY_HISTORY_SIZE)
 
+    // Velocity smoothing buffer (for reducing noise in velocity calculations)
+    private val velocitySmoothing = CircularBuffer<Float>(5) // 5-frame moving average
+
     private var startTime: Long? = null
     private var frameCounter = 0
 
@@ -52,7 +55,7 @@ class VelocityCalculator @Inject constructor(
 
         // 2. Convert to meters
         val positionMeters = positionCalculator.pixelsToMeters(
-            pixelY = barPositionPixels.second,
+            normalizedY = barPositionPixels.second,
             poseResult = poseResult,
             calibrationData = calibrationData
         )
@@ -155,8 +158,17 @@ class VelocityCalculator @Inject constructor(
         }
 
         // Average the velocities and positions from all tracked body parts
-        val avgInstantVelocity = velocitySum / velocityCount
+        val rawInstantVelocity = velocitySum / velocityCount
         val avgPosition = positionSum / positionCount
+
+        // Apply moving average smoothing to reduce noise
+        velocitySmoothing.add(rawInstantVelocity)
+        val smoothedInstantVelocity = if (velocitySmoothing.size >= 3) {
+            // Simple moving average of last 5 frames
+            velocitySmoothing.toList().average().toFloat()
+        } else {
+            rawInstantVelocity
+        }
 
         // For bar speed (average velocity), use only shoulders and head (not hips)
         // This represents the actual bar position during the lift
@@ -172,12 +184,12 @@ class VelocityCalculator @Inject constructor(
         }
 
         // Log body part velocities every 30 frames (only when velocity is significant)
-        if (kotlin.math.abs(avgInstantVelocity) > 0.1f && frameCounter++ % 30 == 0) {
-            Log.d(TAG_VELOCITY, "Front Squat - ${bodyPartVelocities.joinToString(", ")} | Instant Avg: %.2f m/s | Bar Speed: %.2f m/s".format(avgInstantVelocity, avgVelocity))
+        if (kotlin.math.abs(smoothedInstantVelocity) > 0.1f && frameCounter++ % 30 == 0) {
+            Log.d(TAG_VELOCITY, "Front Squat - ${bodyPartVelocities.joinToString(", ")} | Instant: %.2f m/s (smoothed) | Bar Speed: %.2f m/s".format(smoothedInstantVelocity, avgVelocity))
         }
 
         return VelocityData(
-            instantaneous = avgInstantVelocity,
+            instantaneous = smoothedInstantVelocity,
             average = avgVelocity,
             position = avgPosition,
             timestamp = timestamp
@@ -232,6 +244,9 @@ class VelocityCalculator @Inject constructor(
         hipsKalmanFilter.reset()
         shouldersKalmanFilter.reset()
         headKalmanFilter.reset()
+
+        // Reset velocity smoothing
+        velocitySmoothing.clear()
 
         startTime = null
     }

@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -18,6 +19,22 @@ class CalibrationViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(CalibrationState())
     val uiState: StateFlow<CalibrationState> = _uiState.asStateFlow()
+
+    init {
+        // Load existing calibration data if available
+        viewModelScope.launch {
+            settingsDataStore.calibrationData.collect { existingData ->
+                if (existingData != null && _uiState.value.height.isEmpty()) {
+                    // Pre-fill with existing values
+                    _uiState.value = _uiState.value.copy(
+                        height = (existingData.userHeight * 100).toInt().toString(),
+                        shoulderWidth = (existingData.shoulderWidth * 100).toInt().toString(),
+                        isRecalibrating = true
+                    )
+                }
+            }
+        }
+    }
 
     fun onHeightChanged(height: String) {
         _uiState.value = _uiState.value.copy(
@@ -65,15 +82,22 @@ class CalibrationViewModel @Inject constructor(
     }
 
     fun onSkip(onComplete: () -> Unit) {
-        // Use default values
-        val calibrationData = CalibrationData.fromUserInput(
-            heightCm = 170f, // Default height
-            shoulderWidthCm = null // Will use default shoulder width
-        )
-
         viewModelScope.launch {
-            settingsDataStore.saveCalibration(calibrationData)
-            onComplete()
+            // Check if we're recalibrating (existing data available)
+            val existingData = settingsDataStore.calibrationData.first()
+
+            if (existingData != null) {
+                // Keep existing calibration data when skipping during recalibration
+                onComplete()
+            } else {
+                // Use default values only for initial setup
+                val calibrationData = CalibrationData.fromUserInput(
+                    heightCm = 170f, // Default height
+                    shoulderWidthCm = null // Will use default shoulder width
+                )
+                settingsDataStore.saveCalibration(calibrationData)
+                onComplete()
+            }
         }
     }
 }
@@ -82,5 +106,6 @@ data class CalibrationState(
     val height: String = "",
     val shoulderWidth: String = "",
     val heightError: String? = null,
-    val shoulderWidthError: String? = null
+    val shoulderWidthError: String? = null,
+    val isRecalibrating: Boolean = false
 )

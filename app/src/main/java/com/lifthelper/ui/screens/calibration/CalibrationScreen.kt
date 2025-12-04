@@ -29,13 +29,16 @@ fun CalibrationScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = stringResource(R.string.calibration_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center
-        )
+        // Only show welcome title for initial calibration
+        if (!uiState.isRecalibrating) {
+            Text(
+                text = stringResource(R.string.calibration_title),
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         Text(
             text = stringResource(R.string.calibration_description),
@@ -74,12 +77,12 @@ fun CalibrationScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Continue button
+        // Continue/Update button
         Button(
             onClick = { viewModel.onContinue(onCalibrationComplete) },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(stringResource(R.string.continue_button))
+            Text(if (uiState.isRecalibrating) "Update" else stringResource(R.string.continue_button))
         }
 
         Spacer(modifier = Modifier.height(8.dp))

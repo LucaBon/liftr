@@ -119,18 +119,21 @@ class PositionCalculator @Inject constructor() {
     }
 
     /**
-     * Convert pixel position to meters using calibration data
+     * Convert normalized position to meters using calibration data
      * Uses height-based calibration which is view-angle independent
+     *
+     * @param normalizedY Y coordinate in normalized space (0-1 range from pose landmarks)
      */
     fun pixelsToMeters(
-        pixelY: Float,
+        normalizedY: Float,
         poseResult: PoseResult,
         calibrationData: CalibrationData?
     ): Float {
         // Calculate pixels per meter using detected height
         val calibrationResult = calculatePixelsPerMeter(poseResult, calibrationData)
 
-        // Convert vertical position to meters
+        // Convert normalized coordinate to pixels, then to meters
+        val pixelY = normalizedY * poseResult.imageHeight
         return pixelY / calibrationResult.pixelsPerMeter
     }
 
@@ -199,7 +202,8 @@ class PositionCalculator @Inject constructor() {
         if (hasHead && hasAnkles) {
             val headY = headKeypoints.map { it.y }.average().toFloat()
             val ankleY = ankleKeypoints.map { it.y }.average().toFloat()
-            val detectedHeightPixels = kotlin.math.abs(ankleY - headY)
+            val detectedHeightNormalized = kotlin.math.abs(ankleY - headY)
+            val detectedHeightPixels = detectedHeightNormalized * poseResult.imageHeight
 
             Log.d(com.lifthelper.util.Constants.TAG_CALIBRATION,
                 "✅ Full body calibration: ${detectedHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
@@ -214,7 +218,8 @@ class PositionCalculator @Inject constructor() {
         if (hasHead && hasHips) {
             val headY = headKeypoints.map { it.y }.average().toFloat()
             val hipY = hipKeypoints.map { it.y }.average().toFloat()
-            val torsoHeightPixels = kotlin.math.abs(hipY - headY)
+            val torsoHeightNormalized = kotlin.math.abs(hipY - headY)
+            val torsoHeightPixels = torsoHeightNormalized * poseResult.imageHeight
 
             // Anthropometric ratio: torso (head to hip) ≈ 52% of total height
             val estimatedFullHeightPixels = torsoHeightPixels / 0.52f
@@ -232,7 +237,8 @@ class PositionCalculator @Inject constructor() {
         if (hasHips && hasAnkles) {
             val hipY = hipKeypoints.map { it.y }.average().toFloat()
             val ankleY = ankleKeypoints.map { it.y }.average().toFloat()
-            val legHeightPixels = kotlin.math.abs(ankleY - hipY)
+            val legHeightNormalized = kotlin.math.abs(ankleY - hipY)
+            val legHeightPixels = legHeightNormalized * poseResult.imageHeight
 
             // Anthropometric ratio: legs (hip to ankle) ≈ 48% of total height
             val estimatedFullHeightPixels = legHeightPixels / 0.48f

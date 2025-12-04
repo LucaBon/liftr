@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lifthelper.data.local.preferences.SettingsDataStore
+import com.lifthelper.ui.screens.calibration.AnthropometricCalibrationScreen
 import com.lifthelper.ui.screens.calibration.CalibrationScreen
 import com.lifthelper.ui.screens.home.HomeScreen
 import com.lifthelper.ui.screens.home.HomeViewModel
@@ -38,9 +39,37 @@ fun NavGraph(
         composable(Screen.Calibration.route) {
             CalibrationScreen(
                 onCalibrationComplete = {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Calibration.route) { inclusive = true }
+                    // Check if Settings is in the back stack (recalibration flow)
+                    val settingsInBackStack = navController.previousBackStackEntry?.destination?.route == Screen.Settings.route
+
+                    if (settingsInBackStack) {
+                        // Coming from Settings - go back to Settings
+                        navController.popBackStack()
+                    } else {
+                        // Initial calibration - go to Home
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Calibration.route) { inclusive = true }
+                        }
                     }
+                }
+            )
+        }
+
+        composable(Screen.AnthropometricCalibration.route) {
+            AnthropometricCalibrationScreen(
+                onComplete = {
+                    navController.popBackStack()
+                },
+                onSkip = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(Screen.AnthropometricDetails.route) {
+            com.lifthelper.ui.screens.anthropometric.AnthropometricDetailsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
                 }
             )
         }
@@ -71,6 +100,16 @@ fun NavGraph(
                 onRecalibrate = {
                     navController.navigate(Screen.Calibration.route) {
                         // Don't remove Settings from back stack
+                        launchSingleTop = true
+                    }
+                },
+                onAnthropometricCalibration = {
+                    navController.navigate(Screen.AnthropometricCalibration.route) {
+                        launchSingleTop = true
+                    }
+                },
+                onAnthropometricDetails = {
+                    navController.navigate(Screen.AnthropometricDetails.route) {
                         launchSingleTop = true
                     }
                 }

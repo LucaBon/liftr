@@ -4,6 +4,7 @@ data class CalibrationData(
     val pixelsPerMeter: Float,
     val userHeight: Float, // in meters - PRIMARY calibration metric (view-angle independent)
     val shoulderWidth: Float, // in meters - kept for backward compatibility, not used for calibration
+    val anthropometricData: AnthropometricData? = null, // Detailed body measurements
     val timestamp: Long = System.currentTimeMillis()
 ) {
     companion object {

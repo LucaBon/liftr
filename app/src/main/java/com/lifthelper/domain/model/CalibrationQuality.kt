@@ -1,8 +1,11 @@
 package com.lifthelper.domain.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * Represents the quality of the current calibration based on body visibility
  */
+@Serializable
 enum class CalibrationQuality {
     /** Full body visible (head to ankles) - optimal calibration */
     OPTIMAL,

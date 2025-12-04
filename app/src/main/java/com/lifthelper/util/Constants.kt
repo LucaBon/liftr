@@ -44,6 +44,12 @@ object Constants {
     const val KEY_PIXELS_PER_METER = "pixels_per_meter"
     const val KEY_IS_CALIBRATED = "is_calibrated"
 
-    // MediaPipe Model
-    const val POSE_MODEL_PATH = "pose_landmarker_lite.task"
+    // MediaPipe Models
+    const val POSE_MODEL_LITE = "pose_landmarker_lite.task"    // Fast, for real-time workouts
+    const val POSE_MODEL_FULL = "pose_landmarker_full.task"    // Accurate, for calibration
+    const val POSE_MODEL_HEAVY = "pose_landmarker_heavy.task"  // Most accurate, for calibration
+
+    // Model selection for different use cases
+    const val POSE_MODEL_WORKOUT = POSE_MODEL_LITE    // Real-time performance
+    const val POSE_MODEL_CALIBRATION = POSE_MODEL_HEAVY // Precision for measurements
 }

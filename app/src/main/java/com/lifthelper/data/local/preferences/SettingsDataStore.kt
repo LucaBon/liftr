@@ -5,10 +5,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import com.lifthelper.domain.model.AnthropometricData
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.util.Constants
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +24,12 @@ class SettingsDataStore @Inject constructor(
     private val keyShoulderWidth = floatPreferencesKey(Constants.KEY_SHOULDER_WIDTH)
     private val keyPixelsPerMeter = floatPreferencesKey(Constants.KEY_PIXELS_PER_METER)
     private val keyIsCalibrated = booleanPreferencesKey(Constants.KEY_IS_CALIBRATED)
+    private val keyAnthropometricData = stringPreferencesKey("anthropometric_data_json")
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     val isCalibrated: Flow<Boolean> = dataStore.data.map { preferences ->
         preferences[keyIsCalibrated] ?: false
@@ -29,12 +39,23 @@ class SettingsDataStore @Inject constructor(
         val height = preferences[keyUserHeight]
         val shoulderWidth = preferences[keyShoulderWidth]
         val pixelsPerMeter = preferences[keyPixelsPerMeter]
+        val anthropometricJson = preferences[keyAnthropometricData]
+
+        // Deserialize anthropometric data if present
+        val anthropometricData = anthropometricJson?.let {
+            try {
+                json.decodeFromString<AnthropometricData>(it)
+            } catch (e: Exception) {
+                null // Failed to parse, ignore
+            }
+        }
 
         if (height != null && shoulderWidth != null && pixelsPerMeter != null) {
             CalibrationData(
                 pixelsPerMeter = pixelsPerMeter,
                 userHeight = height,
-                shoulderWidth = shoulderWidth
+                shoulderWidth = shoulderWidth,
+                anthropometricData = anthropometricData
             )
         } else {
             null
@@ -47,6 +68,11 @@ class SettingsDataStore @Inject constructor(
             preferences[keyShoulderWidth] = calibrationData.shoulderWidth
             preferences[keyPixelsPerMeter] = calibrationData.pixelsPerMeter
             preferences[keyIsCalibrated] = true
+
+            // Serialize and save anthropometric data if present
+            calibrationData.anthropometricData?.let { anthroData ->
+                preferences[keyAnthropometricData] = json.encodeToString(anthroData)
+            }
         }
     }
 
@@ -56,12 +82,23 @@ class SettingsDataStore @Inject constructor(
         }
     }
 
+    suspend fun saveAnthropometricData(anthropometricData: AnthropometricData) {
+        dataStore.edit { preferences ->
+            // Serialize and save anthropometric data
+            preferences[keyAnthropometricData] = json.encodeToString(anthropometricData)
+
+            // Update height in calibration data if it changed
+            preferences[keyUserHeight] = anthropometricData.userHeight
+        }
+    }
+
     suspend fun clearCalibration() {
         dataStore.edit { preferences ->
             preferences.remove(keyUserHeight)
             preferences.remove(keyShoulderWidth)
             preferences.remove(keyPixelsPerMeter)
             preferences[keyIsCalibrated] = false
+            preferences.remove(keyAnthropometricData)
         }
     }
 }

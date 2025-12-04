@@ -33,7 +33,7 @@ class SquatPhaseDetector @Inject constructor() {
 
     // Thresholds (in meters)
     private val minDescentDepth = 0.30f // 30 cm minimum descent for bar
-    private val returnTolerance = 0.10f  // 10 cm tolerance for returning to start
+    private val returnTolerance = 0.15f  // 15 cm tolerance for returning to start (relaxed for better detection)
     private val hipKneeAlignmentTolerance = 0.05f // 5 cm tolerance for hip-knee alignment
 
     /**

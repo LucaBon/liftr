@@ -32,19 +32,34 @@ class PoseDetector @Inject constructor(
 
     private var detectionCount = 0
     private var skippedFrames = 0
+    private var currentModelPath: String = Constants.POSE_MODEL_WORKOUT
 
     init {
         Log.d(TAG_POSE, "PoseDetector initializing...")
-        setupPoseLandmarker()
+        setupPoseLandmarker(Constants.POSE_MODEL_WORKOUT)
     }
 
-    private fun setupPoseLandmarker() {
+    /**
+     * Setup pose landmarker with specific model
+     *
+     * @param modelPath Path to MediaPipe model file
+     *   - POSE_MODEL_LITE: Fast, for real-time workouts
+     *   - POSE_MODEL_FULL: Balanced accuracy and speed
+     *   - POSE_MODEL_HEAVY: Most accurate, for calibration
+     */
+    private fun setupPoseLandmarker(modelPath: String = currentModelPath) {
         try {
-            Log.i(TAG_POSE, "Initializing PoseLandmarker with model: ${Constants.POSE_MODEL_PATH}")
-            Timber.d("Initializing PoseLandmarker with model: ${Constants.POSE_MODEL_PATH}")
+            // Close existing landmarker if switching models
+            if (currentModelPath != modelPath) {
+                poseLandmarker?.close()
+                currentModelPath = modelPath
+            }
+
+            Log.i(TAG_POSE, "Initializing PoseLandmarker with model: $modelPath")
+            Timber.d("Initializing PoseLandmarker with model: $modelPath")
 
             val baseOptions = BaseOptions.builder()
-                .setModelAssetPath(Constants.POSE_MODEL_PATH)
+                .setModelAssetPath(modelPath)
                 .setDelegate(Delegate.GPU)
                 .build()
 
@@ -79,7 +94,7 @@ class PoseDetector @Inject constructor(
             try {
                 Timber.w("Retrying with CPU delegate...")
                 val baseOptions = BaseOptions.builder()
-                    .setModelAssetPath(Constants.POSE_MODEL_PATH)
+                    .setModelAssetPath(modelPath)
                     .setDelegate(Delegate.CPU)
                     .build()
 
@@ -215,6 +230,29 @@ class PoseDetector @Inject constructor(
 
         return PoseResult(landmarks, timestamp, imageWidth, imageHeight)
     }
+
+    /**
+     * Switch to a different pose detection model
+     *
+     * Use this to switch between fast (workout) and accurate (calibration) models
+     *
+     * @param modelPath Path to the model file (use Constants.POSE_MODEL_*)
+     */
+    @Synchronized
+    fun switchModel(modelPath: String) {
+        if (modelPath == currentModelPath) {
+            Log.d(TAG_POSE, "Already using model: $modelPath")
+            return
+        }
+
+        Log.i(TAG_POSE, "Switching model: $currentModelPath → $modelPath")
+        setupPoseLandmarker(modelPath)
+    }
+
+    /**
+     * Get currently active model
+     */
+    fun getCurrentModel(): String = currentModelPath
 
     @Synchronized
     fun close() {

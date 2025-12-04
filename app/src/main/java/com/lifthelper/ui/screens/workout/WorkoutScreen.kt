@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.R
+import com.lifthelper.ui.components.CalibrationWarningOverlay
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.ui.components.RealTimeFeedbackOverlay
 import com.lifthelper.util.Constants.TAG_WORKOUT
@@ -70,7 +72,8 @@ fun WorkoutScreen(
                     poseResult = uiState.poseResult,
                     imageWidth = uiState.poseResult?.imageWidth ?: 640,
                     imageHeight = uiState.poseResult?.imageHeight ?: 480,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    isFrontCamera = cameraManager.isFrontCamera()
                 )
 
                 // Real-time feedback overlay
@@ -90,6 +93,22 @@ fun WorkoutScreen(
                         .align(Alignment.TopCenter)
                         .padding(top = if (uiState.isRecording) 120.dp else 16.dp)
                 )
+
+                // Camera switch button (top right) - only show when not recording
+                if (!uiState.isRecording) {
+                    FloatingActionButton(
+                        onClick = { cameraManager.switchCamera() },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp),
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cameraswitch,
+                            contentDescription = "Switch Camera"
+                        )
+                    }
+                }
 
                 // Control buttons at bottom
                 Column(

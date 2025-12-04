@@ -15,7 +15,8 @@ fun PoseOverlay(
     imageWidth: Int,
     imageHeight: Int,
     modifier: Modifier = Modifier,
-    rotationDegrees: Int = 90 // Default rotation for portrait mode
+    rotationDegrees: Int = 90, // Default rotation for portrait mode
+    isFrontCamera: Boolean = false // Front camera requires horizontal mirroring
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
         poseResult?.let { pose ->
@@ -52,17 +53,19 @@ fun PoseOverlay(
                 offsetX,
                 offsetY,
                 rotatedImageWidth,
-                rotatedImageHeight
+                rotatedImageHeight,
+                isFrontCamera
             )
 
             // Draw keypoints
             pose.landmarks.forEach { landmark ->
                 if (landmark.visibility > 0.5f) {
-                    // Transform coordinates based on rotation
+                    // Transform coordinates based on rotation and camera
                     val (x, y) = transformCoordinates(
                         landmark.x,
                         landmark.y,
-                        rotationDegrees
+                        rotationDegrees,
+                        isFrontCamera
                     )
 
                     drawCircle(
@@ -81,12 +84,16 @@ fun PoseOverlay(
 
 private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-private fun transformCoordinates(x: Float, y: Float, rotation: Int): Pair<Float, Float> {
+private fun transformCoordinates(x: Float, y: Float, rotation: Int, isFrontCamera: Boolean): Pair<Float, Float> {
+    // First apply camera mirroring if using front camera
+    val mirroredX = if (isFrontCamera) 1f - x else x
+
+    // Then apply rotation transformation
     return when (rotation) {
-        90 -> Pair(1f - y, x)      // Rotate 90° clockwise: swap and invert Y
-        180 -> Pair(1f - x, 1f - y) // Rotate 180°: invert both
-        270 -> Pair(y, 1f - x)      // Rotate 270° clockwise: swap and invert X
-        else -> Pair(x, y)          // No rotation
+        90 -> Pair(1f - y, mirroredX)      // Rotate 90° clockwise: swap and invert Y
+        180 -> Pair(1f - mirroredX, 1f - y) // Rotate 180°: invert both
+        270 -> Pair(y, 1f - mirroredX)      // Rotate 270° clockwise: swap and invert X
+        else -> Pair(mirroredX, y)          // No rotation
     }
 }
 
@@ -98,7 +105,8 @@ private fun DrawScope.drawPoseConnections(
     offsetX: Float = 0f,
     offsetY: Float = 0f,
     rotatedImageWidth: Int,
-    rotatedImageHeight: Int
+    rotatedImageHeight: Int,
+    isFrontCamera: Boolean = false
 ) {
 
     // Define skeleton connections (pairs of landmark indices)
@@ -121,16 +129,18 @@ private fun DrawScope.drawPoseConnections(
             val endLandmark = pose.landmarks[end]
 
             if (startLandmark.visibility > 0.5f && endLandmark.visibility > 0.5f) {
-                // Transform coordinates based on rotation
+                // Transform coordinates based on rotation and camera
                 val (startX, startY) = transformCoordinates(
                     startLandmark.x,
                     startLandmark.y,
-                    rotationDegrees
+                    rotationDegrees,
+                    isFrontCamera
                 )
                 val (endX, endY) = transformCoordinates(
                     endLandmark.x,
                     endLandmark.y,
-                    rotationDegrees
+                    rotationDegrees,
+                    isFrontCamera
                 )
 
                 drawLine(
