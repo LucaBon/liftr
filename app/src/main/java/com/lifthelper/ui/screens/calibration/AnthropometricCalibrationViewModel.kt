@@ -25,7 +25,8 @@ data class AnthropometricCalibrationState(
     val captureComplete: Boolean = false,
     val anthropometricData: AnthropometricData? = null,
     val poseResult: com.lifthelper.domain.model.PoseResult? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val isBuffering: Boolean = false  // True during final 2 seconds when collecting frames
 )
 
 @HiltViewModel
@@ -41,6 +42,10 @@ class AnthropometricCalibrationViewModel @Inject constructor(
 
     private var captureJob: Job? = null
     private var calibrationData: CalibrationData? = null
+
+    // Frame buffer for robust capture (collect multiple frames during last 2 seconds)
+    private val frameBuffer = mutableListOf<com.lifthelper.domain.model.PoseResult>()
+    private val maxBufferSize = 10  // Collect ~10 frames over 2 seconds
 
     init {
         Log.i(TAG_CALIBRATION, "AnthropometricCalibrationViewModel initialized")
@@ -76,6 +81,18 @@ class AnthropometricCalibrationViewModel @Inject constructor(
                         calibrationQuality = quality
                     )
                 }
+
+                // If buffering (during final 2 seconds), collect frames
+                if (_uiState.value.isBuffering) {
+                    synchronized(frameBuffer) {
+                        frameBuffer.add(poseResult)
+                        // Keep only the most recent frames
+                        if (frameBuffer.size > maxBufferSize) {
+                            frameBuffer.removeAt(0)
+                        }
+                    }
+                    Log.d(TAG_CALIBRATION, "Buffered frame ${frameBuffer.size}/$maxBufferSize")
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG_CALIBRATION, "Frame processing error", e)
@@ -92,83 +109,182 @@ class AnthropometricCalibrationViewModel @Inject constructor(
 
         Log.i(TAG_CALIBRATION, "Starting anthropometric capture countdown")
 
+        // Clear previous buffer
+        synchronized(frameBuffer) {
+            frameBuffer.clear()
+        }
+
         captureJob?.cancel()
         captureJob = viewModelScope.launch {
             _uiState.update { it.copy(isCapturing = true, errorMessage = null) }
 
             // 10 second countdown for solo front camera mode (time to position yourself)
             for (i in 10 downTo 1) {
+                // Start buffering frames during last 2 seconds
+                if (i == 2) {
+                    _uiState.update { it.copy(isBuffering = true) }
+                    Log.i(TAG_CALIBRATION, "Started buffering frames for robust capture")
+                }
+
                 _uiState.update { it.copy(captureCountdown = i) }
                 delay(1000)
             }
 
-            // Capture measurements
+            // Capture measurements from buffered frames
             captureMeasurements()
         }
     }
 
     /**
-     * Capture anthropometric measurements from current pose
+     * Capture anthropometric measurements from buffered frames
+     * Uses multiple frames for robustness against temporary landmark detection failures
      */
     private suspend fun captureMeasurements() {
-        _uiState.update { it.copy(captureCountdown = null) }
+        _uiState.update { it.copy(captureCountdown = null, isBuffering = false) }
 
-        val poseResult = _uiState.value.poseResult
-        val quality = _uiState.value.calibrationQuality
-
-        // Allow capture even if not optimal (for solo front camera mode)
-        // The AnthropometricData validation will handle bad measurements
-        if (poseResult == null) {
-            Log.w(TAG_CALIBRATION, "Cannot capture: no pose detected")
-            _uiState.update { it.copy(isCapturing = false) }
-            return
+        // Get buffered frames
+        val frames = synchronized(frameBuffer) {
+            frameBuffer.toList()
         }
 
-        // Warn if quality is not optimal but still proceed
-        if (quality != CalibrationQuality.OPTIMAL) {
-            Log.w(TAG_CALIBRATION, "Capturing with non-optimal quality: $quality")
+        Log.i(TAG_CALIBRATION, "Processing ${frames.size} buffered frames for measurement")
+
+        if (frames.isEmpty()) {
+            Log.w(TAG_CALIBRATION, "Cannot capture: no frames buffered")
+            _uiState.update { it.copy(
+                isCapturing = false,
+                errorMessage = "No pose detected during capture window. Please try again."
+            )}
+            return
         }
 
         // Get user height and shoulder width from calibration data
         val userHeight = calibrationData?.userHeight ?: 1.75f
         val userWeight = calibrationData?.anthropometricData?.userWeight
-        val manualShoulderWidth = calibrationData?.shoulderWidth  // User's manually entered shoulder width
+        val manualShoulderWidth = calibrationData?.shoulderWidth
 
-        // Calculate anthropometric data from pose
-        val anthropometricData = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = userHeight,
-            userWeight = userWeight,
-            manualShoulderWidth = manualShoulderWidth,  // Use manual shoulder width if available
-            isFrontCamera = cameraManager.isFrontCamera()  // Mirror coordinates for front camera
-        )
+        // Try to get valid measurements from buffered frames
+        val bestResult = selectBestFrameForMeasurement(frames, userHeight, userWeight, manualShoulderWidth)
 
-        if (anthropometricData != null && anthropometricData.isValid()) {
-            Log.i(TAG_CALIBRATION, "✅ Anthropometric data captured successfully")
-            Log.d(TAG_CALIBRATION, "Shoulder width: ${(anthropometricData.getShoulderWidth() * 100).toInt()}cm")
-            Log.d(TAG_CALIBRATION, "Torso height: ${(anthropometricData.getTorsoHeight() * 100).toInt()}cm")
-            Log.d(TAG_CALIBRATION, "Leg length: ${((anthropometricData.getUpperLegHeight() + anthropometricData.getLowerLegHeight()) * 100).toInt()}cm")
+        if (bestResult != null && bestResult.isValid()) {
+            Log.i(TAG_CALIBRATION, "✅ Anthropometric data captured successfully from buffered frames")
+            Log.d(TAG_CALIBRATION, "Shoulder width: ${(bestResult.getShoulderWidth() * 100).toInt()}cm")
+            Log.d(TAG_CALIBRATION, "Torso height: ${(bestResult.getTorsoHeight() * 100).toInt()}cm")
+            Log.d(TAG_CALIBRATION, "Leg length: ${((bestResult.getUpperLegHeight() + bestResult.getLowerLegHeight()) * 100).toInt()}cm")
 
             _uiState.update { state ->
                 state.copy(
-                    anthropometricData = anthropometricData,
+                    anthropometricData = bestResult,
                     captureComplete = true,
                     isCapturing = false
                 )
             }
         } else {
             // Log detailed failure reason
-            val errorMsg = if (anthropometricData == null) {
-                Log.e(TAG_CALIBRATION, "❌ Failed to capture: fromPoseResult returned null (missing critical landmarks)")
-                "Could not detect body landmarks. Ensure head, shoulders, hips, and knees are visible."
+            val errorMsg = if (bestResult == null) {
+                Log.e(TAG_CALIBRATION, "❌ Failed to capture: no valid measurements from ${frames.size} frames")
+                Log.e(TAG_CALIBRATION, "   Missing critical landmarks (shoulders, hips, or knees) in all frames")
+                "Could not detect body landmarks consistently. Ensure shoulders, hips, and knees remain visible."
             } else {
                 Log.e(TAG_CALIBRATION, "❌ Failed to capture: data validation failed (unrealistic proportions)")
-                Log.e(TAG_CALIBRATION, "   Shoulder width: ${(anthropometricData.getShoulderWidth() * 100).toInt()}cm")
-                Log.e(TAG_CALIBRATION, "   Torso height: ${(anthropometricData.getTorsoHeight() * 100).toInt()}cm")
+                Log.e(TAG_CALIBRATION, "   Shoulder width: ${(bestResult.getShoulderWidth() * 100).toInt()}cm")
+                Log.e(TAG_CALIBRATION, "   Torso height: ${(bestResult.getTorsoHeight() * 100).toInt()}cm")
                 "Measurements appear unrealistic. Try standing further back and more centered."
             }
             _uiState.update { it.copy(isCapturing = false, errorMessage = errorMsg) }
         }
+
+        // Clear buffer
+        synchronized(frameBuffer) {
+            frameBuffer.clear()
+        }
+    }
+
+    /**
+     * Select the best frame from buffer based on landmark visibility
+     * Prioritizes frames with highest visibility of critical joints
+     */
+    private fun selectBestFrameForMeasurement(
+        frames: List<com.lifthelper.domain.model.PoseResult>,
+        userHeight: Float,
+        userWeight: Float?,
+        manualShoulderWidth: Float?
+    ): AnthropometricData? {
+        // Score each frame based on critical landmark visibility
+        val scoredFrames = frames.mapNotNull { frame ->
+            val score = calculateFrameQualityScore(frame)
+            if (score > 0) {
+                Pair(frame, score)
+            } else null
+        }.sortedByDescending { it.second }
+
+        Log.d(TAG_CALIBRATION, "Frame scores: ${scoredFrames.map { String.format("%.2f", it.second) }}")
+
+        // Try frames in order of quality until we get valid measurements
+        for ((frame, score) in scoredFrames) {
+            val result = AnthropometricData.fromPoseResult(
+                poseResult = frame,
+                userHeight = userHeight,
+                userWeight = userWeight,
+                manualShoulderWidth = manualShoulderWidth,
+                isFrontCamera = cameraManager.isFrontCamera()
+            )
+
+            if (result != null && result.isValid()) {
+                Log.i(TAG_CALIBRATION, "Selected frame with quality score: ${String.format("%.2f", score)}")
+                return result
+            }
+        }
+
+        Log.w(TAG_CALIBRATION, "No valid measurements from ${scoredFrames.size} scored frames")
+        return null
+    }
+
+    /**
+     * Calculate quality score for a frame based on critical landmarks
+     * Critical landmarks: shoulders (11,12), hips (23,24), knees (25,26)
+     * Important: at least one head landmark (0,7,8)
+     * Optional: ankles (27,28), elbows (13,14), wrists (15,16)
+     */
+    private fun calculateFrameQualityScore(frame: com.lifthelper.domain.model.PoseResult): Float {
+        val landmarks = frame.landmarks
+
+        // Critical landmarks - must have good visibility
+        val criticalIndices = listOf(11, 12, 23, 24, 25, 26)  // shoulders, hips, knees
+        val criticalVisibility = criticalIndices.mapNotNull {
+            landmarks.getOrNull(it)?.visibility
+        }
+
+        if (criticalVisibility.size < criticalIndices.size) {
+            return 0f  // Missing critical landmarks
+        }
+
+        val criticalAvg = criticalVisibility.average().toFloat()
+        if (criticalAvg < 0.5f) {
+            return 0f  // Critical landmarks not visible enough
+        }
+
+        // Head landmarks - need at least one (nose OR ear)
+        val headIndices = listOf(0, 7, 8)  // nose, ears
+        val headVisibility = headIndices.mapNotNull {
+            landmarks.getOrNull(it)?.visibility
+        }.maxOrNull() ?: 0f
+
+        if (headVisibility < 0.5f) {
+            return 0f  // No head landmark visible
+        }
+
+        // Optional landmarks - bonus for having them
+        val ankleIndices = listOf(27, 28)
+        val ankleVisibility = ankleIndices.mapNotNull {
+            landmarks.getOrNull(it)?.visibility
+        }.average().toFloat()
+
+        // Calculate weighted score
+        // Critical joints: 70% weight
+        // Head: 20% weight
+        // Ankles: 10% weight (bonus)
+        return (criticalAvg * 0.7f) + (headVisibility * 0.2f) + (ankleVisibility * 0.1f)
     }
 
     /**
@@ -199,12 +315,16 @@ class AnthropometricCalibrationViewModel @Inject constructor(
      */
     fun resetCapture() {
         captureJob?.cancel()
+        synchronized(frameBuffer) {
+            frameBuffer.clear()
+        }
         _uiState.update { state ->
             state.copy(
                 isCapturing = false,
                 captureCountdown = null,
                 captureComplete = false,
-                anthropometricData = null
+                anthropometricData = null,
+                isBuffering = false
             )
         }
         Log.d(TAG_CALIBRATION, "Capture reset for retry")

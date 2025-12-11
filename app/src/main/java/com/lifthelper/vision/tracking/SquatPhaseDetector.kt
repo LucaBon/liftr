@@ -87,16 +87,17 @@ class SquatPhaseDetector @Inject constructor() {
             startingShouldersY = currentShouldersY
             startingHipsY = currentHipsY
             lowestBarPosition = barPosition
-            Log.d(TAG_MOVEMENT, "Starting position set: bar=%.2f m".format(barPosition))
+            Log.d(TAG_MOVEMENT, "Starting position set: bar=%.2f m, head=%.2f m, shoulders=%.2f m".format(barPosition, currentHeadY, currentShouldersY))
             return MovementPhase.IDLE
         }
 
         val startingBarPosition = (startingHeadY!! + startingShouldersY!!) / 2f
-        val descent = barPosition - startingBarPosition // Positive = going down (Y increases downward)
+        val displacement = barPosition - startingBarPosition
 
-        // Start eccentric phase if descending more than 5cm
-        if (descent > 0.05f) {
-            Log.d(TAG_MOVEMENT, "Phase: IDLE -> ECCENTRIC (descent: %.2f m)".format(descent))
+        // Start eccentric phase if moving down more than 5cm
+        // In image coordinates, Y increases downward, so positive displacement = going down
+        if (displacement > 0.05f) {
+            Log.d(TAG_MOVEMENT, "Phase: IDLE -> ECCENTRIC (displacement: %.2f m, bar: %.2f -> %.2f)".format(displacement, startingBarPosition, barPosition))
             lowestBarPosition = barPosition
             return MovementPhase.ECCENTRIC
         }
@@ -124,6 +125,9 @@ class SquatPhaseDetector @Inject constructor() {
         val sufficientDepth = descent >= minDescentDepth
         val hipsAtDepth = checkSquatDepth()
 
+        Log.d(TAG_MOVEMENT, "ECCENTRIC check: descent=%.2f m (need %.2f m), hipsAtDepth=$hipsAtDepth, bar: %.2f -> %.2f, lowest: %.2f".format(
+            descent, minDescentDepth, startingBarPosition, barPosition, lowestBarPosition))
+
         if (sufficientDepth && hipsAtDepth) {
             Log.d(TAG_MOVEMENT, "Phase: ECCENTRIC -> BOTTOM (descent: %.2f m, depth: OK)".format(descent))
             return MovementPhase.BOTTOM
@@ -138,7 +142,10 @@ class SquatPhaseDetector @Inject constructor() {
         }
 
         // Check if starting to ascend (bar moving up by at least 3cm from lowest point)
-        val ascent = lowestBarPosition!! - barPosition // Negative = going up
+        val ascent = lowestBarPosition!! - barPosition
+
+        Log.d(TAG_MOVEMENT, "BOTTOM check: ascent=%.2f m (need 0.03 m), bar: %.2f -> %.2f, lowest: %.2f".format(
+            ascent, lowestBarPosition, barPosition, lowestBarPosition))
 
         if (ascent > 0.03f) {
             Log.d(TAG_MOVEMENT, "Phase: BOTTOM -> CONCENTRIC (ascent started: %.2f m)".format(ascent))
@@ -156,7 +163,10 @@ class SquatPhaseDetector @Inject constructor() {
         val startingBarPosition = (startingHeadY!! + startingShouldersY!!) / 2f
         val returnDistance = abs(barPosition - startingBarPosition)
 
-        // Check if returned to starting position (within 10cm tolerance)
+        Log.d(TAG_MOVEMENT, "CONCENTRIC check: returnDist=%.2f m (need <=%.2f m), bar: %.2f -> %.2f".format(
+            returnDistance, returnTolerance, startingBarPosition, barPosition))
+
+        // Check if returned to starting position (within 15cm tolerance)
         if (returnDistance <= returnTolerance) {
             Log.d(TAG_MOVEMENT, "Phase: CONCENTRIC -> TOP (returned to start, distance: %.2f m)".format(returnDistance))
             return MovementPhase.TOP

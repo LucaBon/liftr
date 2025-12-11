@@ -147,6 +147,12 @@ class PoseDetector @Inject constructor(
 
             // Convert ImageProxy to MPImage
             val bitmap = imageProxyToBitmap(imageProxy)
+
+            // Log bitmap dimensions to debug size mismatch
+            if (detectionCount % 90 == 0) {
+                Log.d(TAG_POSE, "MediaPipe receiving: ImageProxy=${imageWidth}x${imageHeight}, Bitmap=${bitmap.width}x${bitmap.height}")
+            }
+
             val mpImage = BitmapImageBuilder(bitmap).build()
 
             // Detect pose (async, result comes via callback)
@@ -227,6 +233,11 @@ class PoseDetector @Inject constructor(
                 visibility = landmark.visibility().orElse(0f)
             )
         }
+
+        // Log image dimensions for debugging orientation handling
+        Log.d(Constants.TAG_POSE,
+            "PoseResult created: ${imageWidth}x${imageHeight}, " +
+            "orientation: ${if (imageHeight > imageWidth) "portrait" else "landscape"}")
 
         return PoseResult(landmarks, timestamp, imageWidth, imageHeight)
     }

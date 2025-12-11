@@ -73,6 +73,7 @@ fun WorkoutScreen(
                     imageWidth = uiState.poseResult?.imageWidth ?: 640,
                     imageHeight = uiState.poseResult?.imageHeight ?: 480,
                     modifier = Modifier.fillMaxSize(),
+                    rotationDegrees = 0,  // Landscape mode - no rotation needed
                     isFrontCamera = cameraManager.isFrontCamera()
                 )
 

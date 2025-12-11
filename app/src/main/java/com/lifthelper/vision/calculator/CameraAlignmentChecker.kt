@@ -42,10 +42,11 @@ class CameraAlignmentChecker {
      * Check camera alignment using pose landmarks
      *
      * @param poseResult The detected pose
-     * @param aspectRatio Image aspect ratio for correct distance calculation
+     * @param aspectRatio Image aspect ratio for correct distance calculation (always >= 1.0)
+     * @param isPortrait Whether the image is in portrait orientation
      * @return Alignment check result with detected issues
      */
-    fun checkAlignment(poseResult: PoseResult, aspectRatio: Float): AlignmentCheckResult {
+    fun checkAlignment(poseResult: PoseResult, aspectRatio: Float, isPortrait: Boolean): AlignmentCheckResult {
         val landmarks = poseResult.landmarks
 
         // Get key landmarks
@@ -72,8 +73,17 @@ class CameraAlignmentChecker {
         val isTilted = abs(avgTilt) > MAX_TILT_ANGLE_DEGREES
 
         // 2. Check if viewing from side by comparing shoulder/hip widths
-        val shoulderWidthNorm = abs(rightShoulder.x - leftShoulder.x) / aspectRatio
-        val hipWidthNorm = abs(rightHip.x - leftHip.x) / aspectRatio
+        // Scale horizontal (X) distances to be comparable with vertical (Y) distances
+        val shoulderWidthNorm = if (isPortrait) {
+            abs(rightShoulder.x - leftShoulder.x) * aspectRatio
+        } else {
+            abs(rightShoulder.x - leftShoulder.x) / aspectRatio
+        }
+        val hipWidthNorm = if (isPortrait) {
+            abs(rightHip.x - leftHip.x) * aspectRatio
+        } else {
+            abs(rightHip.x - leftHip.x) / aspectRatio
+        }
 
         // Calculate height for ratio
         val headY = landmarks.getOrNull(0)?.y ?: leftShoulder.y

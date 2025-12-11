@@ -10,10 +10,15 @@ object Constants {
     const val TAG_MOVEMENT = "LiftHelper_Movement"
     const val TAG_APP = "LiftHelper_App"
 
-    // Camera Configuration
+    // Camera Configuration - Workout (Fast tracking)
     const val CAMERA_TARGET_WIDTH = 640
     const val CAMERA_TARGET_HEIGHT = 480
     const val TARGET_FPS = 30
+
+    // Camera Configuration - Calibration (High accuracy)
+    const val CAMERA_CALIBRATION_WIDTH = 1280
+    const val CAMERA_CALIBRATION_HEIGHT = 960
+    // Note: Will fall back to best available resolution if device doesn't support this
 
     // Pose Detection
     const val POSE_MIN_DETECTION_CONFIDENCE = 0.3f

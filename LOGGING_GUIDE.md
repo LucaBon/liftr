@@ -8,7 +8,7 @@ All LiftHelper logs use the prefix `LiftHelper_` followed by a component name. T
 
 #### View ALL LiftHelper logs:
 ```bash
-adb logcat | grep "LiftHelper_"
+camera 
 ```
 
 #### View specific components:
@@ -314,3 +314,43 @@ adb logcat | grep -E "Camera FPS|Pose detections"
 Calculate detection latency:
 - Detection FPS = (Pose detections / time in seconds)
 - Should be **~15 detections/sec** for good responsiveness
+
+## Anthropometric Calibration Debugging
+
+### Check body size detection:
+```bash
+adb logcat | grep "Body size"
+```
+
+Expected logs:
+- ✅ `Good body size: 65% of frame (624px out of 960px)` - Optimal positioning
+- ⚠️ `Body occupies only 18% of frame` - User too far from camera
+- 🔴 `Body size: 35% of frame` - Acceptable but not optimal
+
+### Monitor camera preview vs sensor mismatch:
+```bash
+adb logcat | grep -E "Image dimensions|MediaPipe receiving"
+```
+
+Key things to check:
+- **Image dimensions** should match between preview and MediaPipe
+- With `FIT_CENTER` scale type, what you see = what MediaPipe analyzes
+- In landscape mode, typical resolution: 1280x960 or 1920x1080
+
+### Coordinate system validation:
+```bash
+adb logcat | grep -E "Y-axis|Y coordinates"
+```
+
+Expected:
+- Normal: head Y < feet Y (Y increases downward)
+- ⚠️ `Y-axis appears inverted - flipping coordinates` - Some devices have flipped Y-axis
+
+### Aspect ratio calculations:
+```bash
+adb logcat | grep "aspect ratio"
+```
+
+Important for distance measurements:
+- Portrait: aspect ratio = height/width (e.g., 1920/1080 = 1.78)
+- Landscape: aspect ratio = width/height (e.g., 1920/1080 = 1.78)

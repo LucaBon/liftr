@@ -3,6 +3,16 @@ package com.lifthelper.domain.model
 import kotlinx.serialization.Serializable
 
 /**
+ * Measurement issues detected during capture
+ */
+@Serializable
+data class MeasurementIssue(
+    val measurement: String,      // e.g., "Upper Arm", "Hip Width"
+    val issue: String,            // e.g., "Elbow not visible", "Value out of range (3.2x height)"
+    val usedFallback: Boolean     // Whether a fallback value was used
+)
+
+/**
  * Comprehensive anthropometric measurements for personalized biomechanics calculations
  *
  * All measurements stored as ratios relative to total height for scale independence
@@ -36,7 +46,8 @@ data class AnthropometricData(
     val captureTimestamp: Long = System.currentTimeMillis(),
     val captureQuality: CalibrationQuality = CalibrationQuality.OPTIMAL,
     val userHeight: Float,                // Total height in meters (reference for ratios)
-    val alignmentMessage: String? = null  // Optional message about camera alignment during capture
+    val alignmentMessage: String? = null, // Optional message about camera alignment during capture
+    val measurementIssues: List<MeasurementIssue> = emptyList()  // Issues detected during measurement
 ) {
     companion object {
         /**
@@ -84,23 +95,70 @@ data class AnthropometricData(
             val landmarks = poseResult.landmarks
             val imageWidth = poseResult.imageWidth
             val imageHeight = poseResult.imageHeight
-            val aspectRatio = imageWidth.toFloat() / imageHeight.toFloat()
 
-            // Check if we have critical landmarks visible (ankles are optional for solo front camera mode)
-            val criticalLandmarks = listOf(
-                0,   // nose (head top proxy)
-                7, 8, // ears
+            // Calculate aspect ratio correctly for both portrait and landscape
+            // Aspect ratio should always be >= 1.0 (wider dimension / narrower dimension)
+            // This makes the distance formula work correctly in both orientations
+            val isPortrait = imageHeight > imageWidth
+            val aspectRatio = if (isPortrait) {
+                imageHeight.toFloat() / imageWidth.toFloat()
+            } else {
+                imageWidth.toFloat() / imageHeight.toFloat()
+            }
+
+            android.util.Log.d("LiftHelper_Calibration",
+                "Image dimensions: ${imageWidth}x${imageHeight}, " +
+                "orientation: ${if (isPortrait) "portrait" else "landscape"}, " +
+                "aspectRatio: $aspectRatio")
+
+            // Check if we have critical landmarks visible
+            // CRITICAL (must have all): shoulders, hips, knees
+            // HEAD (need at least one): nose OR left_ear OR right_ear
+            // OPTIONAL: ankles (for better height estimation)
+
+            val criticalBodyLandmarks = listOf(
                 11, 12, // shoulders
                 23, 24, // hips
                 25, 26  // knees
             )
 
-            val criticalVisible = criticalLandmarks.all { idx ->
+            val criticalBodyVisible = criticalBodyLandmarks.all { idx ->
                 landmarks.getOrNull(idx)?.visibility?.let { it >= 0.5f } ?: false
             }
 
-            if (!criticalVisible) {
-                return null  // Must have at least head to knees visible
+            if (!criticalBodyVisible) {
+                // Log which landmarks are missing for debugging
+                val missingLandmarks = criticalBodyLandmarks.filter { idx ->
+                    val visibility = landmarks.getOrNull(idx)?.visibility ?: 0f
+                    visibility < 0.5f
+                }
+                android.util.Log.e("LiftHelper_Calibration",
+                    "Missing critical body landmarks: ${missingLandmarks.map {
+                        when(it) {
+                            11 -> "left_shoulder($it)"
+                            12 -> "right_shoulder($it)"
+                            23 -> "left_hip($it)"
+                            24 -> "right_hip($it)"
+                            25 -> "left_knee($it)"
+                            26 -> "right_knee($it)"
+                            else -> "landmark_$it"
+                        }
+                    }} (visibility: ${missingLandmarks.map { landmarks.getOrNull(it)?.visibility ?: 0f }})")
+                return null  // Must have shoulders, hips, and knees
+            }
+
+            // Check for at least one head landmark (nose OR ears)
+            val headLandmarks = listOf(0, 7, 8)  // nose, left_ear, right_ear
+            val headVisible = headLandmarks.any { idx ->
+                landmarks.getOrNull(idx)?.visibility?.let { it >= 0.5f } ?: false
+            }
+
+            if (!headVisible) {
+                android.util.Log.e("LiftHelper_Calibration",
+                    "No head landmarks visible: nose=${landmarks.getOrNull(0)?.visibility}, " +
+                    "left_ear=${landmarks.getOrNull(7)?.visibility}, " +
+                    "right_ear=${landmarks.getOrNull(8)?.visibility}")
+                return null  // Need at least one head landmark
             }
 
             // Check if ankles are visible (optional)
@@ -129,23 +187,76 @@ data class AnthropometricData(
             }
 
             // Helper to calculate Euclidean distance with aspect ratio correction
-            // X coordinates are scaled by aspect ratio to make them comparable to Y
-            fun distance(x1: Float, y1: Float, x2: Float, y2: Float, aspectRatio: Float): Float {
-                val dx = (x2 - x1) / aspectRatio // Scale X to match Y physical units
+            // Coordinates need to be scaled to account for non-square pixels in the normalized space
+            // In portrait: Y is the longer axis, X needs scaling
+            // In landscape: X is the longer axis, Y needs scaling
+            fun distance(x1: Float, y1: Float, x2: Float, y2: Float, aspectRatio: Float, isPortrait: Boolean): Float {
+                val dx = x2 - x1
                 val dy = y2 - y1
-                return kotlin.math.sqrt(dx * dx + dy * dy)
+
+                // Scale the coordinate along the shorter axis to make distances isotropic
+                return if (isPortrait) {
+                    // Portrait: scale X (narrower axis) by aspect ratio
+                    val dxScaled = dx * aspectRatio
+                    kotlin.math.sqrt(dxScaled * dxScaled + dy * dy)
+                } else {
+                    // Landscape: scale Y (narrower axis) by aspect ratio
+                    val dyScaled = dy * aspectRatio
+                    kotlin.math.sqrt(dx * dx + dyScaled * dyScaled)
+                }
             }
 
             // Calculate key positions
             // Note: Y-axis goes from 0 (top) to 1 (bottom) in normalized coordinates
-            val headTopY = avgY(0, 7, 8)  // nose and ears average
-            val shouldersY = avgY(11, 12)
-            val hipsY = avgY(23, 24)
-            val kneesY = avgY(25, 26)
-            val anklesY = if (anklesVisible) avgY(27, 28) else null
+
+            // For head position, use all visible head landmarks (nose and/or ears)
+            val visibleHeadLandmarks = headLandmarks.filter { idx ->
+                landmarks.getOrNull(idx)?.visibility?.let { it >= 0.5f } ?: false
+            }
+            var headFaceY = avgY(*visibleHeadLandmarks.toIntArray())  // Face level (nose/ears)
+
+            var shouldersY = avgY(11, 12)
+            var hipsY = avgY(23, 24)
+            var kneesY = avgY(25, 26)
+            var anklesY = if (anklesVisible) avgY(27, 28) else null
+
+            // Estimate actual head top by adding ~half head height above face landmarks
+            // Typical head height is ~13% of body height, and face landmarks are roughly at mid-head
+            // So we add ~6.5% of body height above the face level
+            val headTopEstimateOffset = 0.065f  // Estimate top of head is ~6.5% of height above face
+
+            android.util.Log.d("LiftHelper_Calibration", "Y coordinates (raw): face=$headFaceY, shoulders=$shouldersY, hips=$hipsY, knees=$kneesY, ankles=$anklesY")
+
+            // Check if Y-axis is inverted (head should be above knees/ankles, meaning smaller Y)
+            // If ankles have smaller Y than head, the coordinate system is flipped
+            val isYAxisInverted = (anklesY?.let { it < headFaceY } ?: (kneesY < headFaceY))
+            if (isYAxisInverted) {
+                android.util.Log.w("LiftHelper_Calibration", "⚠️ Y-axis appears inverted - flipping coordinates")
+                headFaceY = 1.0f - headFaceY
+                shouldersY = 1.0f - shouldersY
+                hipsY = 1.0f - hipsY
+                kneesY = 1.0f - kneesY
+                anklesY = anklesY?.let { 1.0f - it }
+
+                android.util.Log.d("LiftHelper_Calibration", "Y coordinates (flipped): face=$headFaceY, shoulders=$shouldersY, hips=$hipsY, knees=$kneesY, ankles=$anklesY")
+            }
+
+            // Now estimate head top position (after potential flip)
+            // In normal orientation (Y increases downward), subtract offset to go up
+            // The offset is relative to total height in frame
+            val headTopY = if (isYAxisInverted) {
+                headFaceY + headTopEstimateOffset  // If flipped, add to go "up"
+            } else {
+                headFaceY - headTopEstimateOffset  // Normal: subtract to go up
+            }
+
+            android.util.Log.d("LiftHelper_Calibration", "Estimated head top: $headTopY (face was $headFaceY, offset=$headTopEstimateOffset)")
 
             val shouldersX = (landmarks[11].x + landmarks[12].x) / 2f
             val hipsX = (landmarks[23].x + landmarks[24].x) / 2f
+
+            // Track measurement issues
+            val issues = mutableListOf<MeasurementIssue>()
 
             // Total height in normalized coordinates
             // If ankles not visible, estimate total height from knees (knees are typically ~60% down from head)
@@ -153,25 +264,49 @@ data class AnthropometricData(
                 anklesY - headTopY  // Full body visible
             } else {
                 // Estimate: if knees are at 60% of height, total = (kneesY - headTopY) / 0.6
+                android.util.Log.w("LiftHelper_Calibration", "⚠️ Ankles not visible, estimating total height from knees")
+                issues.add(MeasurementIssue(
+                    measurement = "Total Height / Lower Leg",
+                    issue = "Ankles not visible (visibility L:${landmarks.getOrNull(27)?.visibility ?: 0f}, R:${landmarks.getOrNull(28)?.visibility ?: 0f}). Height estimated from knees.",
+                    usedFallback = true
+                ))
                 (kneesY - headTopY) / 0.6f
             }
 
             if (totalHeightNorm <= 0) {
                 // Invalid: head should be above ankles
+                android.util.Log.e("LiftHelper_Calibration", "❌ Invalid totalHeightNorm: $totalHeightNorm (head should be above ankles)")
                 return null
             }
 
-            // Calculate segment heights (each going downward, so lower Y - upper Y)
-            val headNeckHeight = shouldersY - headTopY  // Should be positive
-            val torsoHeight = hipsY - shouldersY        // Should be positive
-            val upperLegHeight = kneesY - hipsY         // Should be positive
+            // Log body size in frame for debugging
+            val bodyHeightPixels = (totalHeightNorm * imageHeight).toInt()
+            val bodyHeightPercent = (totalHeightNorm * 100).toInt()
+
+            if (totalHeightNorm < 0.20f) {
+                android.util.Log.w("LiftHelper_Calibration", "⚠️ Body occupies only ${bodyHeightPercent}% of frame (${bodyHeightPixels}px out of ${imageHeight}px)")
+                android.util.Log.w("LiftHelper_Calibration", "   User should move closer to camera or check for zoom/telephoto lens")
+            } else if (totalHeightNorm > 0.50f) {
+                android.util.Log.i("LiftHelper_Calibration", "✅ Good body size: ${bodyHeightPercent}% of frame (${bodyHeightPixels}px out of ${imageHeight}px)")
+            } else {
+                android.util.Log.d("LiftHelper_Calibration", "Body size: ${bodyHeightPercent}% of frame (${bodyHeightPixels}px out of ${imageHeight}px)")
+            }
+
+            // Calculate segment heights
+            // After potential flip, Y increases from head to feet
+            val headNeckHeight = kotlin.math.abs(shouldersY - headTopY)
+            val torsoHeight = kotlin.math.abs(hipsY - shouldersY)
+            val upperLegHeight = kotlin.math.abs(kneesY - hipsY)
             val lowerLegHeight = if (anklesY != null) {
-                anklesY - kneesY  // Measured from actual ankles
+                kotlin.math.abs(anklesY - kneesY)
             } else {
                 // Ankles not visible (solo front camera mode with partial body in frame)
                 // Estimate lower leg as ~25% of total height (typical proportion)
                 totalHeightNorm * 0.25f
             }
+
+            android.util.Log.d("LiftHelper_Calibration", "Segment heights (normalized): head+neck=$headNeckHeight, torso=$torsoHeight, upperLeg=$upperLegHeight, lowerLeg=$lowerLegHeight, total=$totalHeightNorm")
+            android.util.Log.d("LiftHelper_Calibration", "Image aspect ratio: $aspectRatio (${imageWidth}x${imageHeight})")
 
             // Validate critical segments are positive
             if (headNeckHeight <= 0 || torsoHeight <= 0 || upperLegHeight <= 0) {
@@ -185,16 +320,62 @@ data class AnthropometricData(
 
             // Calculate widths as horizontal distances
             // For frontal view, widths should be primarily along X-axis
-            // We scale X by aspect ratio to get comparable units with Y
+            // We need to scale X to make it comparable to Y based on orientation
             val shoulderWidthX = kotlin.math.abs(landmarks[12].x - landmarks[11].x)
             val hipWidthX = kotlin.math.abs(landmarks[24].x - landmarks[23].x)
             val kneeWidthX = kotlin.math.abs(landmarks[26].x - landmarks[25].x)
 
-            // Convert X widths to equivalent Y units by dividing by aspect ratio
-            // This makes them comparable to vertical (Y) distances
-            val shoulderWidthEstimated = shoulderWidthX / aspectRatio
-            val hipWidth = hipWidthX / aspectRatio
-            val kneeWidth = kneeWidthX / aspectRatio
+            android.util.Log.d("LiftHelper_Calibration", "Width X values (raw): shoulder=$shoulderWidthX, hip=$hipWidthX, knee=$kneeWidthX")
+
+            // Convert X widths to be comparable with vertical (Y) distances
+            // In portrait: X is the narrow axis, scale it up by aspectRatio
+            // In landscape: X is the wide axis, scale it down by dividing by aspectRatio
+            val shoulderWidthEstimated = if (isPortrait) {
+                shoulderWidthX * aspectRatio
+            } else {
+                shoulderWidthX / aspectRatio
+            }
+            val hipWidth = if (isPortrait) {
+                hipWidthX * aspectRatio
+            } else {
+                hipWidthX / aspectRatio
+            }
+            val kneeWidth = if (isPortrait) {
+                kneeWidthX * aspectRatio
+            } else {
+                kneeWidthX / aspectRatio
+            }
+
+            android.util.Log.d("LiftHelper_Calibration", "Width after aspect correction: shoulder=$shoulderWidthEstimated, hip=$hipWidth, knee=$kneeWidth")
+
+            // Sanity check hip and knee widths (should be 5-25% of height for hip, 3-20% for knee)
+            val hipWidthRatioCheck = hipWidth / totalHeightNorm
+            val validatedHipWidth = if (hipWidthRatioCheck in 0.05f..0.25f) {
+                hipWidth
+            } else {
+                val actualCm = (hipWidthRatioCheck * userHeight * 100).toInt()
+                android.util.Log.w("LiftHelper_Calibration", "⚠️ Hip width ratio ($hipWidthRatioCheck) out of range, using default (0.19)")
+                issues.add(MeasurementIssue(
+                    measurement = "Hip Width",
+                    issue = "Detected value unrealistic (${actualCm}cm, expected 15-45cm). Using standard ratio.",
+                    usedFallback = true
+                ))
+                0.19f * totalHeightNorm
+            }
+
+            val kneeWidthRatioCheck = kneeWidth / totalHeightNorm
+            val validatedKneeWidth = if (kneeWidthRatioCheck in 0.03f..0.20f) {
+                kneeWidth
+            } else {
+                val actualCm = (kneeWidthRatioCheck * userHeight * 100).toInt()
+                android.util.Log.w("LiftHelper_Calibration", "⚠️ Knee width ratio ($kneeWidthRatioCheck) out of range, using default (0.10)")
+                issues.add(MeasurementIssue(
+                    measurement = "Knee Width",
+                    issue = "Detected value unrealistic (${actualCm}cm, expected 5-35cm). Using standard ratio.",
+                    usedFallback = true
+                ))
+                0.10f * totalHeightNorm
+            }
 
             // Use manual shoulder width if provided, otherwise use estimated
             val shoulderWidth = if (manualShoulderWidth != null) {
@@ -206,30 +387,84 @@ data class AnthropometricData(
             }
 
             // Calculate arm segments if visible (with aspect ratio correction)
-            val upperArmLength = if (landmarks.getOrNull(13)?.visibility ?: 0f >= 0.5f) {
-                distance(
-                    landmarks[11].x, landmarks[11].y,
-                    landmarks[13].x, landmarks[13].y,
-                    aspectRatio
+            // Left elbow (13) visibility check - FIXED: added parentheses for correct precedence
+            val leftElbowVisible = (landmarks.getOrNull(13)?.visibility ?: 0f) >= 0.5f
+            val leftWristVisible = (landmarks.getOrNull(15)?.visibility ?: 0f) >= 0.5f
+
+            val upperArmLength = if (leftElbowVisible) {
+                val dist = distance(
+                    landmarks[11].x, landmarks[11].y,  // left shoulder
+                    landmarks[13].x, landmarks[13].y,  // left elbow
+                    aspectRatio,
+                    isPortrait
                 )
+                val ratio = dist / totalHeightNorm
+                android.util.Log.d("LiftHelper_Calibration", "Upper arm distance: $dist (normalized), totalHeight: $totalHeightNorm, ratio: $ratio")
+
+                // Sanity check: upper arm should be 10-35% of height
+                if (ratio in 0.10f..0.35f) {
+                    dist
+                } else {
+                    val actualCm = (ratio * userHeight * 100).toInt()
+                    android.util.Log.w("LiftHelper_Calibration", "⚠️ Upper arm ratio ($ratio) out of range, using default")
+                    issues.add(MeasurementIssue(
+                        measurement = "Upper Arm",
+                        issue = "Detected value unrealistic (${actualCm}cm, expected 17-60cm). Using standard ratio.",
+                        usedFallback = true
+                    ))
+                    0.19f * totalHeightNorm // fallback to standard ratio
+                }
             } else {
+                android.util.Log.d("LiftHelper_Calibration", "Left elbow not visible, using default upper arm ratio")
+                issues.add(MeasurementIssue(
+                    measurement = "Upper Arm",
+                    issue = "Elbow not visible (visibility: ${landmarks.getOrNull(13)?.visibility ?: 0f}). Using standard ratio.",
+                    usedFallback = true
+                ))
                 0.19f * totalHeightNorm // fallback to standard ratio
             }
 
-            val forearmLength = if (landmarks.getOrNull(13)?.visibility ?: 0f >= 0.5f &&
-                                    landmarks.getOrNull(15)?.visibility ?: 0f >= 0.5f) {
-                distance(
-                    landmarks[13].x, landmarks[13].y,
-                    landmarks[15].x, landmarks[15].y,
-                    aspectRatio
+            val forearmLength = if (leftElbowVisible && leftWristVisible) {
+                val dist = distance(
+                    landmarks[13].x, landmarks[13].y,  // left elbow
+                    landmarks[15].x, landmarks[15].y,  // left wrist
+                    aspectRatio,
+                    isPortrait
                 )
+                val ratio = dist / totalHeightNorm
+                android.util.Log.d("LiftHelper_Calibration", "Forearm distance: $dist (normalized), totalHeight: $totalHeightNorm, ratio: $ratio")
+
+                // Sanity check: forearm should be 10-30% of height
+                if (ratio in 0.10f..0.30f) {
+                    dist
+                } else {
+                    val actualCm = (ratio * userHeight * 100).toInt()
+                    android.util.Log.w("LiftHelper_Calibration", "⚠️ Forearm ratio ($ratio) out of range, using default")
+                    issues.add(MeasurementIssue(
+                        measurement = "Forearm",
+                        issue = "Detected value unrealistic (${actualCm}cm, expected 17-52cm). Using standard ratio.",
+                        usedFallback = true
+                    ))
+                    0.16f * totalHeightNorm // fallback to standard ratio
+                }
             } else {
+                val reason = when {
+                    !leftElbowVisible && !leftWristVisible -> "Elbow and wrist not visible"
+                    !leftElbowVisible -> "Elbow not visible"
+                    else -> "Wrist not visible (visibility: ${landmarks.getOrNull(15)?.visibility ?: 0f})"
+                }
+                android.util.Log.d("LiftHelper_Calibration", "$reason, using default forearm ratio")
+                issues.add(MeasurementIssue(
+                    measurement = "Forearm",
+                    issue = "$reason. Using standard ratio.",
+                    usedFallback = true
+                ))
                 0.16f * totalHeightNorm // fallback to standard ratio
             }
 
             // Check camera alignment
             val alignmentChecker = com.lifthelper.vision.calculator.CameraAlignmentChecker()
-            val alignmentResult = alignmentChecker.checkAlignment(poseResult, aspectRatio)
+            val alignmentResult = alignmentChecker.checkAlignment(poseResult, aspectRatio, isPortrait)
 
             // Determine capture quality based on body visibility and alignment
             val quality = when {
@@ -270,12 +505,12 @@ data class AnthropometricData(
                 lowerLegHeightRatio = lowerLegHeight / totalHeightNorm,
                 footHeightRatio = 0.04f, // Estimated (feet not reliably detected)
 
-                // Widths as ratios
+                // Widths as ratios (using validated values)
                 shoulderWidthRatio = shoulderWidth / totalHeightNorm,
-                hipWidthRatio = hipWidth / totalHeightNorm,
-                kneeWidthRatio = kneeWidth / totalHeightNorm,
+                hipWidthRatio = validatedHipWidth / totalHeightNorm,
+                kneeWidthRatio = validatedKneeWidth / totalHeightNorm,
 
-                // Limb lengths as ratios
+                // Limb lengths as ratios (already validated within calculation)
                 upperArmLengthRatio = upperArmLength / totalHeightNorm,
                 forearmLengthRatio = forearmLength / totalHeightNorm,
                 thighLengthRatio = upperLegHeight / totalHeightNorm,
@@ -287,7 +522,8 @@ data class AnthropometricData(
                 captureQuality = quality,
                 alignmentMessage = if (alignmentResult.issue != com.lifthelper.vision.calculator.AlignmentIssue.NONE) {
                     alignmentResult.message
-                } else null
+                } else null,
+                measurementIssues = issues
             )
         }
     }

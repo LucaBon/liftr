@@ -35,22 +35,39 @@ class CameraManager @Inject constructor(
     private var currentLifecycleOwner: LifecycleOwner? = null
     private var currentPreviewView: PreviewView? = null
     private var currentOnFrameAnalyzed: ((ImageProxy) -> Unit)? = null
+    private var currentUseHighResolution: Boolean = false
 
     fun startCamera(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
         onFrameAnalyzed: (ImageProxy) -> Unit,
-        useFrontCamera: Boolean = false
+        useFrontCamera: Boolean = false,
+        useHighResolution: Boolean = false,  // For calibration, use higher resolution
+        preferWideAngle: Boolean = false  // Try to use ultra-wide camera if available
     ) {
         currentCameraSelector = if (useFrontCamera) {
             CameraSelector.DEFAULT_FRONT_CAMERA
         } else {
-            CameraSelector.DEFAULT_BACK_CAMERA
+            // For calibration, prefer ultra-wide camera if available (wider field of view)
+            if (preferWideAngle) {
+                try {
+                    // Try to build a selector for ultra-wide camera
+                    CameraSelector.Builder()
+                        .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                        .build()
+                } catch (e: Exception) {
+                    Log.w(TAG_CAMERA, "Could not select ultra-wide camera, using default back camera")
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
         }
         currentLifecycleOwner = lifecycleOwner
         currentPreviewView = previewView
         currentOnFrameAnalyzed = onFrameAnalyzed
-        Log.d(TAG_CAMERA, "startCamera() called - camera=$camera, isInitializing=$isInitializing")
+        currentUseHighResolution = useHighResolution
+        Log.d(TAG_CAMERA, "startCamera() called - camera=$camera, isInitializing=$isInitializing, highRes=$useHighResolution")
 
         // Prevent multiple camera bindings
         if (camera != null || isInitializing) {
@@ -69,18 +86,27 @@ class CameraManager @Inject constructor(
                 cameraProvider = cameraProviderFuture.get()
                 Log.i(TAG_CAMERA, "Camera provider obtained successfully")
 
-                // Preview use case
+                // Preview uses standard resolution for smooth display
+                // ImageAnalysis uses high resolution for better pose detection (if requested)
+                val previewWidth = Constants.CAMERA_TARGET_WIDTH
+                val previewHeight = Constants.CAMERA_TARGET_HEIGHT
+                val analysisWidth = if (useHighResolution) Constants.CAMERA_CALIBRATION_WIDTH else Constants.CAMERA_TARGET_WIDTH
+                val analysisHeight = if (useHighResolution) Constants.CAMERA_CALIBRATION_HEIGHT else Constants.CAMERA_TARGET_HEIGHT
+
+                // Preview use case - use 16:9 aspect ratio to match ImageAnalysis
+                // This ensures both use the same crop and what user sees matches what's analyzed
                 val preview = Preview.Builder()
-                    .setTargetResolution(Size(Constants.CAMERA_TARGET_WIDTH, Constants.CAMERA_TARGET_HEIGHT))
+                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
                     .build()
                     .also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
-                Log.d(TAG_CAMERA, "Preview use case configured: ${Constants.CAMERA_TARGET_WIDTH}x${Constants.CAMERA_TARGET_HEIGHT}")
+                Log.d(TAG_CAMERA, "Preview use case configured with 16:9 aspect ratio")
 
-                // ImageAnalysis use case
+                // ImageAnalysis use case - use 16:9 to match preview
+                // This ensures the analysis sees the same frame as the user
                 imageAnalysis = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(Constants.CAMERA_TARGET_WIDTH, Constants.CAMERA_TARGET_HEIGHT))
+                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .build()
@@ -88,17 +114,17 @@ class CameraManager @Inject constructor(
                         it.setAnalyzer(cameraExecutor) { imageProxy ->
                             frameCount++
                             val currentTime = System.currentTimeMillis()
-                            // Log FPS every 30 frames
+                            // Log FPS and actual resolution every 30 frames
                             if (frameCount % 30 == 0) {
                                 val elapsed = currentTime - lastLogTime
                                 val fps = (30 * 1000f) / elapsed
-                                Log.d(TAG_CAMERA, "Camera FPS: %.1f (frame #%d)".format(fps, frameCount))
+                                Log.d(TAG_CAMERA, "Camera FPS: %.1f (frame #%d), actual resolution: ${imageProxy.width}x${imageProxy.height}".format(fps, frameCount))
                                 lastLogTime = currentTime
                             }
                             onFrameAnalyzed(imageProxy)
                         }
                     }
-                Log.d(TAG_CAMERA, "ImageAnalysis use case configured with RGBA_8888 format")
+                Log.d(TAG_CAMERA, "ImageAnalysis use case configured: ${analysisWidth}x${analysisHeight} (RGBA_8888)")
 
                 // Use selected camera
                 Log.d(TAG_CAMERA, "Using ${if (currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA) "front" else "back"} camera")
@@ -118,7 +144,20 @@ class CameraManager @Inject constructor(
                 frameCount = 0
                 lastLogTime = System.currentTimeMillis()
 
-                Log.i(TAG_CAMERA, "✅ Camera started successfully - camera=$camera")
+                // Log camera details to help diagnose telephoto vs wide-angle issues
+                camera?.let { cam ->
+                    val cameraInfo = cam.cameraInfo
+                    Log.i(TAG_CAMERA, "✅ Camera started successfully")
+                    Log.d(TAG_CAMERA, "   Camera ID: ${cameraInfo.cameraSelector}")
+                    Log.d(TAG_CAMERA, "   Sensor rotation: ${cameraInfo.sensorRotationDegrees}")
+                    try {
+                        // Try to log zoom ratio if available (telephoto cameras typically have >1.0x zoom)
+                        val zoomState = cameraInfo.zoomState.value
+                        Log.d(TAG_CAMERA, "   Zoom ratio: ${zoomState?.zoomRatio}, min: ${zoomState?.minZoomRatio}, max: ${zoomState?.maxZoomRatio}")
+                    } catch (e: Exception) {
+                        Log.d(TAG_CAMERA, "   Could not read zoom state")
+                    }
+                } ?: Log.w(TAG_CAMERA, "Camera object is null after binding")
                 Timber.d("✅ Camera started successfully")
             } catch (e: Exception) {
                 isInitializing = false
@@ -136,7 +175,7 @@ class CameraManager @Inject constructor(
             CameraSelector.DEFAULT_BACK_CAMERA
         }
 
-        // Restart camera with new selector
+        // Restart camera with new selector, preserving resolution setting
         stopCamera()
         currentLifecycleOwner?.let { lifecycleOwner ->
             currentPreviewView?.let { previewView ->
@@ -145,7 +184,8 @@ class CameraManager @Inject constructor(
                         lifecycleOwner = lifecycleOwner,
                         previewView = previewView,
                         onFrameAnalyzed = onFrameAnalyzed,
-                        useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+                        useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA,
+                        useHighResolution = currentUseHighResolution
                     )
                 }
             }

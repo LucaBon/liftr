@@ -200,13 +200,22 @@ class PositionCalculator @Inject constructor() {
 
         // Strategy 1: Full body visible (head to ankles) - BEST
         if (hasHead && hasAnkles) {
-            val headY = headKeypoints.map { it.y }.average().toFloat()
-            val ankleY = ankleKeypoints.map { it.y }.average().toFloat()
-            val detectedHeightNormalized = kotlin.math.abs(ankleY - headY)
+            var headY = headKeypoints.map { it.y }.average().toFloat()
+            var ankleY = ankleKeypoints.map { it.y }.average().toFloat()
+
+            // Check if Y-axis is inverted (ankles should be below head, meaning larger Y)
+            val isYAxisInverted = ankleY < headY
+            if (isYAxisInverted) {
+                Log.w(com.lifthelper.util.Constants.TAG_CALIBRATION, "⚠️ PositionCalculator: Y-axis inverted, flipping")
+                headY = 1.0f - headY
+                ankleY = 1.0f - ankleY
+            }
+
+            val detectedHeightNormalized = ankleY - headY  // Now ankleY > headY always
             val detectedHeightPixels = detectedHeightNormalized * poseResult.imageHeight
 
             Log.d(com.lifthelper.util.Constants.TAG_CALIBRATION,
-                "✅ Full body calibration: ${detectedHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
+                "✅ Full body calibration: ${detectedHeightPixels.toInt()}px = ${calibrationData.userHeight}m (headY=$headY, ankleY=$ankleY)")
 
             return CalibrationResult(
                 pixelsPerMeter = detectedHeightPixels / calibrationData.userHeight,
@@ -216,9 +225,17 @@ class PositionCalculator @Inject constructor() {
 
         // Strategy 2: Upper body only (head to hips) - estimate full height
         if (hasHead && hasHips) {
-            val headY = headKeypoints.map { it.y }.average().toFloat()
-            val hipY = hipKeypoints.map { it.y }.average().toFloat()
-            val torsoHeightNormalized = kotlin.math.abs(hipY - headY)
+            var headY = headKeypoints.map { it.y }.average().toFloat()
+            var hipY = hipKeypoints.map { it.y }.average().toFloat()
+
+            // Check if Y-axis is inverted
+            val isYAxisInverted = hipY < headY
+            if (isYAxisInverted) {
+                headY = 1.0f - headY
+                hipY = 1.0f - hipY
+            }
+
+            val torsoHeightNormalized = hipY - headY  // hipY > headY after correction
             val torsoHeightPixels = torsoHeightNormalized * poseResult.imageHeight
 
             // Anthropometric ratio: torso (head to hip) ≈ 52% of total height
@@ -235,9 +252,17 @@ class PositionCalculator @Inject constructor() {
 
         // Strategy 3: Lower body only (hips to ankles) - estimate full height
         if (hasHips && hasAnkles) {
-            val hipY = hipKeypoints.map { it.y }.average().toFloat()
-            val ankleY = ankleKeypoints.map { it.y }.average().toFloat()
-            val legHeightNormalized = kotlin.math.abs(ankleY - hipY)
+            var hipY = hipKeypoints.map { it.y }.average().toFloat()
+            var ankleY = ankleKeypoints.map { it.y }.average().toFloat()
+
+            // Check if Y-axis is inverted
+            val isYAxisInverted = ankleY < hipY
+            if (isYAxisInverted) {
+                hipY = 1.0f - hipY
+                ankleY = 1.0f - ankleY
+            }
+
+            val legHeightNormalized = ankleY - hipY  // ankleY > hipY after correction
             val legHeightPixels = legHeightNormalized * poseResult.imageHeight
 
             // Anthropometric ratio: legs (hip to ankle) ≈ 48% of total height
@@ -264,11 +289,5 @@ class PositionCalculator @Inject constructor() {
 
     private fun getMidpoint(p1: PoseKeypoint, p2: PoseKeypoint): Pair<Float, Float> {
         return Pair((p1.x + p2.x) / 2f, (p1.y + p2.y) / 2f)
-    }
-
-    private fun distance(p1: PoseKeypoint, p2: PoseKeypoint): Float {
-        val dx = p1.x - p2.x
-        val dy = p1.y - p2.y
-        return sqrt(dx * dx + dy * dy)
     }
 }
