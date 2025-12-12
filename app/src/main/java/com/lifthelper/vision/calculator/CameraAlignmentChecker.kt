@@ -74,15 +74,17 @@ class CameraAlignmentChecker {
 
         // 2. Check if viewing from side by comparing shoulder/hip widths
         // Scale horizontal (X) distances to be comparable with vertical (Y) distances
+        // In portrait: X-axis is narrow, scale up by aspectRatio
+        // In landscape: X-axis is already proportional to Y, no scaling needed
         val shoulderWidthNorm = if (isPortrait) {
             abs(rightShoulder.x - leftShoulder.x) * aspectRatio
         } else {
-            abs(rightShoulder.x - leftShoulder.x) / aspectRatio
+            abs(rightShoulder.x - leftShoulder.x)  // No scaling in landscape
         }
         val hipWidthNorm = if (isPortrait) {
             abs(rightHip.x - leftHip.x) * aspectRatio
         } else {
-            abs(rightHip.x - leftHip.x) / aspectRatio
+            abs(rightHip.x - leftHip.x)  // No scaling in landscape
         }
 
         // Calculate height for ratio

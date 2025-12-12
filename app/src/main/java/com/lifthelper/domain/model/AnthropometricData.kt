@@ -328,22 +328,33 @@ data class AnthropometricData(
             android.util.Log.d("LiftHelper_Calibration", "Width X values (raw): shoulder=$shoulderWidthX, hip=$hipWidthX, knee=$kneeWidthX")
 
             // Convert X widths to be comparable with vertical (Y) distances
-            // In portrait: X is the narrow axis, scale it up by aspectRatio
-            // In landscape: X is the wide axis, scale it down by dividing by aspectRatio
+            // The normalized coordinates are in [0,1] range for both X and Y
+            // To get real-world proportions, we need to account for the actual pixel dimensions
+            //
+            // In portrait (imageHeight > imageWidth):
+            //   - aspectRatio = imageHeight / imageWidth (e.g., 1920/1080 = 1.78)
+            //   - X-axis covers fewer pixels, so X distances need to be scaled UP
+            //   - shoulderWidthX * aspectRatio gives the width relative to image height
+            //
+            // In landscape (imageWidth > imageHeight):
+            //   - aspectRatio = imageWidth / imageHeight (e.g., 1920/1080 = 1.78)
+            //   - Y-axis covers fewer pixels, so Y distances would need scaling
+            //   - But for X distances (widths), we DON'T scale them
+            //   - shoulderWidthX is already in the correct proportion
             val shoulderWidthEstimated = if (isPortrait) {
                 shoulderWidthX * aspectRatio
             } else {
-                shoulderWidthX / aspectRatio
+                shoulderWidthX  // No scaling needed in landscape for X distances
             }
             val hipWidth = if (isPortrait) {
                 hipWidthX * aspectRatio
             } else {
-                hipWidthX / aspectRatio
+                hipWidthX  // No scaling needed in landscape for X distances
             }
             val kneeWidth = if (isPortrait) {
                 kneeWidthX * aspectRatio
             } else {
-                kneeWidthX / aspectRatio
+                kneeWidthX  // No scaling needed in landscape for X distances
             }
 
             android.util.Log.d("LiftHelper_Calibration", "Width after aspect correction: shoulder=$shoulderWidthEstimated, hip=$hipWidth, knee=$kneeWidth")

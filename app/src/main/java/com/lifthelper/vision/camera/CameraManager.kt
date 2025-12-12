@@ -93,20 +93,30 @@ class CameraManager @Inject constructor(
                 val analysisWidth = if (useHighResolution) Constants.CAMERA_CALIBRATION_WIDTH else Constants.CAMERA_TARGET_WIDTH
                 val analysisHeight = if (useHighResolution) Constants.CAMERA_CALIBRATION_HEIGHT else Constants.CAMERA_TARGET_HEIGHT
 
+                // Get display rotation for proper image orientation
+                val displayRotation = (context as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation
+                    ?: previewView.display?.rotation
+                    ?: android.view.Surface.ROTATION_0
+
+                Log.d(TAG_CAMERA, "Display rotation: $displayRotation")
+
                 // Preview use case - use 16:9 aspect ratio to match ImageAnalysis
                 // This ensures both use the same crop and what user sees matches what's analyzed
                 val preview = Preview.Builder()
                     .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+                    .setTargetRotation(displayRotation)
                     .build()
                     .also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
-                Log.d(TAG_CAMERA, "Preview use case configured with 16:9 aspect ratio")
+                Log.d(TAG_CAMERA, "Preview use case configured with 16:9 aspect ratio, rotation: $displayRotation")
 
                 // ImageAnalysis use case - use 16:9 to match preview
                 // This ensures the analysis sees the same frame as the user
+                // IMPORTANT: Set target rotation so CameraX can provide properly oriented images
                 imageAnalysis = ImageAnalysis.Builder()
                     .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+                    .setTargetRotation(displayRotation)
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                     .build()
