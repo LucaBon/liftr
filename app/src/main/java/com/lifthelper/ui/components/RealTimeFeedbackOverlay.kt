@@ -16,6 +16,8 @@ import com.lifthelper.R
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.model.VelocityZone
 import com.lifthelper.ui.theme.*
+import com.lifthelper.util.OrientationMode
+import com.lifthelper.util.rememberOrientation
 
 @Composable
 fun RealTimeFeedbackOverlay(
@@ -24,41 +26,45 @@ fun RealTimeFeedbackOverlay(
     targetVelocityRange: ClosedFloatingPointRange<Float>?,
     modifier: Modifier = Modifier
 ) {
+    val orientation = rememberOrientation()
+    val isPortrait = orientation == OrientationMode.PORTRAIT
+
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(horizontal = if (isPortrait) 8.dp else 16.dp, vertical = if (isPortrait) 8.dp else 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Velocity display with color zone (showing bar speed for front squats)
         velocityData?.let { data ->
             VelocityDisplay(
                 velocity = data.average,
-                zone = VelocityZone.fromVelocity(data.average)
+                zone = VelocityZone.fromVelocity(data.average),
+                isCompact = isPortrait
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(if (isPortrait) 8.dp else 16.dp))
         }
 
         // Rep counter
         Text(
             text = stringResource(R.string.reps_label, repCount),
-            style = MaterialTheme.typography.headlineMedium,
+            style = if (isPortrait) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
             color = Color.White,
             modifier = Modifier
                 .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = if (isPortrait) 12.dp else 16.dp, vertical = if (isPortrait) 6.dp else 8.dp)
         )
 
         // Target velocity range indicator
         targetVelocityRange?.let { range ->
             velocityData?.let { data ->
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(if (isPortrait) 8.dp else 16.dp))
 
                 Column(
                     modifier = Modifier
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(16.dp)
+                        .padding(if (isPortrait) 8.dp else 16.dp)
                 ) {
                     val progress = ((data.average - range.start) /
                             (range.endInclusive - range.start)).coerceIn(0f, 1f)
@@ -67,7 +73,7 @@ fun RealTimeFeedbackOverlay(
                         progress = progress,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp),
+                            .height(if (isPortrait) 6.dp else 8.dp),
                         color = if (progress in 0.4f..0.6f) VelocityGreen else VelocityOrange
                     )
 
@@ -88,7 +94,8 @@ fun RealTimeFeedbackOverlay(
 fun VelocityDisplay(
     velocity: Float,
     zone: VelocityZone,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
 ) {
     val zoneColor = when (zone) {
         VelocityZone.VERY_SLOW -> VelocityRed
@@ -100,25 +107,25 @@ fun VelocityDisplay(
 
     Column(
         modifier = modifier
-            .background(zoneColor.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
-            .padding(24.dp),
+            .background(zoneColor.copy(alpha = 0.9f), RoundedCornerShape(if (isCompact) 12.dp else 16.dp))
+            .padding(if (isCompact) 16.dp else 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = stringResource(R.string.velocity_label),
-            style = MaterialTheme.typography.bodyLarge,
+            style = if (isCompact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodyLarge,
             color = Color.White
         )
 
         Text(
             text = "%.2f m/s".format(velocity),
-            style = MaterialTheme.typography.displayLarge,
+            style = if (isCompact) MaterialTheme.typography.displayMedium else MaterialTheme.typography.displayLarge,
             color = Color.White
         )
 
         Text(
             text = zone.name.replace("_", " "),
-            style = MaterialTheme.typography.bodyMedium,
+            style = if (isCompact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
             color = Color.White
         )
     }

@@ -27,6 +27,8 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.domain.model.CalibrationQuality
 import com.lifthelper.ui.components.PoseOverlay
+import com.lifthelper.util.OrientationMode
+import com.lifthelper.util.rememberOrientation
 import com.lifthelper.vision.camera.CameraManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -75,7 +77,9 @@ fun AnthropometricCalibrationScreen(
 
                 // Body outline guide
                 if (!uiState.isCapturing) {
+                    val orientation = rememberOrientation()
                     BodyOutlineGuide(
+                        orientation = orientation,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -248,14 +252,17 @@ fun CalibrationInstructionOverlay(
 }
 
 @Composable
-fun BodyOutlineGuide(modifier: Modifier = Modifier) {
+fun BodyOutlineGuide(
+    orientation: OrientationMode,
+    modifier: Modifier = Modifier
+) {
     Canvas(modifier = modifier) {
         val centerX = size.width / 2
         val centerY = size.height / 2
         val guideColor = Color.White.copy(alpha = 0.3f)
         val strokeWidth = 2f
 
-        // Landscape orientation - body should fill most of the height
+        // Body should fill most of the height
         // Use height as reference for scaling (body fills ~80% of frame height)
         val bodyHeight = size.height * 0.80f
         val headRadius = bodyHeight * 0.06f
@@ -267,9 +274,12 @@ fun BodyOutlineGuide(modifier: Modifier = Modifier) {
         val kneesY = hipsY + bodyHeight * 0.20f
         val feetY = centerY + bodyHeight * 0.40f
 
-        // Widths (in landscape, width is larger than height)
-        val shoulderWidth = bodyHeight * 0.25f
-        val hipWidth = bodyHeight * 0.20f
+        // Widths - scale based on orientation
+        // Portrait: narrower proportions relative to height
+        // Landscape: wider proportions relative to height
+        val widthMultiplier = if (orientation == OrientationMode.PORTRAIT) 0.30f else 0.25f
+        val shoulderWidth = bodyHeight * widthMultiplier
+        val hipWidth = bodyHeight * (widthMultiplier * 0.80f)
         val legSpacing = bodyHeight * 0.08f
 
         // Head circle

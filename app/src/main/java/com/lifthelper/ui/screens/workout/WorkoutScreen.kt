@@ -26,6 +26,9 @@ import com.lifthelper.ui.components.CalibrationWarningOverlay
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.ui.components.RealTimeFeedbackOverlay
 import com.lifthelper.util.Constants.TAG_WORKOUT
+import com.lifthelper.util.getRotationDegrees
+import com.lifthelper.util.isPortrait
+import com.lifthelper.util.rememberOrientation
 import com.lifthelper.vision.camera.CameraManager
 import javax.inject.Inject
 
@@ -38,6 +41,7 @@ fun WorkoutScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+    val orientation = rememberOrientation()
 
     Scaffold(
         topBar = {
@@ -73,7 +77,7 @@ fun WorkoutScreen(
                     imageWidth = uiState.poseResult?.imageWidth ?: 640,
                     imageHeight = uiState.poseResult?.imageHeight ?: 480,
                     modifier = Modifier.fillMaxSize(),
-                    rotationDegrees = 0,  // Landscape mode - no rotation needed
+                    rotationDegrees = orientation.getRotationDegrees(),
                     isFrontCamera = cameraManager.isFrontCamera()
                 )
 
