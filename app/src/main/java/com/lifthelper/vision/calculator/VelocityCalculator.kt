@@ -1,6 +1,6 @@
 package com.lifthelper.vision.calculator
 
-import android.util.Log
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PositionData
@@ -11,13 +11,17 @@ import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.vision.IVelocityCalculator
 import com.lifthelper.util.CircularBuffer
 import com.lifthelper.util.Constants
-import com.lifthelper.util.Constants.TAG_VELOCITY
 import javax.inject.Inject
 
 class VelocityCalculator @Inject constructor(
     private val positionCalculator: PositionCalculator,
-    private val kalmanFilter: KalmanFilter1D
+    private val kalmanFilter: KalmanFilter1D,
+    private val logger: Logger
 ) : IVelocityCalculator {
+
+    companion object {
+        private const val TAG = "VelocityCalculator"
+    }
     private val positionHistory = CircularBuffer<PositionData>(Constants.VELOCITY_HISTORY_SIZE)
 
     // Separate Kalman filters for each body part
@@ -188,7 +192,7 @@ class VelocityCalculator @Inject constructor(
 
         // Log body part velocities every 30 frames (only when velocity is significant)
         if (kotlin.math.abs(smoothedInstantVelocity) > 0.1f && frameCounter++ % 30 == 0) {
-            Log.d(TAG_VELOCITY, "Front Squat - ${bodyPartVelocities.joinToString(", ")} | Instant: %.2f m/s (smoothed) | Bar Speed: %.2f m/s".format(smoothedInstantVelocity, avgVelocity))
+            logger.d(TAG, "Front Squat - ${bodyPartVelocities.joinToString(", ")} | Instant: %.2f m/s (smoothed) | Bar Speed: %.2f m/s".format(smoothedInstantVelocity, avgVelocity))
         }
 
         return VelocityData(

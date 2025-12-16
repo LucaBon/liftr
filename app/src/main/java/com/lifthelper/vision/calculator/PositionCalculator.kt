@@ -1,6 +1,6 @@
 package com.lifthelper.vision.calculator
 
-import android.util.Log
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseKeypoint
@@ -27,7 +27,13 @@ data class CalibrationResult(
     val quality: com.lifthelper.domain.model.CalibrationQuality
 )
 
-class PositionCalculator @Inject constructor() : IPositionCalculator {
+class PositionCalculator @Inject constructor(
+    private val logger: Logger
+) : IPositionCalculator {
+
+    companion object {
+        private const val TAG = "PositionCalculator"
+    }
 
     /**
      * Get vertical positions (Y-coordinates) of body parts for squats
@@ -191,8 +197,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
 
         // Check if calibration data is available
         if (calibrationData == null) {
-            Log.e(com.lifthelper.util.Constants.TAG_CALIBRATION,
-                "❌ No calibration data available")
+            logger.e(TAG, "❌ No calibration data available")
             return CalibrationResult(
                 pixelsPerMeter = 1000f, // Default fallback
                 quality = com.lifthelper.domain.model.CalibrationQuality.NONE
@@ -207,7 +212,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
             // Check if Y-axis is inverted (ankles should be below head, meaning larger Y)
             val isYAxisInverted = ankleY < headY
             if (isYAxisInverted) {
-                Log.w(com.lifthelper.util.Constants.TAG_CALIBRATION, "⚠️ PositionCalculator: Y-axis inverted, flipping")
+                logger.w(TAG, "⚠️ Y-axis inverted, flipping")
                 headY = 1.0f - headY
                 ankleY = 1.0f - ankleY
             }
@@ -215,8 +220,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
             val detectedHeightNormalized = ankleY - headY  // Now ankleY > headY always
             val detectedHeightPixels = detectedHeightNormalized * poseResult.imageHeight
 
-            Log.d(com.lifthelper.util.Constants.TAG_CALIBRATION,
-                "✅ Full body calibration: ${detectedHeightPixels.toInt()}px = ${calibrationData.userHeight}m (headY=$headY, ankleY=$ankleY)")
+            logger.d(TAG, "✅ Full body calibration: ${detectedHeightPixels.toInt()}px = ${calibrationData.userHeight}m (headY=$headY, ankleY=$ankleY)")
 
             return CalibrationResult(
                 pixelsPerMeter = detectedHeightPixels / calibrationData.userHeight,
@@ -242,8 +246,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
             // Anthropometric ratio: torso (head to hip) ≈ 52% of total height
             val estimatedFullHeightPixels = torsoHeightPixels / 0.52f
 
-            Log.w(com.lifthelper.util.Constants.TAG_CALIBRATION,
-                "⚠️ Partial body (torso only): estimated ${estimatedFullHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
+            logger.w(TAG, "⚠️ Partial body (torso only): estimated ${estimatedFullHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
 
             return CalibrationResult(
                 pixelsPerMeter = estimatedFullHeightPixels / calibrationData.userHeight,
@@ -269,8 +272,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
             // Anthropometric ratio: legs (hip to ankle) ≈ 48% of total height
             val estimatedFullHeightPixels = legHeightPixels / 0.48f
 
-            Log.w(com.lifthelper.util.Constants.TAG_CALIBRATION,
-                "⚠️ Partial body (legs only): estimated ${estimatedFullHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
+            logger.w(TAG, "⚠️ Partial body (legs only): estimated ${estimatedFullHeightPixels.toInt()}px = ${calibrationData.userHeight}m")
 
             return CalibrationResult(
                 pixelsPerMeter = estimatedFullHeightPixels / calibrationData.userHeight,
@@ -279,8 +281,7 @@ class PositionCalculator @Inject constructor() : IPositionCalculator {
         }
 
         // Strategy 4: Fall back to stored calibration (no valid segments detected)
-        Log.e(com.lifthelper.util.Constants.TAG_CALIBRATION,
-            "❌ Cannot detect body segments, using stored calibration: ${calibrationData.pixelsPerMeter}px/m")
+        logger.e(TAG, "❌ Cannot detect body segments, using stored calibration: ${calibrationData.pixelsPerMeter}px/m")
 
         return CalibrationResult(
             pixelsPerMeter = calibrationData.pixelsPerMeter,

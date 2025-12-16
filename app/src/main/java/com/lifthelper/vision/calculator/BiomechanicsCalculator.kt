@@ -1,6 +1,6 @@
 package com.lifthelper.vision.calculator
 
-import android.util.Log
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.AnthropometricData
 import com.lifthelper.domain.model.BodySegment
 import com.lifthelper.domain.value.Joules
@@ -8,7 +8,6 @@ import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.Watts
-import com.lifthelper.util.Constants.TAG_MOVEMENT
 import javax.inject.Inject
 import kotlin.math.pow
 
@@ -22,9 +21,12 @@ import kotlin.math.pow
  * - Work done (Joules)
  * - Momentum changes
  */
-class BiomechanicsCalculator @Inject constructor() {
+class BiomechanicsCalculator @Inject constructor(
+    private val logger: Logger
+) {
 
     companion object {
+        private const val TAG = "BiomechanicsCalc"
         private const val GRAVITY = 9.81f // m/s²
     }
 
@@ -47,7 +49,7 @@ class BiomechanicsCalculator @Inject constructor() {
         val force = totalMass * GRAVITY
         val power = force * velocity.abs().value
 
-        Log.d(TAG_MOVEMENT, "Power: ${power.toInt()}W (${totalMass}kg × ${velocity.value}m/s)")
+        logger.d(TAG, "Power: ${power.toInt()}W (${totalMass}kg × ${velocity.value}m/s)")
         return Watts(power)
     }
 
@@ -70,7 +72,7 @@ class BiomechanicsCalculator @Inject constructor() {
         val force = totalMass * GRAVITY
         val work = force * kotlin.math.abs(displacement.value)
 
-        Log.d(TAG_MOVEMENT, "Work: ${work.toInt()}J (${totalMass}kg × ${displacement.value}m)")
+        logger.d(TAG, "Work: ${work.toInt()}J (${totalMass}kg × ${displacement.value}m)")
         return Joules(work)
     }
 
@@ -180,7 +182,7 @@ class BiomechanicsCalculator @Inject constructor() {
         val force = totalMass * GRAVITY
         val torque = force * hipToBarDistance
 
-        Log.d(TAG_MOVEMENT, "Hip torque: ${torque.toInt()}Nm " +
+        logger.d(TAG, "Hip torque: ${torque.toInt()}Nm " +
                 "(${totalMass.toInt()}kg × ${hipToBarDistance}m)")
 
         return torque
@@ -215,7 +217,7 @@ class BiomechanicsCalculator @Inject constructor() {
         val force = totalMass * GRAVITY
         val torque = force * kotlin.math.abs(leverArm)
 
-        Log.d(TAG_MOVEMENT, "Knee torque: ${torque.toInt()}Nm at ${kneeAngle.toInt()}°")
+        logger.d(TAG, "Knee torque: ${torque.toInt()}Nm at ${kneeAngle.toInt()}°")
 
         return torque
     }
@@ -278,7 +280,7 @@ class BiomechanicsCalculator @Inject constructor() {
                         thighCOM * 2 * thighMass +
                         shankCOM * 2 * shankMass) / totalMass
 
-        Log.d(TAG_MOVEMENT, "Estimated COM height: ${comHeight}m")
+        logger.d(TAG, "Estimated COM height: ${comHeight}m")
 
         return comHeight
     }
