@@ -1,6 +1,7 @@
 package com.lifthelper.domain.usecase
 
 import androidx.camera.core.ImageProxy
+import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.ExerciseStrategy
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.exercise.FormValidationResult
@@ -98,7 +99,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
-            newPhase = MovementPhase.ECCENTRIC,
+            newState = ExercisePhaseState.initial().withCurrentPhase(MovementPhase.ECCENTRIC),
             repCompleted = false,
             debugInfo = "Test"
         )
@@ -121,7 +122,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = true,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0,
             weight = Kilograms(100f)
         )
@@ -156,7 +157,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = false,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0
         )
 
@@ -182,7 +183,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = null,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = false,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0
         )
 
@@ -223,7 +224,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = false, // Not recording
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 5
         )
 
@@ -247,7 +248,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
-            newPhase = MovementPhase.TOP,
+            newState = ExercisePhaseState.initial().withCurrentPhase(MovementPhase.TOP),
             repCompleted = true, // Rep completed
             debugInfo = "Rep completed"
         )
@@ -270,7 +271,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = true,
-            lastPhase = MovementPhase.CONCENTRIC,
+            exerciseState = ExercisePhaseState.initial().withCurrentPhase(MovementPhase.CONCENTRIC),
             currentRepCount = 5
         )
 
@@ -297,7 +298,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.FRONT_SQUAT) } returns frontSquatStrategy
         every { frontSquatStrategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
-            newPhase = MovementPhase.ECCENTRIC,
+            newState = ExercisePhaseState.initial().withCurrentPhase(MovementPhase.ECCENTRIC),
             repCompleted = false,
             debugInfo = "Front squat"
         )
@@ -320,7 +321,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.FRONT_SQUAT,
             isRecording = true,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0
         )
 
@@ -346,7 +347,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = false,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0
         )
 
@@ -369,7 +370,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns null // No velocity data
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
-            newPhase = MovementPhase.ECCENTRIC,
+            newState = ExercisePhaseState.initial().withCurrentPhase(MovementPhase.ECCENTRIC),
             repCompleted = false,
             debugInfo = "Test"
         )
@@ -385,7 +386,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
             isRecording = true,
-            lastPhase = MovementPhase.IDLE,
+            exerciseState = ExercisePhaseState.initial(),
             currentRepCount = 0
         )
 

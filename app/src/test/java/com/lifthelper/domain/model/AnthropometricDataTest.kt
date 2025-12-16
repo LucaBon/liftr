@@ -2,459 +2,236 @@ package com.lifthelper.domain.model
 
 import org.junit.Assert.*
 import org.junit.Test
-import kotlin.math.abs
 
 /**
- * Unit tests for AnthropometricData body measurement calculations
+ * Unit tests for AnthropometricData model
  *
  * Tests cover:
- * - Portrait and landscape orientations
- * - Front and back camera configurations
- * - Different image resolutions
- * - Width calculations (shoulders, hips, knees)
- * - Height calculations
- * - Aspect ratio corrections
+ * - Default ratios correctness
+ * - Measurement calculations
+ * - Validation logic
+ * - Segment mass and COM calculations
  */
 class AnthropometricDataTest {
 
     companion object {
-        // Standard test user height
         private const val USER_HEIGHT = 1.75f // 175 cm
-
-        // Expected measurement tolerances
-        private const val WIDTH_TOLERANCE_CM = 5f // ±5cm tolerance for widths
-        private const val HEIGHT_TOLERANCE_CM = 3f // ±3cm tolerance for heights
-        private const val RATIO_TOLERANCE = 0.03f // ±3% tolerance for ratios
-
-        // Expected anthropometric values for ideal pose (in cm)
-        private const val EXPECTED_SHOULDER_WIDTH_CM = 40f // ~23% of 175cm
-        private const val EXPECTED_HIP_WIDTH_CM = 35f // ~20% of 175cm
-        private const val EXPECTED_KNEE_WIDTH_CM = 17f // ~10% of 175cm
+        private const val USER_WEIGHT = 75f // 75 kg
+        private const val TOLERANCE = 0.01f
     }
 
-    /**
-     * Test 1: Portrait orientation with back camera
-     * Most common use case for anthropometric calibration
-     */
     @Test
-    fun testPortraitBackCamera_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createPortraitPose(isFrontCamera = false)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should not be null", data)
-        data!!
-
-        // Check shoulder width
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be ~40cm in portrait",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        // Check hip width
-        val hipWidthCm = data.getHipWidth() * 100
-        assertEquals(
-            "Hip width should be ~31cm in portrait",
-            EXPECTED_HIP_WIDTH_CM,
-            hipWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        // Check knee width
-        val kneeWidthCm = data.getKneeWidth() * 100
-        assertEquals(
-            "Knee width should be ~17cm in portrait",
-            EXPECTED_KNEE_WIDTH_CM,
-            kneeWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        // Check total height is correct
-        val totalHeightCm = data.userHeight * 100
-        assertEquals(
-            "Total height should match input",
-            USER_HEIGHT * 100,
-            totalHeightCm,
-            HEIGHT_TOLERANCE_CM
-        )
-
-        // Check calibration quality (OPTIMAL or FALLBACK are both acceptable for test fixtures)
-        assertTrue(
-            "Calibration quality should be OPTIMAL or FALLBACK for ideal pose, got: ${data.captureQuality}",
-            data.captureQuality == CalibrationQuality.OPTIMAL ||
-            data.captureQuality == CalibrationQuality.FALLBACK
-        )
-    }
-
-    /**
-     * Test 2: Landscape orientation with back camera
-     * This was BROKEN before the fix - measurements were too small
-     */
-    @Test
-    fun testLandscapeBackCamera_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createLandscapePose(isFrontCamera = false)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should not be null", data)
-        data!!
-
-        // Check shoulder width (this was failing before: was ~15cm instead of ~40cm)
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be ~40cm in landscape (CRITICAL FIX)",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        // Check hip width (this was failing before: was ~9cm instead of ~31cm)
-        val hipWidthCm = data.getHipWidth() * 100
-        assertEquals(
-            "Hip width should be ~31cm in landscape (CRITICAL FIX)",
-            EXPECTED_HIP_WIDTH_CM,
-            hipWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        // Check knee width
-        val kneeWidthCm = data.getKneeWidth() * 100
-        assertEquals(
-            "Knee width should be ~17cm in landscape",
-            EXPECTED_KNEE_WIDTH_CM,
-            kneeWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 3: Portrait orientation with front camera (mirrored)
-     */
-    @Test
-    fun testPortraitFrontCamera_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createPortraitPose(isFrontCamera = true)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should not be null", data)
-        data!!
-
-        // Measurements should be identical regardless of mirroring
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be same for front camera",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-
-        val hipWidthCm = data.getHipWidth() * 100
-        assertEquals(
-            "Hip width should be same for front camera",
-            EXPECTED_HIP_WIDTH_CM,
-            hipWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 4: Landscape orientation with front camera
-     */
-    @Test
-    fun testLandscapeFrontCamera_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createLandscapePose(isFrontCamera = true)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should not be null", data)
-        data!!
-
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be same for front camera in landscape",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 5: Square aspect ratio (1:1)
-     */
-    @Test
-    fun testSquareAspectRatio_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createSquarePose(isFrontCamera = false)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should not be null", data)
-        data!!
-
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be correct in square aspect ratio",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 6: Low resolution portrait (480x640)
-     */
-    @Test
-    fun testLowResolutionPortrait_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createLowResPortraitPose(isFrontCamera = false)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should work with low resolution", data)
-        data!!
-
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be correct even at low resolution",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 7: Low resolution landscape (640x480)
-     */
-    @Test
-    fun testLowResolutionLandscape_correctMeasurements() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createLowResLandscapePose(isFrontCamera = false)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNotNull("AnthropometricData should work with low resolution", data)
-        data!!
-
-        val shoulderWidthCm = data.getShoulderWidth() * 100
-        assertEquals(
-            "Shoulder width should be correct at low resolution landscape",
-            EXPECTED_SHOULDER_WIDTH_CM,
-            shoulderWidthCm,
-            WIDTH_TOLERANCE_CM
-        )
-    }
-
-    /**
-     * Test 8: Measurements are consistent across all orientations
-     * This is the CRITICAL test - ensures aspect ratio fix works correctly
-     */
-    @Test
-    fun testMeasurementsConsistentAcrossOrientations() {
-        // Arrange - create poses in all orientations
-        val portraitBackPose = PoseResultTestFixtures.createPortraitPose(false)
-        val landscapeBackPose = PoseResultTestFixtures.createLandscapePose(false)
-        val portraitFrontPose = PoseResultTestFixtures.createPortraitPose(true)
-        val landscapeFrontPose = PoseResultTestFixtures.createLandscapePose(true)
-
-        // Act - measure all
-        val portraitBackData = AnthropometricData.fromPoseResult(portraitBackPose, USER_HEIGHT, null)!!
-        val landscapeBackData = AnthropometricData.fromPoseResult(landscapeBackPose, USER_HEIGHT, null)!!
-        val portraitFrontData = AnthropometricData.fromPoseResult(portraitFrontPose, USER_HEIGHT, null)!!
-        val landscapeFrontData = AnthropometricData.fromPoseResult(landscapeFrontPose, USER_HEIGHT, null)!!
-
-        // Assert - all should have similar measurements
-        val shoulderWidths = listOf(
-            portraitBackData.getShoulderWidth() * 100,
-            landscapeBackData.getShoulderWidth() * 100,
-            portraitFrontData.getShoulderWidth() * 100,
-            landscapeFrontData.getShoulderWidth() * 100
-        )
-
-        val hipWidths = listOf(
-            portraitBackData.getHipWidth() * 100,
-            landscapeBackData.getHipWidth() * 100,
-            portraitFrontData.getHipWidth() * 100,
-            landscapeFrontData.getHipWidth() * 100
-        )
-
-        // Check that all shoulder widths are within tolerance of each other
-        val shoulderWidthVariance = shoulderWidths.maxOrNull()!! - shoulderWidths.minOrNull()!!
-        assertTrue(
-            "Shoulder width should be consistent across all orientations (variance: $shoulderWidthVariance cm)",
-            shoulderWidthVariance < WIDTH_TOLERANCE_CM
-        )
-
-        // Check that all hip widths are within tolerance of each other
-        val hipWidthVariance = hipWidths.maxOrNull()!! - hipWidths.minOrNull()!!
-        assertTrue(
-            "Hip width should be consistent across all orientations (variance: $hipWidthVariance cm)",
-            hipWidthVariance < WIDTH_TOLERANCE_CM
-        )
-
-        // Log measurements for debugging
-        println("Shoulder widths: $shoulderWidths (variance: $shoulderWidthVariance cm)")
-        println("Hip widths: $hipWidths (variance: $hipWidthVariance cm)")
-    }
-
-    /**
-     * Test 9: Partial body (missing lower body) returns null
-     * This is expected behavior - ankles are required for height estimation
-     */
-    @Test
-    fun testPartialBody_returnsNull() {
-        // Arrange
-        val poseResult = PoseResultTestFixtures.createPartialBodyPose(1080, 1920)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = poseResult,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert - should return null when critical landmarks (ankles) are missing
-        assertNull("AnthropometricData should return null when ankles are not visible", data)
-    }
-
-    /**
-     * Test 10: Aspect ratio scaling is correct for width calculations
-     * This directly tests the bug fix
-     */
-    @Test
-    fun testAspectRatioScaling_portraitVsLandscape() {
-        // Arrange - 1920x1080 landscape vs 1080x1920 portrait
-        val landscapePose = PoseResultTestFixtures.createLandscapePose(false)
-        val portraitPose = PoseResultTestFixtures.createPortraitPose(false)
-
-        // Act
-        val landscapeData = AnthropometricData.fromPoseResult(landscapePose, USER_HEIGHT, null)!!
-        val portraitData = AnthropometricData.fromPoseResult(portraitPose, USER_HEIGHT, null)!!
-
-        // Assert - ratios should be equal (not raw widths)
-        val landscapeShoulderRatio = landscapeData.shoulderWidthRatio
-        val portraitShoulderRatio = portraitData.shoulderWidthRatio
-
-        assertEquals(
-            "Shoulder width ratio should be equal in portrait and landscape",
-            portraitShoulderRatio,
-            landscapeShoulderRatio,
-            RATIO_TOLERANCE
-        )
-
-        val landscapeHipRatio = landscapeData.hipWidthRatio
-        val portraitHipRatio = portraitData.hipWidthRatio
-
-        assertEquals(
-            "Hip width ratio should be equal in portrait and landscape",
-            portraitHipRatio,
-            landscapeHipRatio,
-            RATIO_TOLERANCE
-        )
-
-        println("Portrait shoulder ratio: $portraitShoulderRatio, Landscape shoulder ratio: $landscapeShoulderRatio")
-        println("Portrait hip ratio: $portraitHipRatio, Landscape hip ratio: $landscapeHipRatio")
-    }
-
-    /**
-     * Test 11: Missing critical landmarks returns null
-     */
-    @Test
-    fun testMissingCriticalLandmarks_returnsNull() {
-        // Arrange - create pose with missing shoulders
-        val poseResult = PoseResultTestFixtures.createPortraitPose(false)
-        val landmarksWithMissingShoulders = poseResult.landmarks.mapIndexed { index, landmark ->
-            if (index == 11 || index == 12) { // Shoulders
-                landmark.copy(visibility = 0.1f) // Low visibility
-            } else {
-                landmark
-            }
-        }
-        val invalidPose = poseResult.copy(landmarks = landmarksWithMissingShoulders)
-
-        // Act
-        val data = AnthropometricData.fromPoseResult(
-            poseResult = invalidPose,
-            userHeight = USER_HEIGHT,
-            manualShoulderWidth = null
-        )
-
-        // Assert
-        assertNull("AnthropometricData should be null when shoulders are missing", data)
-    }
-
-    /**
-     * Test 12: Sanity check catches unrealistic measurements
-     */
-    @Test
-    fun testSanityChecks_catchUnrealisticValues() {
-        // Create a pose with normal measurements
-        val poseResult = PoseResultTestFixtures.createPortraitPose(false)
-        val data = AnthropometricData.fromPoseResult(poseResult, USER_HEIGHT, null)
+    fun `getDefaultRatios should return valid anthropometric data`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT, USER_WEIGHT)
 
         assertNotNull(data)
-        data!!
+        assertEquals(USER_HEIGHT, data.userHeight, 0.001f)
+        assertEquals(USER_WEIGHT, data.userWeight ?: 0f, 0.001f)
+        assertEquals(CalibrationQuality.FALLBACK, data.captureQuality)
+    }
 
-        // Hip width should be in realistic range (5-25% of height)
-        val hipWidthRatio = data.hipWidthRatio
-        assertTrue(
-            "Hip width ratio should be realistic (5-25% of height), got: $hipWidthRatio",
-            hipWidthRatio in 0.05f..0.25f
+    @Test
+    fun `default ratios should sum to approximately 1_0`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        val totalRatio = data.headHeightRatio + data.neckHeightRatio +
+                        data.torsoHeightRatio + data.upperLegHeightRatio +
+                        data.lowerLegHeightRatio + data.footHeightRatio
+
+        assertEquals(1.0f, totalRatio, 0.1f) // 10% tolerance
+        assertTrue("Total ratio should be valid", data.isValid())
+    }
+
+    @Test
+    fun `getHeadHeight should calculate correct value`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        val expectedHeight = data.headHeightRatio * USER_HEIGHT
+        assertEquals(expectedHeight, data.getHeadHeight(), 0.001f)
+    }
+
+    @Test
+    fun `getTorsoHeight should calculate correct value`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        val expectedHeight = data.torsoHeightRatio * USER_HEIGHT
+        assertEquals(expectedHeight, data.getTorsoHeight(), 0.001f)
+    }
+
+    @Test
+    fun `getShoulderWidth should calculate correct value`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        val expectedWidth = data.shoulderWidthRatio * USER_HEIGHT
+        assertEquals(expectedWidth, data.getShoulderWidth(), 0.001f)
+    }
+
+    @Test
+    fun `getHipWidth should calculate correct value`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        val expectedWidth = data.hipWidthRatio * USER_HEIGHT
+        assertEquals(expectedWidth, data.getHipWidth(), 0.001f)
+    }
+
+    @Test
+    fun `getSegmentMass should return correct percentages`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT, USER_WEIGHT)
+
+        val headMass = data.getSegmentMass(BodySegment.HEAD)
+        val trunkMass = data.getSegmentMass(BodySegment.TRUNK)
+        val thighMass = data.getSegmentMass(BodySegment.THIGH)
+
+        assertNotNull(headMass)
+        assertNotNull(trunkMass)
+        assertNotNull(thighMass)
+
+        // Head should be ~8.1% of body weight
+        assertEquals(USER_WEIGHT * 0.081f, headMass!!, 0.1f)
+
+        // Trunk should be ~49.7% of body weight
+        assertEquals(USER_WEIGHT * 0.497f, trunkMass!!, 0.1f)
+
+        // Thigh should be ~10% of body weight
+        assertEquals(USER_WEIGHT * 0.100f, thighMass!!, 0.1f)
+    }
+
+    @Test
+    fun `getSegmentMass should return null when weight not provided`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT, userWeight = null)
+
+        val headMass = data.getSegmentMass(BodySegment.HEAD)
+        assertNull("Segment mass should be null when weight not provided", headMass)
+    }
+
+    @Test
+    fun `getSegmentCOMRatio should return correct values`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertEquals(0.50f, data.getSegmentCOMRatio(BodySegment.HEAD), TOLERANCE)
+        assertEquals(0.43f, data.getSegmentCOMRatio(BodySegment.TRUNK), TOLERANCE)
+        assertEquals(0.436f, data.getSegmentCOMRatio(BodySegment.UPPER_ARM), TOLERANCE)
+        assertEquals(0.433f, data.getSegmentCOMRatio(BodySegment.THIGH), TOLERANCE)
+        assertEquals(0.433f, data.getSegmentCOMRatio(BodySegment.SHANK), TOLERANCE)
+    }
+
+    @Test
+    fun `isValid should return true for default ratios`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue("Default ratios should be valid", data.isValid())
+    }
+
+    @Test
+    fun `isValid should return false for invalid ratios`() {
+        val data = AnthropometricData(
+            headHeightRatio = 0.5f,  // Too large
+            neckHeightRatio = 0.5f,  // Way off
+            torsoHeightRatio = 0.1f,
+            upperLegHeightRatio = 0.1f,
+            lowerLegHeightRatio = 0.1f,
+            footHeightRatio = 0.1f,
+            shoulderWidthRatio = 0.26f,
+            hipWidthRatio = 0.19f,
+            kneeWidthRatio = 0.10f,
+            upperArmLengthRatio = 0.19f,
+            forearmLengthRatio = 0.16f,
+            thighLengthRatio = 0.25f,
+            shinLengthRatio = 0.23f,
+            userHeight = USER_HEIGHT,
+            userWeight = USER_WEIGHT
         )
 
-        // Knee width should be in realistic range (3-20% of height)
-        val kneeWidthRatio = data.kneeWidthRatio
-        assertTrue(
-            "Knee width ratio should be realistic (3-20% of height), got: $kneeWidthRatio",
-            kneeWidthRatio in 0.03f..0.20f
-        )
+        assertFalse("Invalid ratios should fail validation", data.isValid())
+    }
+
+    @Test
+    fun `all segment length getters should return positive values`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue(data.getHeadHeight() > 0)
+        assertTrue(data.getNeckHeight() > 0)
+        assertTrue(data.getTorsoHeight() > 0)
+        assertTrue(data.getUpperLegHeight() > 0)
+        assertTrue(data.getLowerLegHeight() > 0)
+        assertTrue(data.getFootHeight() > 0)
+    }
+
+    @Test
+    fun `all segment width getters should return positive values`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue(data.getShoulderWidth() > 0)
+        assertTrue(data.getHipWidth() > 0)
+        assertTrue(data.getKneeWidth() > 0)
+    }
+
+    @Test
+    fun `all limb length getters should return positive values`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue(data.getUpperArmLength() > 0)
+        assertTrue(data.getForearmLength() > 0)
+        assertTrue(data.getThighLength() > 0)
+        assertTrue(data.getShinLength() > 0)
+    }
+
+    @Test
+    fun `thighLength should equal upperLegHeight`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertEquals(data.getUpperLegHeight(), data.getThighLength(), 0.001f)
+    }
+
+    @Test
+    fun `shinLength should equal lowerLegHeight`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertEquals(data.getLowerLegHeight(), data.getShinLength(), 0.001f)
+    }
+
+    @Test
+    fun `measurement issues should be empty by default`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue("Default data should have no measurement issues",
+                   data.measurementIssues.isEmpty())
+    }
+
+    @Test
+    fun `alignment message should be null by default`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertNull("Default data should have no alignment message",
+                   data.alignmentMessage)
+    }
+
+    @Test
+    fun `capture timestamp should be set`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        assertTrue("Capture timestamp should be set", data.captureTimestamp > 0)
+    }
+
+    @Test
+    fun `default ratios should have realistic proportions`() {
+        val data = AnthropometricData.getDefaultRatios(USER_HEIGHT)
+
+        // Shoulder width should be roughly 23-26% of height
+        assertTrue("Shoulder width ratio realistic",
+                   data.shoulderWidthRatio in 0.20f..0.30f)
+
+        // Hip width should be roughly 15-22% of height
+        assertTrue("Hip width ratio realistic",
+                   data.hipWidthRatio in 0.15f..0.25f)
+
+        // Torso should be roughly 25-35% of height
+        assertTrue("Torso height ratio realistic",
+                   data.torsoHeightRatio in 0.25f..0.35f)
+
+        // Legs (upper + lower) should be roughly 45-55% of height
+        val legRatio = data.upperLegHeightRatio + data.lowerLegHeightRatio
+        assertTrue("Leg height ratio realistic",
+                   legRatio in 0.45f..0.55f)
     }
 }

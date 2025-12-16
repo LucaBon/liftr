@@ -1,9 +1,11 @@
 package com.lifthelper.vision.calculator
 
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.value.Joules
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
@@ -13,6 +15,7 @@ import kotlin.math.sqrt
 class BiomechanicsCalculatorTest {
 
     private lateinit var calculator: BiomechanicsCalculator
+    private lateinit var logger: Logger
 
     companion object {
         private const val GRAVITY = 9.81f
@@ -21,7 +24,8 @@ class BiomechanicsCalculatorTest {
 
     @Before
     fun setup() {
-        calculator = BiomechanicsCalculator()
+        logger = mockk(relaxed = true)
+        calculator = BiomechanicsCalculator(logger)
     }
 
     // Power Calculation Tests
