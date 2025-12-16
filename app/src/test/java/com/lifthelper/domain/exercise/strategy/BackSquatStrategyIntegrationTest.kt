@@ -1,5 +1,6 @@
 package com.lifthelper.domain.exercise.strategy
 
+import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.Severity
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.AnthropometricData
@@ -70,17 +71,20 @@ class BackSquatStrategyIntegrationTest {
         val poseResult = createMockPoseResult()
 
         // Phase 1: IDLE - Initialize
-        var result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
-        assertEquals(MovementPhase.IDLE, result.newPhase)
+        var state = ExercisePhaseState.initial()
+        var result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.IDLE, result.newState.currentPhase)
         assertFalse(result.repCompleted)
+        state = result.newState
 
         // Phase 2: Start descent - transition to ECCENTRIC
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.9f // Descended 40cm
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.4f
 
-        result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
-        assertEquals(MovementPhase.ECCENTRIC, result.newPhase)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.ECCENTRIC, result.newState.currentPhase)
         assertFalse(result.repCompleted)
+        state = result.newState
 
         // Phase 3: Continue descent - reach proper depth
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.1f // Descended 60cm
@@ -88,17 +92,19 @@ class BackSquatStrategyIntegrationTest {
         every { positionCalculator.pixelsToMeters(500f, any(), any()) } returns 3.3f // Hips at or below knees
         every { positionCalculator.pixelsToMeters(800f, any(), any()) } returns 3.2f // Knees
 
-        result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.ECCENTRIC)
-        assertEquals(MovementPhase.BOTTOM, result.newPhase)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.BOTTOM, result.newState.currentPhase)
         assertFalse(result.repCompleted)
+        state = result.newState
 
         // Phase 4: At bottom - transition to CONCENTRIC
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.05f // Started ascending
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.55f
 
-        result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.BOTTOM)
-        assertEquals(MovementPhase.CONCENTRIC, result.newPhase)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.CONCENTRIC, result.newState.currentPhase)
         assertFalse(result.repCompleted)
+        state = result.newState
 
         // Phase 5: Return to starting position - complete rep
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.55f // Near starting position
@@ -106,8 +112,8 @@ class BackSquatStrategyIntegrationTest {
         every { positionCalculator.pixelsToMeters(500f, any(), any()) } returns 2.0f
         every { positionCalculator.pixelsToMeters(800f, any(), any()) } returns 3.0f
 
-        result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.CONCENTRIC)
-        assertEquals(MovementPhase.TOP, result.newPhase)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.TOP, result.newState.currentPhase)
         assertTrue(result.repCompleted)
     }
 
@@ -129,10 +135,12 @@ class BackSquatStrategyIntegrationTest {
         val poseResult = createMockPoseResult()
 
         // Initialize strategy
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
+        var state = ExercisePhaseState.initial()
+        var result = strategy.detectPhase(poseResult, calibrationData, state)
+        state = result.newState
 
         // Move to eccentric phase
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.ECCENTRIC)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
 
         // Validate form at insufficient depth
         val validation = strategy.validateForm(poseResult, calibrationData)
@@ -159,13 +167,15 @@ class BackSquatStrategyIntegrationTest {
         val poseResult = createMockPoseResult()
 
         // Initialize starting position
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
+        var state = ExercisePhaseState.initial()
+        var result = strategy.detectPhase(poseResult, calibrationData, state)
+        state = result.newState
 
         // Move to a different position
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.0f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.5f
 
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.ECCENTRIC)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
 
         val velocityData = VelocityData(
             instantaneous = MetersPerSecond(0.8f),
@@ -210,22 +220,24 @@ class BackSquatStrategyIntegrationTest {
 
         val poseResult = createMockPoseResult()
 
-        // Initialize and start movement
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
+        // Initialize state
+        var state = ExercisePhaseState.initial()
+        strategy.detectPhase(poseResult, calibrationData, state)
 
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.0f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.5f
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.ECCENTRIC)
+        state = state.withCurrentPhase(MovementPhase.ECCENTRIC)
+        var result = strategy.detectPhase(poseResult, calibrationData, state)
 
-        // Reset strategy
-        strategy.reset()
+        // Reset strategy (create new initial state)
+        state = ExercisePhaseState.initial()
 
         // Verify we can start fresh
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.5f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.0f
 
-        val result = strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
-        assertEquals(MovementPhase.IDLE, result.newPhase)
+        result = strategy.detectPhase(poseResult, calibrationData, state)
+        assertEquals(MovementPhase.IDLE, result.newState.currentPhase)
         assertTrue(result.debugInfo.contains("Starting position set"))
     }
 
@@ -275,8 +287,10 @@ class BackSquatStrategyIntegrationTest {
         val poseResult = createMockPoseResult()
 
         // Initialize
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.IDLE)
-        strategy.detectPhase(poseResult, calibrationData, MovementPhase.ECCENTRIC)
+        var state = ExercisePhaseState.initial()
+        var result = strategy.detectPhase(poseResult, calibrationData, state)
+        state = result.newState
+        result = strategy.detectPhase(poseResult, calibrationData, state.withCurrentPhase(MovementPhase.ECCENTRIC))
 
         // Validate form at bottom
         val validation = strategy.validateForm(poseResult, calibrationData)
