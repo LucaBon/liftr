@@ -81,64 +81,6 @@ data class AnthropometricData(
                 captureQuality = CalibrationQuality.FALLBACK
             )
         }
-
-        /**
-         * Calculate anthropometric data from pose landmarks (frontal view).
-         *
-         * This method delegates to AnthropometricDataBuilder for the extraction logic.
-         * It is maintained for backward compatibility with existing code.
-         *
-         * @param poseResult Detected pose with landmarks
-         * @param userHeight User's actual height in meters
-         * @param userWeight User's weight in kg (optional)
-         * @param manualShoulderWidth Manual shoulder width override (optional)
-         * @param isFrontCamera Whether front camera is being used
-         * @return AnthropometricData if successful, null if extraction fails
-         */
-        fun fromPoseResult(
-            poseResult: PoseResult,
-            userHeight: Float,
-            userWeight: Float? = null,
-            manualShoulderWidth: Float? = null,
-            isFrontCamera: Boolean = false
-        ): AnthropometricData? {
-            // Create builder with required dependencies
-            val builder = createBuilder()
-
-            // Delegate to builder
-            return builder.build(
-                poseResult = poseResult,
-                userHeight = userHeight,
-                userWeight = userWeight,
-                manualShoulderWidth = manualShoulderWidth,
-                isFrontCamera = isFrontCamera
-            ).getOrNull()
-        }
-
-        /**
-         * Creates a builder instance with all required dependencies.
-         * In production code, this should be injected via dependency injection.
-         * This method exists for backward compatibility with the static factory pattern.
-         */
-        private fun createBuilder(): com.lifthelper.domain.builder.AnthropometricDataBuilder {
-            // Create all dependencies
-            val logger = com.lifthelper.infrastructure.logging.AndroidLogger()
-            val poseValidator = com.lifthelper.domain.validation.PoseValidator()
-            val coordinateCalculator = com.lifthelper.domain.calculator.CoordinateCalculator()
-            val segmentExtractor = com.lifthelper.domain.extractor.BodySegmentExtractor(coordinateCalculator)
-            val measurementValidator = com.lifthelper.domain.validation.MeasurementValidator()
-            val alignmentChecker = com.lifthelper.vision.calculator.CameraAlignmentChecker()
-
-            // Create and return builder
-            return com.lifthelper.domain.builder.AnthropometricDataBuilder(
-                poseValidator = poseValidator,
-                coordinateCalculator = coordinateCalculator,
-                segmentExtractor = segmentExtractor,
-                measurementValidator = measurementValidator,
-                alignmentChecker = alignmentChecker,
-                logger = logger
-            )
-        }
     }
 
     // Convenience methods to get actual measurements in meters

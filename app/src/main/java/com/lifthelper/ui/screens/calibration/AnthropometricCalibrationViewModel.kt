@@ -34,7 +34,8 @@ class AnthropometricCalibrationViewModel @Inject constructor(
     private val poseDetector: PoseDetector,
     private val positionCalculator: PositionCalculator,
     private val calibrationRepository: CalibrationRepository,
-    private val cameraManager: com.lifthelper.vision.camera.CameraManager
+    private val cameraManager: com.lifthelper.vision.camera.CameraManager,
+    private val anthropometricDataBuilder: com.lifthelper.domain.builder.AnthropometricDataBuilder
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnthropometricCalibrationState())
@@ -222,13 +223,13 @@ class AnthropometricCalibrationViewModel @Inject constructor(
 
         // Try frames in order of quality until we get valid measurements
         for ((frame, score) in scoredFrames) {
-            val result = AnthropometricData.fromPoseResult(
+            val result = anthropometricDataBuilder.build(
                 poseResult = frame,
                 userHeight = userHeight,
                 userWeight = userWeight,
                 manualShoulderWidth = manualShoulderWidth,
                 isFrontCamera = cameraManager.isFrontCamera()
-            )
+            ).getOrNull()
 
             if (result != null && result.isValid()) {
                 Log.i(TAG_CALIBRATION, "Selected frame with quality score: ${String.format("%.2f", score)}")
