@@ -2,6 +2,7 @@ package com.lifthelper.vision.tracking
 
 import android.util.Log
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.vision.ISquatPhaseDetector
 import com.lifthelper.util.Constants.TAG_MOVEMENT
 import javax.inject.Inject
 import kotlin.math.abs
@@ -14,7 +15,7 @@ import kotlin.math.abs
  * 2. BOTTOM: Hips at or below knee level (proper squat depth)
  * 3. CONCENTRIC: Return to within ~10cm of starting position
  */
-class SquatPhaseDetector @Inject constructor() {
+class SquatPhaseDetector @Inject constructor() : ISquatPhaseDetector {
     private var currentPhase = MovementPhase.IDLE
 
     // Store starting positions (in meters)
@@ -46,7 +47,7 @@ class SquatPhaseDetector @Inject constructor() {
      * @param poseResult Raw pose result for coordinate validation
      * @return Current movement phase
      */
-    fun detectPhase(
+    override fun detectPhase(
         headY: Float?,
         shouldersY: Float?,
         hipsY: Float?,
@@ -219,7 +220,7 @@ class SquatPhaseDetector @Inject constructor() {
         return depthOK
     }
 
-    fun reset() {
+    override fun reset() {
         currentPhase = MovementPhase.IDLE
         startingHeadY = null
         startingShouldersY = null
@@ -237,7 +238,7 @@ class SquatPhaseDetector @Inject constructor() {
     /**
      * Get current descent/ascent information for debugging
      */
-    fun getPositionInfo(): String {
+    override fun getPositionInfo(): String {
         if (startingHeadY == null || startingShouldersY == null || currentHeadY == null || currentShouldersY == null) {
             return "No position data"
         }

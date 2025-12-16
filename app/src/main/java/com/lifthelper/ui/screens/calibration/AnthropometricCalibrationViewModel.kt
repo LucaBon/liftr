@@ -4,8 +4,8 @@ import android.util.Log
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lifthelper.data.local.preferences.SettingsDataStore
 import com.lifthelper.domain.model.AnthropometricData
+import com.lifthelper.domain.repository.CalibrationRepository
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.CalibrationQuality
 import com.lifthelper.util.Constants.TAG_CALIBRATION
@@ -33,7 +33,7 @@ data class AnthropometricCalibrationState(
 class AnthropometricCalibrationViewModel @Inject constructor(
     private val poseDetector: PoseDetector,
     private val positionCalculator: PositionCalculator,
-    private val settingsDataStore: SettingsDataStore,
+    private val calibrationRepository: CalibrationRepository,
     private val cameraManager: com.lifthelper.vision.camera.CameraManager
 ) : ViewModel() {
 
@@ -56,7 +56,7 @@ class AnthropometricCalibrationViewModel @Inject constructor(
 
         // Load existing calibration data
         viewModelScope.launch {
-            settingsDataStore.calibrationData.collect { data ->
+            calibrationRepository.getCalibrationData().collect { data ->
                 calibrationData = data
             }
         }
@@ -302,7 +302,7 @@ class AnthropometricCalibrationViewModel @Inject constructor(
             ).copy(anthropometricData = anthropometricData)
 
             // Save basic calibration data (anthropometric data will be stored separately)
-            settingsDataStore.saveCalibration(updatedCalibration)
+            calibrationRepository.saveCalibration(updatedCalibration)
 
             Log.i(TAG_CALIBRATION, "✅ Anthropometric data saved to profile")
             Log.d(TAG_CALIBRATION, "Shoulder width: ${anthropometricData.getShoulderWidth()}m")

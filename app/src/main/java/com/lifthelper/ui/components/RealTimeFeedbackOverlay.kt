@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import com.lifthelper.R
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.model.VelocityZone
+import com.lifthelper.domain.value.RepCount
 import com.lifthelper.ui.theme.*
 import com.lifthelper.util.OrientationMode
 import com.lifthelper.util.rememberOrientation
@@ -22,7 +23,7 @@ import com.lifthelper.util.rememberOrientation
 @Composable
 fun RealTimeFeedbackOverlay(
     velocityData: VelocityData?,
-    repCount: Int,
+    repCount: RepCount,
     targetVelocityRange: ClosedFloatingPointRange<Float>?,
     modifier: Modifier = Modifier
 ) {
@@ -38,7 +39,7 @@ fun RealTimeFeedbackOverlay(
         // Velocity display with color zone (showing bar speed for front squats)
         velocityData?.let { data ->
             VelocityDisplay(
-                velocity = data.average,
+                velocity = data.average.value,
                 zone = VelocityZone.fromVelocity(data.average),
                 isCompact = isPortrait
             )
@@ -48,7 +49,7 @@ fun RealTimeFeedbackOverlay(
 
         // Rep counter
         Text(
-            text = stringResource(R.string.reps_label, repCount),
+            text = stringResource(R.string.reps_label, repCount.value),
             style = if (isPortrait) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
             color = Color.White,
             modifier = Modifier
@@ -66,11 +67,11 @@ fun RealTimeFeedbackOverlay(
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
                         .padding(if (isPortrait) 8.dp else 16.dp)
                 ) {
-                    val progress = ((data.average - range.start) /
+                    val progress = ((data.average.value - range.start) /
                             (range.endInclusive - range.start)).coerceIn(0f, 1f)
 
                     LinearProgressIndicator(
-                        progress = progress,
+                        progress = { progress },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(if (isPortrait) 6.dp else 8.dp),

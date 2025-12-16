@@ -1,13 +1,15 @@
 package com.lifthelper.domain.model
 
 import android.util.Log
+import com.lifthelper.domain.value.Meters
+import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.util.Constants.TAG_VELOCITY
 import kotlinx.serialization.Serializable
 
 data class VelocityData(
-    val instantaneous: Float, // m/s
-    val average: Float, // m/s
-    val position: Float, // meters
+    val instantaneous: MetersPerSecond,
+    val average: MetersPerSecond,
+    val position: Meters,
     val timestamp: Long
 )
 
@@ -31,15 +33,15 @@ enum class VelocityZone(val minVelocity: Float, val maxVelocity: Float) {
     VERY_FAST(1.0f, Float.MAX_VALUE);
 
     companion object {
-        fun fromVelocity(velocity: Float): VelocityZone {
+        fun fromVelocity(velocity: MetersPerSecond): VelocityZone {
             // Use absolute value since velocity can be negative (downward movement)
-            val absVelocity = kotlin.math.abs(velocity)
+            val absVelocity = velocity.abs().value
             val zone = values().firstOrNull { absVelocity >= it.minVelocity && absVelocity < it.maxVelocity }
                 ?: VERY_FAST
 
             // Log only for very fast movements or if zone couldn't be determined
             if (absVelocity > 10f) {
-                Log.d(TAG_VELOCITY, "Velocity: %.2f m/s (abs: %.2f) -> Zone: $zone".format(velocity, absVelocity))
+                Log.d(TAG_VELOCITY, "Velocity: %.2f m/s (abs: %.2f) -> Zone: $zone".format(velocity.value, absVelocity))
             }
 
             return zone

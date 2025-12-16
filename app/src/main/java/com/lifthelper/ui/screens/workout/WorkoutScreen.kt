@@ -42,6 +42,33 @@ fun WorkoutScreen(
     val uiState by viewModel.uiState.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val orientation = rememberOrientation()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Handle errors via Snackbar
+    LaunchedEffect(uiState.error) {
+        uiState.error?.let { error ->
+            when (error) {
+                is com.lifthelper.ui.common.UiError.Message -> {
+                    snackbarHostState.showSnackbar(
+                        message = error.text,
+                        duration = SnackbarDuration.Short
+                    )
+                    viewModel.clearError()
+                }
+                is com.lifthelper.ui.common.UiError.Recoverable -> {
+                    val result = snackbarHostState.showSnackbar(
+                        message = error.text,
+                        actionLabel = error.action.label,
+                        duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        error.action.onClick()
+                    }
+                    viewModel.clearError()
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -53,7 +80,8 @@ fun WorkoutScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Box(
             modifier = Modifier

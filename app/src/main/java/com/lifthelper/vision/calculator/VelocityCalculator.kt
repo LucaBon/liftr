@@ -6,6 +6,9 @@ import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PositionData
 import com.lifthelper.domain.model.PoseResult
 import com.lifthelper.domain.model.VelocityData
+import com.lifthelper.domain.value.Meters
+import com.lifthelper.domain.value.MetersPerSecond
+import com.lifthelper.domain.vision.IVelocityCalculator
 import com.lifthelper.util.CircularBuffer
 import com.lifthelper.util.Constants
 import com.lifthelper.util.Constants.TAG_VELOCITY
@@ -14,7 +17,7 @@ import javax.inject.Inject
 class VelocityCalculator @Inject constructor(
     private val positionCalculator: PositionCalculator,
     private val kalmanFilter: KalmanFilter1D
-) {
+) : IVelocityCalculator {
     private val positionHistory = CircularBuffer<PositionData>(Constants.VELOCITY_HISTORY_SIZE)
 
     // Separate Kalman filters for each body part
@@ -33,7 +36,7 @@ class VelocityCalculator @Inject constructor(
     private var startTime: Long? = null
     private var frameCounter = 0
 
-    fun calculate(
+    override fun calculate(
         poseResult: PoseResult,
         exerciseType: ExerciseType,
         calibrationData: CalibrationData,
@@ -77,9 +80,9 @@ class VelocityCalculator @Inject constructor(
         val avgVelocity = calculateAverageVelocity(positionHistory)
 
         return VelocityData(
-            instantaneous = instantVelocity,
-            average = avgVelocity,
-            position = smoothedPosition,
+            instantaneous = MetersPerSecond(instantVelocity),
+            average = MetersPerSecond(avgVelocity),
+            position = Meters(smoothedPosition),
             timestamp = timestamp
         )
     }
@@ -189,9 +192,9 @@ class VelocityCalculator @Inject constructor(
         }
 
         return VelocityData(
-            instantaneous = smoothedInstantVelocity,
-            average = avgVelocity,
-            position = avgPosition,
+            instantaneous = MetersPerSecond(smoothedInstantVelocity),
+            average = MetersPerSecond(avgVelocity),
+            position = Meters(avgPosition),
             timestamp = timestamp
         )
     }
@@ -233,7 +236,7 @@ class VelocityCalculator @Inject constructor(
         return if (totalTime > 0) totalDisplacement / totalTime else 0f
     }
 
-    fun reset() {
+    override fun reset() {
         positionHistory.clear()
         kalmanFilter.reset()
 

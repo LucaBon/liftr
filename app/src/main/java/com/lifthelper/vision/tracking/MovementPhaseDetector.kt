@@ -1,5 +1,6 @@
 package com.lifthelper.vision.tracking
 
+import com.lifthelper.domain.vision.IMovementPhaseDetector
 import com.lifthelper.util.CircularBuffer
 import com.lifthelper.util.Constants
 import javax.inject.Inject
@@ -13,11 +14,11 @@ enum class MovementPhase {
     TOP           // Lockout
 }
 
-class MovementPhaseDetector @Inject constructor() {
+class MovementPhaseDetector @Inject constructor() : IMovementPhaseDetector {
     private var currentPhase = MovementPhase.IDLE
     private val velocityHistory = CircularBuffer<Float>(10)
 
-    fun detectPhase(velocity: Float): MovementPhase {
+    override fun detectPhase(velocity: Float): MovementPhase {
         velocityHistory.add(velocity)
 
         val avgVelocity = if (velocityHistory.size > 0) {
@@ -64,7 +65,7 @@ class MovementPhaseDetector @Inject constructor() {
         return currentPhase
     }
 
-    fun reset() {
+    override fun reset() {
         currentPhase = MovementPhase.IDLE
         velocityHistory.clear()
     }

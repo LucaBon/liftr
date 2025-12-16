@@ -23,7 +23,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="unspecified"
+            android:screenOrientation="user"
             android:configChanges="orientation|screenSize"
             android:theme="@style/Theme.LiftHelper">
             <intent-filter>

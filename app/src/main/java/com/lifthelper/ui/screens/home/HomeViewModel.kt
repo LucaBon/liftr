@@ -1,11 +1,11 @@
 package com.lifthelper.ui.screens.home
 
 import androidx.lifecycle.ViewModel
-import com.lifthelper.data.local.preferences.SettingsDataStore
+import com.lifthelper.domain.repository.CalibrationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    val settingsDataStore: SettingsDataStore
+    val calibrationRepository: CalibrationRepository
 ) : ViewModel()

@@ -2,8 +2,8 @@ package com.lifthelper.ui.screens.calibration
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lifthelper.data.local.preferences.SettingsDataStore
 import com.lifthelper.domain.model.CalibrationData
+import com.lifthelper.domain.repository.CalibrationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +14,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CalibrationViewModel @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val calibrationRepository: CalibrationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalibrationState())
@@ -23,7 +23,7 @@ class CalibrationViewModel @Inject constructor(
     init {
         // Load existing calibration data if available
         viewModelScope.launch {
-            settingsDataStore.calibrationData.collect { existingData ->
+            calibrationRepository.getCalibrationData().collect { existingData ->
                 if (existingData != null && _uiState.value.height.isEmpty()) {
                     // Pre-fill with existing values
                     _uiState.value = _uiState.value.copy(
@@ -76,7 +76,7 @@ class CalibrationViewModel @Inject constructor(
         )
 
         viewModelScope.launch {
-            settingsDataStore.saveCalibration(calibrationData)
+            calibrationRepository.saveCalibration(calibrationData)
             onComplete()
         }
     }
@@ -84,7 +84,7 @@ class CalibrationViewModel @Inject constructor(
     fun onSkip(onComplete: () -> Unit) {
         viewModelScope.launch {
             // Check if we're recalibrating (existing data available)
-            val existingData = settingsDataStore.calibrationData.first()
+            val existingData = calibrationRepository.getCalibrationData().first()
 
             if (existingData != null) {
                 // Keep existing calibration data when skipping during recalibration
@@ -95,7 +95,7 @@ class CalibrationViewModel @Inject constructor(
                     heightCm = 170f, // Default height
                     shoulderWidthCm = null // Will use default shoulder width
                 )
-                settingsDataStore.saveCalibration(calibrationData)
+                calibrationRepository.saveCalibration(calibrationData)
                 onComplete()
             }
         }

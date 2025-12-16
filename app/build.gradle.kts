@@ -4,6 +4,7 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     kotlin("plugin.serialization") version "1.9.22"
+    id("jacoco")
 }
 
 android {
@@ -62,7 +63,13 @@ android {
     testOptions {
         unitTests {
             isReturnDefaultValues = true
+            isIncludeAndroidResources = true
         }
+    }
+
+    buildTypes.configureEach {
+        enableAndroidTestCoverage = true
+        enableUnitTestCoverage = true
     }
 }
 
@@ -127,11 +134,154 @@ dependencies {
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("androidx.arch.core:core-testing:2.2.0") // InstantTaskExecutorRule
+    testImplementation("io.mockk:mockk:1.13.8") // Mocking library
+    testImplementation("androidx.room:room-testing:$roomVersion") // Room testing
+    testImplementation("app.cash.turbine:turbine:1.0.0") // Flow testing
+
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.room:room-testing:$roomVersion")
     androidTestImplementation(composeBom)
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// JaCoCo Configuration
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    dependsOn("testDebugUnitTest")
+    group = "Reporting"
+    description = "Generate Jacoco coverage reports for Debug build"
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+        xml.outputLocation.set(file("${layout.buildDirectory.get().asFile}/reports/jacoco/test/jacocoTestReport.xml"))
+        html.outputLocation.set(file("${layout.buildDirectory.get().asFile}/reports/jacoco/test/html"))
+    }
+
+    val fileFilter = listOf(
+        "**/R.class",
+        "**/R$*.class",
+        "**/BuildConfig.*",
+        "**/Manifest*.*",
+        "**/*Test*.*",
+        "android/**/*.*",
+        "**/*\$ViewInjector*.*",
+        "**/*\$ViewBinder*.*",
+        "**/Lambda$*.class",
+        "**/Lambda.class",
+        "**/*Lambda.class",
+        "**/*Lambda*.class",
+        "**/*_MembersInjector.class",
+        "**/Dagger*Component*.class",
+        "**/*Module_*Factory.class",
+        "**/di/**",
+        "**/*_Factory*.*",
+        "**/*Module*.*",
+        "**/*Dagger*.*",
+        "**/*Hilt*.*",
+        "**/hilt_aggregated_deps/**",
+        "**/*_HiltModules*.*",
+        "**/*_Impl*.*",
+        "**/*Screen*.*",
+        "**/*Activity*.*",
+        "**/*Fragment*.*",
+        "**/*Application*.*",
+        "**/ui/**",
+        "**/navigation/**"
+    )
+
+    val debugTree = fileTree("${layout.buildDirectory.get().asFile}/tmp/kotlin-classes/debug") {
+        exclude(fileFilter)
+    }
+    val mainSrc = "${project.projectDir}/src/main/java"
+
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(files(debugTree))
+    executionData.setFrom(fileTree(layout.buildDirectory.get().asFile) {
+        include("jacoco/testDebugUnitTest.exec", "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
+    })
+}
+
+tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
+    dependsOn("jacocoTestReport")
+    group = "Verification"
+    description = "Verify Jacoco coverage thresholds"
+
+    violationRules {
+        rule {
+            limit {
+                minimum = "0.70".toBigDecimal() // 70% minimum coverage
+            }
+        }
+
+        rule {
+            element = "CLASS"
+            limit {
+                counter = "BRANCH"
+                value = "COVEREDRATIO"
+                minimum = "0.60".toBigDecimal() // 60% branch coverage
+            }
+            excludes = listOf(
+                "*.di.*",
+                "*.ui.*",
+                "*.*Screen",
+                "*.*Activity",
+                "*.*Fragment",
+                "*.*Application",
+                "*.navigation.*"
+            )
+        }
+    }
+
+    val fileFilter = listOf(
+        "**/R.class",
+        "**/R$*.class",
+        "**/BuildConfig.*",
+        "**/Manifest*.*",
+        "**/*Test*.*",
+        "android/**/*.*",
+        "**/*\$ViewInjector*.*",
+        "**/*\$ViewBinder*.*",
+        "**/Lambda$*.class",
+        "**/Lambda.class",
+        "**/*Lambda.class",
+        "**/*Lambda*.class",
+        "**/*_MembersInjector.class",
+        "**/Dagger*Component*.class",
+        "**/*Module_*Factory.class",
+        "**/di/**",
+        "**/*_Factory*.*",
+        "**/*Module*.*",
+        "**/*Dagger*.*",
+        "**/*Hilt*.*",
+        "**/hilt_aggregated_deps/**",
+        "**/*_HiltModules*.*",
+        "**/*_Impl*.*",
+        "**/*Screen*.*",
+        "**/*Activity*.*",
+        "**/*Fragment*.*",
+        "**/*Application*.*",
+        "**/ui/**",
+        "**/navigation/**"
+    )
+
+    val debugTree = fileTree("${layout.buildDirectory.get().asFile}/tmp/kotlin-classes/debug") {
+        exclude(fileFilter)
+    }
+    val mainSrc = "${project.projectDir}/src/main/java"
+
+    sourceDirectories.setFrom(files(mainSrc))
+    classDirectories.setFrom(files(debugTree))
+    executionData.setFrom(fileTree(layout.buildDirectory.get().asFile) {
+        include("jacoco/testDebugUnitTest.exec", "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec")
+    })
 }

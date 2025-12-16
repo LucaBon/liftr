@@ -5,6 +5,7 @@ import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.vision.IPositionCalculator
 import javax.inject.Inject
 import kotlin.math.sqrt
 
@@ -26,7 +27,7 @@ data class CalibrationResult(
     val quality: com.lifthelper.domain.model.CalibrationQuality
 )
 
-class PositionCalculator @Inject constructor() {
+class PositionCalculator @Inject constructor() : IPositionCalculator {
 
     /**
      * Get vertical positions (Y-coordinates) of body parts for squats
@@ -34,7 +35,7 @@ class PositionCalculator @Inject constructor() {
      *
      * @return BodyPartPositions with Y-coordinates in pixels, or null if none are visible
      */
-    fun getBodyPartPositions(poseResult: PoseResult): BodyPartPositions? {
+    override fun getBodyPartPositions(poseResult: PoseResult): BodyPartPositions? {
         val landmarks = poseResult.landmarks
 
         // Hips: average of left (23) and right (24)
@@ -124,7 +125,7 @@ class PositionCalculator @Inject constructor() {
      *
      * @param normalizedY Y coordinate in normalized space (0-1 range from pose landmarks)
      */
-    fun pixelsToMeters(
+    override fun pixelsToMeters(
         normalizedY: Float,
         poseResult: PoseResult,
         calibrationData: CalibrationData?
@@ -140,7 +141,7 @@ class PositionCalculator @Inject constructor() {
     /**
      * Get current calibration quality for user feedback
      */
-    fun getCalibrationQuality(
+    override fun getCalibrationQuality(
         poseResult: PoseResult,
         calibrationData: CalibrationData?
     ): com.lifthelper.domain.model.CalibrationQuality {

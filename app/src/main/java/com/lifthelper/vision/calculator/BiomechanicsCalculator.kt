@@ -3,6 +3,11 @@ package com.lifthelper.vision.calculator
 import android.util.Log
 import com.lifthelper.domain.model.AnthropometricData
 import com.lifthelper.domain.model.BodySegment
+import com.lifthelper.domain.value.Joules
+import com.lifthelper.domain.value.Kilograms
+import com.lifthelper.domain.value.Meters
+import com.lifthelper.domain.value.MetersPerSecond
+import com.lifthelper.domain.value.Watts
 import com.lifthelper.util.Constants.TAG_MOVEMENT
 import javax.inject.Inject
 import kotlin.math.pow
@@ -28,22 +33,22 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * Power = Force × Velocity = (mass × g) × velocity
      *
-     * @param weight Barbell weight in kg
-     * @param velocity Barbell velocity in m/s
-     * @param bodyWeight User body weight in kg (optional, for bodyweight exercises)
+     * @param weight Barbell weight
+     * @param velocity Barbell velocity
+     * @param bodyWeight User body weight (optional, for bodyweight exercises)
      * @return Power in Watts
      */
     fun calculatePower(
-        weight: Float,
-        velocity: Float,
-        bodyWeight: Float? = null
-    ): Float {
-        val totalMass = weight + (bodyWeight ?: 0f)
+        weight: Kilograms,
+        velocity: MetersPerSecond,
+        bodyWeight: Kilograms? = null
+    ): Watts {
+        val totalMass = weight.value + (bodyWeight?.value ?: 0f)
         val force = totalMass * GRAVITY
-        val power = force * kotlin.math.abs(velocity)
+        val power = force * velocity.abs().value
 
-        Log.d(TAG_MOVEMENT, "Power: ${power.toInt()}W (${totalMass}kg × ${velocity}m/s)")
-        return power
+        Log.d(TAG_MOVEMENT, "Power: ${power.toInt()}W (${totalMass}kg × ${velocity.value}m/s)")
+        return Watts(power)
     }
 
     /**
@@ -51,22 +56,22 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * Work = Force × Distance = (mass × g) × vertical_displacement
      *
-     * @param weight Barbell weight in kg
-     * @param displacement Vertical displacement in meters
-     * @param bodyWeight User body weight in kg (optional)
+     * @param weight Barbell weight
+     * @param displacement Vertical displacement
+     * @param bodyWeight User body weight (optional)
      * @return Work in Joules
      */
     fun calculateWork(
-        weight: Float,
-        displacement: Float,
-        bodyWeight: Float? = null
-    ): Float {
-        val totalMass = weight + (bodyWeight ?: 0f)
+        weight: Kilograms,
+        displacement: Meters,
+        bodyWeight: Kilograms? = null
+    ): Joules {
+        val totalMass = weight.value + (bodyWeight?.value ?: 0f)
         val force = totalMass * GRAVITY
-        val work = force * kotlin.math.abs(displacement)
+        val work = force * kotlin.math.abs(displacement.value)
 
-        Log.d(TAG_MOVEMENT, "Work: ${work.toInt()}J (${totalMass}kg × ${displacement}m)")
-        return work
+        Log.d(TAG_MOVEMENT, "Work: ${work.toInt()}J (${totalMass}kg × ${displacement.value}m)")
+        return Joules(work)
     }
 
     /**
@@ -74,13 +79,13 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * Average Power = Work / Time
      *
-     * @param work Work done in Joules
+     * @param work Work done
      * @param duration Time duration in seconds
-     * @return Average power in Watts
+     * @return Average power
      */
-    fun calculateAveragePower(work: Float, duration: Float): Float {
-        if (duration <= 0) return 0f
-        return work / duration
+    fun calculateAveragePower(work: Joules, duration: Float): Watts {
+        if (duration <= 0) return Watts(0f)
+        return Watts(work.value / duration)
     }
 
     /**
@@ -89,13 +94,13 @@ class BiomechanicsCalculator @Inject constructor() {
      * Uses velocity and displacement data to find maximum power output
      */
     fun calculatePeakPower(
-        weight: Float,
-        velocityHistory: List<Float>,
-        bodyWeight: Float? = null
-    ): Float {
-        if (velocityHistory.isEmpty()) return 0f
+        weight: Kilograms,
+        velocityHistory: List<MetersPerSecond>,
+        bodyWeight: Kilograms? = null
+    ): Watts {
+        if (velocityHistory.isEmpty()) return Watts(0f)
 
-        val peakVelocity = velocityHistory.maxOrNull() ?: 0f
+        val peakVelocity = velocityHistory.maxByOrNull { it.value } ?: MetersPerSecond(0f)
         return calculatePower(weight, peakVelocity, bodyWeight)
     }
 
@@ -122,12 +127,12 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * KE = 0.5 × mass × velocity²
      *
-     * @param weight Barbell weight in kg
-     * @param velocity Barbell velocity in m/s
-     * @return Kinetic energy in Joules
+     * @param weight Barbell weight
+     * @param velocity Barbell velocity
+     * @return Kinetic energy
      */
-    fun calculateKineticEnergy(weight: Float, velocity: Float): Float {
-        return 0.5f * weight * velocity.pow(2)
+    fun calculateKineticEnergy(weight: Kilograms, velocity: MetersPerSecond): Joules {
+        return Joules(0.5f * weight.value * velocity.value.pow(2))
     }
 
     /**
@@ -135,18 +140,18 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * PE = mass × g × height
      *
-     * @param weight Barbell weight in kg
-     * @param height Height above starting position in meters
-     * @return Potential energy in Joules
+     * @param weight Barbell weight
+     * @param height Height above starting position
+     * @return Potential energy
      */
-    fun calculatePotentialEnergy(weight: Float, height: Float): Float {
-        return weight * GRAVITY * height
+    fun calculatePotentialEnergy(weight: Kilograms, height: Meters): Joules {
+        return Joules(weight.value * GRAVITY * height.value)
     }
 
     /**
      * Calculate total mechanical energy (KE + PE)
      */
-    fun calculateTotalEnergy(weight: Float, velocity: Float, height: Float): Float {
+    fun calculateTotalEnergy(weight: Kilograms, velocity: MetersPerSecond, height: Meters): Joules {
         return calculateKineticEnergy(weight, velocity) + calculatePotentialEnergy(weight, height)
     }
 
@@ -295,11 +300,11 @@ class BiomechanicsCalculator @Inject constructor() {
      *
      * jump_height = v² / (2 * g)
      *
-     * @param takeoffVelocity Vertical velocity at takeoff in m/s
-     * @return Jump height in meters
+     * @param takeoffVelocity Vertical velocity at takeoff
+     * @return Jump height
      */
-    fun calculateJumpHeight(takeoffVelocity: Float): Float {
-        return (takeoffVelocity.pow(2)) / (2 * GRAVITY)
+    fun calculateJumpHeight(takeoffVelocity: MetersPerSecond): Meters {
+        return Meters((takeoffVelocity.value.pow(2)) / (2 * GRAVITY))
     }
 
     /**

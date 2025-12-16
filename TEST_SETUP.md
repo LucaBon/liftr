@@ -47,7 +47,6 @@ Once the JDK is installed, run the tests:
 ./gradlew :app:testDebugUnitTest
 
 # View results
-open app/build/reports/tests/testDebugUnitTest/index.html
 ```
 
 ## Alternative: Use JDK 17

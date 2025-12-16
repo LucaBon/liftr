@@ -2,7 +2,6 @@ package com.lifthelper.vision.pose
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.util.Log
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
@@ -11,19 +10,25 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
+import com.lifthelper.domain.error.LiftHelperError
+import com.lifthelper.domain.error.PoseErrorCode
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.util.Constants
-import com.lifthelper.util.Constants.TAG_POSE
 import dagger.hilt.android.qualifiers.ApplicationContext
-import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PoseDetector @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
+    @ApplicationContext private val context: Context,
+    private val logger: Logger
+) : IPoseDetector {
+    companion object {
+        private const val TAG = "PoseDetector"
+    }
     private var poseLandmarker: PoseLandmarker? = null
     private var latestResult: PoseLandmarkerResult? = null
     private var lastProcessedTimestamp = 0L
@@ -35,7 +40,7 @@ class PoseDetector @Inject constructor(
     private var currentModelPath: String = Constants.POSE_MODEL_WORKOUT
 
     init {
-        Log.d(TAG_POSE, "PoseDetector initializing...")
+        logger.d(TAG, "PoseDetector initializing...")
         setupPoseLandmarker(Constants.POSE_MODEL_WORKOUT)
     }
 
@@ -55,8 +60,7 @@ class PoseDetector @Inject constructor(
                 currentModelPath = modelPath
             }
 
-            Log.i(TAG_POSE, "Initializing PoseLandmarker with model: $modelPath")
-            Timber.d("Initializing PoseLandmarker with model: $modelPath")
+            logger.i(TAG, "Initializing PoseLandmarker with model: $modelPath")
 
             val baseOptions = BaseOptions.builder()
                 .setModelAssetPath(modelPath)
@@ -75,24 +79,23 @@ class PoseDetector @Inject constructor(
                     latestResult = result
                     isProcessing = false
                     if (detectionCount % 30 == 0) {
-                        Log.d(TAG_POSE, "Pose detections: $detectionCount, skipped frames: $skippedFrames")
+                        logger.d(TAG, "Pose detections: $detectionCount, skipped frames: $skippedFrames")
                     }
                 }
                 .setErrorListener { error ->
-                    Log.e(TAG_POSE, "PoseDetector callback error: ${error.message}")
-                    Timber.e("PoseDetector callback error: ${error.message}")
+                    logger.e(TAG, "PoseDetector callback error: ${error.message}")
                     isProcessing = false
                 }
                 .build()
 
             poseLandmarker = PoseLandmarker.createFromOptions(context, options)
-            Log.i(TAG_POSE, "✅ PoseLandmarker initialized successfully with GPU delegate")
-            Timber.d("✅ PoseLandmarker initialized successfully with GPU delegate")
+            logger.i(TAG, "✅ PoseLandmarker initialized successfully with GPU delegate")
+            logger.d(TAG, "✅ PoseLandmarker initialized successfully with GPU delegate")
         } catch (e: Exception) {
-            Timber.e(e, "❌ Failed to initialize PoseLandmarker")
+            logger.e(TAG, "❌ Failed to initialize PoseLandmarker")
             // Try with CPU delegate as fallback
             try {
-                Timber.w("Retrying with CPU delegate...")
+                logger.w(TAG, "Retrying with CPU delegate...")
                 val baseOptions = BaseOptions.builder()
                     .setModelAssetPath(modelPath)
                     .setDelegate(Delegate.CPU)
@@ -110,23 +113,27 @@ class PoseDetector @Inject constructor(
                         isProcessing = false
                     }
                     .setErrorListener { error ->
-                        Timber.e("PoseDetector error: ${error.message}")
+                        logger.e(TAG, "PoseDetector error: ${error.message}")
                         isProcessing = false
                     }
                     .build()
 
                 poseLandmarker = PoseLandmarker.createFromOptions(context, options)
-                Timber.d("✅ PoseLandmarker initialized with CPU delegate")
+                logger.d(TAG, "✅ PoseLandmarker initialized with CPU delegate")
             } catch (cpuError: Exception) {
-                Timber.e(cpuError, "❌ Failed to initialize PoseLandmarker with CPU delegate")
+                logger.e(TAG, "Failed to initialize PoseLandmarker with CPU delegate", cpuError)
+                throw LiftHelperError.PoseDetectionError(
+                    "Failed to initialize pose detector",
+                    PoseErrorCode.MODEL_NOT_LOADED
+                )
             }
         }
     }
 
-    fun detectPose(imageProxy: ImageProxy, timestamp: Long): PoseResult? {
+    override fun detectPose(imageProxy: ImageProxy, timestamp: Long): PoseResult? {
         try {
             if (poseLandmarker == null) {
-                Timber.w("PoseLandmarker not initialized")
+                logger.w(TAG, "PoseLandmarker not initialized")
                 return null
             }
 
@@ -150,7 +157,7 @@ class PoseDetector @Inject constructor(
 
             // Log bitmap dimensions to debug size mismatch
             if (detectionCount % 90 == 0) {
-                Log.d(TAG_POSE, "MediaPipe receiving: ImageProxy=${imageWidth}x${imageHeight}, Bitmap=${bitmap.width}x${bitmap.height}")
+                logger.d(TAG, "MediaPipe receiving: ImageProxy=${imageWidth}x${imageHeight}, Bitmap=${bitmap.width}x${bitmap.height}")
             }
 
             val mpImage = BitmapImageBuilder(bitmap).build()
@@ -161,7 +168,7 @@ class PoseDetector @Inject constructor(
             // Return latest result (may be from previous frame)
             return latestResult?.let { convertToPoseResult(it, timestamp, imageWidth, imageHeight) }
         } catch (e: Exception) {
-            Timber.e(e, "Pose detection failed")
+            logger.e(TAG, "Pose detection failed")
             isProcessing = false
             return null
         }
@@ -211,7 +218,7 @@ class PoseDetector @Inject constructor(
                 bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
             }
         } catch (e: Exception) {
-            Timber.e(e, "Error converting ImageProxy to Bitmap")
+            logger.e(TAG, "Error converting ImageProxy to Bitmap")
         }
 
         return bitmap
@@ -235,7 +242,7 @@ class PoseDetector @Inject constructor(
         }
 
         // Log image dimensions for debugging orientation handling
-        Log.d(Constants.TAG_POSE,
+        logger.d(TAG,
             "PoseResult created: ${imageWidth}x${imageHeight}, " +
             "orientation: ${if (imageHeight > imageWidth) "portrait" else "landscape"}")
 
@@ -250,31 +257,31 @@ class PoseDetector @Inject constructor(
      * @param modelPath Path to the model file (use Constants.POSE_MODEL_*)
      */
     @Synchronized
-    fun switchModel(modelPath: String) {
+    override fun switchModel(modelPath: String) {
         if (modelPath == currentModelPath) {
-            Log.d(TAG_POSE, "Already using model: $modelPath")
+            logger.d(TAG, "Already using model: $modelPath")
             return
         }
 
-        Log.i(TAG_POSE, "Switching model: $currentModelPath → $modelPath")
+        logger.i(TAG, "Switching model: $currentModelPath → $modelPath")
         setupPoseLandmarker(modelPath)
     }
 
     /**
      * Get currently active model
      */
-    fun getCurrentModel(): String = currentModelPath
+    override fun getCurrentModel(): String = currentModelPath
 
     @Synchronized
-    fun close() {
+    override fun close() {
         try {
             isProcessing = false
             poseLandmarker?.close()
             poseLandmarker = null
             latestResult = null
-            Timber.d("✅ PoseDetector closed")
+            logger.d(TAG, "✅ PoseDetector closed")
         } catch (e: Exception) {
-            Timber.e(e, "Error closing PoseDetector")
+            logger.e(TAG, "Error closing PoseDetector")
         }
     }
 }

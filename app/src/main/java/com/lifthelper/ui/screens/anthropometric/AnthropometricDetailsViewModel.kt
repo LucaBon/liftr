@@ -2,8 +2,8 @@ package com.lifthelper.ui.screens.anthropometric
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.lifthelper.data.local.preferences.SettingsDataStore
 import com.lifthelper.domain.model.AnthropometricData
+import com.lifthelper.domain.repository.CalibrationRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,7 +14,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AnthropometricDetailsViewModel @Inject constructor(
-    private val settingsDataStore: SettingsDataStore
+    private val calibrationRepository: CalibrationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnthropometricDetailsState())
@@ -26,7 +26,7 @@ class AnthropometricDetailsViewModel @Inject constructor(
 
     private fun loadAnthropometricData() {
         viewModelScope.launch {
-            val calibrationData = settingsDataStore.calibrationData.first()
+            val calibrationData = calibrationRepository.getCalibrationData().first()
             val anthropometricData = calibrationData?.anthropometricData
 
             if (anthropometricData != null) {
@@ -146,7 +146,7 @@ class AnthropometricDetailsViewModel @Inject constructor(
                 )
 
                 // Save to DataStore
-                settingsDataStore.saveAnthropometricData(updatedData)
+                calibrationRepository.saveAnthropometricData(updatedData)
                 onComplete()
             } catch (e: Exception) {
                 // Handle error - could add error state to UI

@@ -10,7 +10,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.lifthelper.data.local.preferences.SettingsDataStore
+import com.lifthelper.domain.repository.CalibrationRepository
 import com.lifthelper.ui.screens.calibration.AnthropometricCalibrationScreen
 import com.lifthelper.ui.screens.calibration.CalibrationScreen
 import com.lifthelper.ui.screens.home.HomeScreen
@@ -22,9 +22,9 @@ import com.lifthelper.ui.screens.history.HistoryScreen
 @Composable
 fun NavGraph(
     navController: NavHostController = rememberNavController(),
-    settingsDataStore: SettingsDataStore
+    calibrationRepository: CalibrationRepository
 ) {
-    val isCalibrated by settingsDataStore.isCalibrated.collectAsState(initial = false)
+    val isCalibrated by calibrationRepository.isCalibrated().collectAsState(initial = false)
 
     val startDestination = if (isCalibrated) {
         Screen.Home.route
