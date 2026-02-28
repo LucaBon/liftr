@@ -1,6 +1,8 @@
 package com.lifthelper.vision.camera
 
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager as SystemCameraManager
 import android.util.Size
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -20,7 +22,8 @@ import javax.inject.Singleton
 @Singleton
 class CameraManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    @CameraExecutor private val cameraExecutor: ExecutorService
+    @CameraExecutor private val cameraExecutor: ExecutorService,
+    private val lensDistortionCorrector: LensDistortionCorrector
 ) {
     private var camera: Camera? = null
     private var imageAnalysis: ImageAnalysis? = null
@@ -154,7 +157,7 @@ class CameraManager @Inject constructor(
                 frameCount = 0
                 lastLogTime = System.currentTimeMillis()
 
-                // Log camera details to help diagnose telephoto vs wide-angle issues
+                // Log camera details and retrieve intrinsics for lens distortion correction
                 camera?.let { cam ->
                     val cameraInfo = cam.cameraInfo
                     Log.i(TAG_CAMERA, "✅ Camera started successfully")
@@ -167,6 +170,9 @@ class CameraManager @Inject constructor(
                     } catch (e: Exception) {
                         Log.d(TAG_CAMERA, "   Could not read zoom state")
                     }
+
+                    // Retrieve camera intrinsics for lens distortion correction
+                    retrieveCameraIntrinsics(analysisWidth, analysisHeight)
                 } ?: Log.w(TAG_CAMERA, "Camera object is null after binding")
                 Timber.d("✅ Camera started successfully")
             } catch (e: Exception) {
@@ -209,6 +215,67 @@ class CameraManager @Inject constructor(
         return currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
     }
 
+    /**
+     * Retrieve camera intrinsics for lens distortion correction.
+     *
+     * This method attempts to get device-specific camera calibration parameters
+     * to correct for lens distortion (barrel/pincushion effects).
+     */
+    private fun retrieveCameraIntrinsics(imageWidth: Int, imageHeight: Int) {
+        try {
+            val systemCameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? SystemCameraManager
+            if (systemCameraManager == null) {
+                Log.w(TAG_CAMERA, "Could not get system camera manager for intrinsics")
+                return
+            }
+
+            // Get the physical camera ID
+            val cameraIdList = systemCameraManager.cameraIdList
+            if (cameraIdList.isEmpty()) {
+                Log.w(TAG_CAMERA, "No camera IDs available")
+                return
+            }
+
+            // Find the camera ID matching our current selector (front/back)
+            val isFrontCamera = currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+            val cameraId = cameraIdList.firstOrNull { id ->
+                val characteristics = systemCameraManager.getCameraCharacteristics(id)
+                val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                lensFacing == if (isFrontCamera) {
+                    CameraCharacteristics.LENS_FACING_FRONT
+                } else {
+                    CameraCharacteristics.LENS_FACING_BACK
+                }
+            }
+
+            if (cameraId == null) {
+                Log.w(TAG_CAMERA, "Could not find matching camera ID")
+                return
+            }
+
+            Log.d(TAG_CAMERA, "Retrieving intrinsics for camera: $cameraId")
+
+            // Clear previous intrinsics when camera changes
+            lensDistortionCorrector.clearCache()
+
+            // Retrieve intrinsics
+            val intrinsics = lensDistortionCorrector.retrieveIntrinsics(
+                systemCameraManager,
+                cameraId,
+                imageWidth,
+                imageHeight
+            )
+
+            if (intrinsics != null) {
+                Log.i(TAG_CAMERA, "✅ Camera intrinsics loaded for lens distortion correction")
+            } else {
+                Log.i(TAG_CAMERA, "ℹ️ Camera intrinsics not available, using empirical correction model")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG_CAMERA, "Failed to retrieve camera intrinsics: ${e.message}")
+        }
+    }
+
     fun stopCamera() {
         try {
             Log.d(TAG_CAMERA, "stopCamera() called - camera=$camera, isInitializing=$isInitializing")
@@ -229,6 +296,9 @@ class CameraManager @Inject constructor(
 
             camera = null
             imageAnalysis = null
+
+            // Clear lens distortion intrinsics cache
+            lensDistortionCorrector.clearCache()
 
             Log.i(TAG_CAMERA, "✅ Camera stopped (total frames processed: $frameCount)")
             Timber.d("✅ Camera stopped")

@@ -17,4 +17,12 @@ interface WorkoutDao {
 
     @Delete
     suspend fun deleteWorkout(workout: WorkoutEntity)
+
+    // Analytics queries
+
+    @Query("SELECT COUNT(*) FROM workouts")
+    suspend fun getWorkoutCount(): Int
+
+    @Query("SELECT * FROM workouts ORDER BY date DESC LIMIT :limit")
+    suspend fun getRecentWorkouts(limit: Int): List<WorkoutEntity>
 }

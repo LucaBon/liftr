@@ -112,6 +112,13 @@ class AnthropometricDetailsViewModel @Inject constructor(
             try {
                 // Convert centimeters back to meters
                 val userHeight = state.userHeight.toFloatOrNull()?.div(100) ?: originalData.userHeight
+
+                // IMPROVE-8: Validate userHeight > 0 to prevent division by zero
+                if (userHeight <= 0f) {
+                    _uiState.value = _uiState.value.copy(errorMessage = "Height must be greater than zero")
+                    return@launch
+                }
+
                 val neckHeight = state.neckHeight.toFloatOrNull()?.div(100) ?: originalData.getNeckHeight()
                 val torsoHeight = state.torsoHeight.toFloatOrNull()?.div(100) ?: originalData.getTorsoHeight()
                 val upperLegHeight = state.upperLegHeight.toFloatOrNull()?.div(100) ?: originalData.getUpperLegHeight()
@@ -147,9 +154,13 @@ class AnthropometricDetailsViewModel @Inject constructor(
 
                 // Save to DataStore
                 calibrationRepository.saveAnthropometricData(updatedData)
+                _uiState.value = _uiState.value.copy(errorMessage = null)
                 onComplete()
             } catch (e: Exception) {
-                // Handle error - could add error state to UI
+                // IMPROVE-8: Surface error to UI instead of silently swallowing
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = "Failed to save: ${e.message ?: "Unknown error"}"
+                )
             }
         }
     }
@@ -171,5 +182,6 @@ data class AnthropometricDetailsState(
     val hasData: Boolean = false,
     val captureQuality: com.lifthelper.domain.model.CalibrationQuality = com.lifthelper.domain.model.CalibrationQuality.NONE,
     val alignmentMessage: String? = null,
-    val originalData: AnthropometricData? = null
+    val originalData: AnthropometricData? = null,
+    val errorMessage: String? = null
 )

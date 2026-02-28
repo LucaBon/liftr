@@ -25,6 +25,10 @@ object Constants {
     const val POSE_MIN_TRACKING_CONFIDENCE = 0.3f
     const val POSE_MIN_PRESENCE_CONFIDENCE = 0.3f
 
+    // Landmark visibility threshold — minimum confidence to consider a landmark valid.
+    // MediaPipe returns 0.0-1.0; 0.5 balances detection sensitivity vs false positives.
+    const val LANDMARK_VISIBILITY_THRESHOLD = 0.5f
+
     // Velocity Calculation
     const val VELOCITY_HISTORY_SIZE = 5 // Buffer size for 2nd order backward difference (requires minimum 3 points)
     const val KALMAN_PROCESS_NOISE = 0.01f

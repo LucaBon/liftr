@@ -2,6 +2,8 @@ package com.lifthelper.di
 
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.exercise.strategy.BackSquatStrategy
+import com.lifthelper.domain.exercise.strategy.BenchPressStrategy
+import com.lifthelper.domain.exercise.strategy.DeadliftStrategy
 import com.lifthelper.domain.exercise.strategy.FrontSquatStrategy
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.vision.IPositionCalculator
@@ -46,17 +48,45 @@ object ExerciseModule {
     }
 
     /**
+     * Provides BenchPressStrategy.
+     */
+    @Provides
+    @Singleton
+    fun provideBenchPressStrategy(
+        positionCalculator: IPositionCalculator,
+        logger: Logger
+    ): BenchPressStrategy {
+        return BenchPressStrategy(positionCalculator, logger)
+    }
+
+    /**
+     * Provides DeadliftStrategy.
+     */
+    @Provides
+    @Singleton
+    fun provideDeadliftStrategy(
+        positionCalculator: IPositionCalculator,
+        logger: Logger
+    ): DeadliftStrategy {
+        return DeadliftStrategy(positionCalculator, logger)
+    }
+
+    /**
      * Provides ExerciseStrategyFactory.
      */
     @Provides
     @Singleton
     fun provideExerciseStrategyFactory(
         backSquatStrategy: BackSquatStrategy,
-        frontSquatStrategy: FrontSquatStrategy
+        frontSquatStrategy: FrontSquatStrategy,
+        benchPressStrategy: BenchPressStrategy,
+        deadliftStrategy: DeadliftStrategy
     ): ExerciseStrategyFactory {
         return ExerciseStrategyFactory(
             backSquatStrategy = backSquatStrategy,
-            frontSquatStrategy = frontSquatStrategy
+            frontSquatStrategy = frontSquatStrategy,
+            benchPressStrategy = benchPressStrategy,
+            deadliftStrategy = deadliftStrategy
         )
     }
 }

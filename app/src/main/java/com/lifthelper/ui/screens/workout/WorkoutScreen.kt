@@ -3,7 +3,12 @@ package com.lifthelper.ui.screens.workout
 import android.Manifest
 import android.util.Log
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -12,19 +17,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.R
+import com.lifthelper.domain.exercise.Severity
+import com.lifthelper.domain.model.RepQualityScore
+import com.lifthelper.domain.model.ScoreGrade
+import com.lifthelper.domain.model.SetSummary
 import com.lifthelper.ui.components.CalibrationWarningOverlay
+import com.lifthelper.ui.components.PrCelebrationOverlay
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.ui.components.RealTimeFeedbackOverlay
+import com.lifthelper.ui.theme.VbtStopAlert
 import com.lifthelper.util.Constants.TAG_WORKOUT
 import com.lifthelper.util.getRotationDegrees
 import com.lifthelper.util.isPortrait
@@ -36,13 +51,42 @@ import javax.inject.Inject
 @Composable
 fun WorkoutScreen(
     onNavigateBack: () -> Unit,
-    viewModel: WorkoutViewModel = hiltViewModel(),
-    cameraManager: CameraManager = hiltViewModel<WorkoutCameraViewModel>().cameraManager
+    viewModel: WorkoutViewModel = hiltViewModel()
 ) {
+    // BUG-D fix: create camera ViewModel inside composable body, not in parameter default
+    val cameraViewModel: WorkoutCameraViewModel = hiltViewModel()
+    val cameraManager = cameraViewModel.cameraManager
     val uiState by viewModel.uiState.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val orientation = rememberOrientation()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showSaveDialog by remember { mutableStateOf(false) }
+
+    // Save confirmation dialog
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text(stringResource(R.string.save_workout_title)) },
+            text = { Text(stringResource(R.string.save_workout_message, uiState.completedSetCount)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.saveWorkout()
+                    showSaveDialog = false
+                    onNavigateBack()
+                }) {
+                    Text(stringResource(R.string.save_workout_save))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showSaveDialog = false
+                    onNavigateBack()
+                }) {
+                    Text(stringResource(R.string.save_workout_discard))
+                }
+            }
+        )
+    }
 
     // Handle errors via Snackbar
     LaunchedEffect(uiState.error) {
@@ -75,7 +119,13 @@ fun WorkoutScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.workout_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = {
+                        if (viewModel.hasUnsavedSets()) {
+                            showSaveDialog = true
+                        } else {
+                            onNavigateBack()
+                        }
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
@@ -115,8 +165,19 @@ fun WorkoutScreen(
                         velocityData = uiState.velocityData,
                         repCount = uiState.repCount,
                         targetVelocityRange = uiState.targetVelocityRange,
-                        modifier = Modifier.align(Alignment.TopCenter)
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        vbtZone = uiState.vbtZone,
+                        velocityLossState = uiState.velocityLossState,
+                        vbtZonesEnabled = uiState.vbtZonesEnabled
                     )
+
+                    // Velocity loss stop alert banner
+                    if (uiState.velocityLossState.shouldStop) {
+                        VelocityLossStopAlert(
+                            thresholdPercent = (uiState.velocityLossState.threshold * 100).toInt(),
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
                 }
 
                 // Calibration warning overlay (shown below feedback)
@@ -147,7 +208,8 @@ fun WorkoutScreen(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(16.dp),
+                        .padding(16.dp)
+                        .zIndex(10f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -202,6 +264,253 @@ fun WorkoutScreen(
                 }
             }
         }
+    }
+
+    // Post-set summary sheet
+    uiState.lastSetSummary?.let { summary ->
+        SetSummarySheet(
+            summary = summary,
+            onDismiss = { viewModel.dismissSummary() }
+        )
+    }
+
+    // PR celebration overlay
+    if (uiState.newPersonalRecords.isNotEmpty()) {
+        PrCelebrationOverlay(
+            records = uiState.newPersonalRecords,
+            onDismiss = { viewModel.dismissPRCelebration() }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SetSummarySheet(
+    summary: SetSummary,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Header
+            Text(
+                text = stringResource(R.string.set_summary_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+
+            Text(
+                text = "${summary.exerciseType.getDisplayName()} \u00B7 ${summary.weight.value.toInt()} kg \u00B7 " +
+                    stringResource(R.string.set_summary_reps_format, summary.completedReps.value, summary.targetReps.value),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Overall score bar
+            ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Per-rep score table
+            if (summary.repScores.isNotEmpty()) {
+                RepScoreTable(
+                    scores = summary.repScores,
+                    velocities = summary.repVelocities,
+                    bestIndex = summary.bestRepIndex,
+                    worstIndex = summary.worstRepIndex
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Aggregate form issues
+            if (summary.aggregateFormIssues.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.set_summary_form_issues),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                summary.aggregateFormIssues.forEach { aggregate ->
+                    val reps = aggregate.repNumbers.joinToString(", ")
+                    val icon = when (aggregate.issue.severity) {
+                        Severity.CRITICAL -> "\u26A0\uFE0F"
+                        Severity.WARNING -> "\u26A0"
+                        Severity.INFO -> "\u2139"
+                    }
+                    Text(
+                        text = "$icon ${aggregate.issue.message} (reps $reps)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Stats row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatItem(
+                    label = stringResource(R.string.set_summary_avg_velocity),
+                    value = "%.2f m/s".format(summary.avgVelocity.value)
+                )
+                StatItem(
+                    label = stringResource(R.string.set_summary_velocity_loss),
+                    value = "${(summary.velocityLossPercent * 100).toInt()}%%"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Dismiss button
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.set_summary_dismiss))
+            }
+        }
+    }
+}
+
+@Composable
+fun ScoreBar(score: Int, grade: ScoreGrade) {
+    val gradeColor = Color(grade.colorHex)
+
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$score/100",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = gradeColor
+            )
+            Text(
+                text = grade.label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = gradeColor
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { score / 100f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp),
+            color = gradeColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    }
+}
+
+@Composable
+fun RepScoreTable(
+    scores: List<RepQualityScore>,
+    velocities: List<com.lifthelper.domain.value.MetersPerSecond>,
+    bestIndex: Int,
+    worstIndex: Int
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
+        // Header row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            TableCell(text = stringResource(R.string.set_summary_rep_header), weight = 0.8f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_vel_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_depth_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_form_header), weight = 0.8f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_tempo_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_score_header), weight = 1f, bold = true)
+            TableCell(text = "", weight = 0.6f, bold = false) // marker column
+        }
+
+        // Data rows
+        scores.forEachIndexed { index, score ->
+            val velocity = velocities.getOrNull(index)
+            val marker = when (index) {
+                bestIndex -> "\u2605" // star
+                worstIndex -> "\u25BC" // down triangle
+                else -> ""
+            }
+            val rowColor = if (index % 2 == 0) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(rowColor)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                TableCell(text = "${index + 1}", weight = 0.8f)
+                TableCell(text = velocity?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
+                TableCell(text = if (score.depthAchieved) "\u2713" else "~", weight = 1f)
+                TableCell(text = "${score.formScore}", weight = 0.8f)
+                TableCell(text = "${score.tempoScore}", weight = 1f)
+                TableCell(
+                    text = "${score.totalScore}",
+                    weight = 1f,
+                    color = Color(score.grade.colorHex)
+                )
+                TableCell(text = marker, weight = 0.6f)
+            }
+        }
+    }
+}
+
+@Composable
+fun RowScope.TableCell(
+    text: String,
+    weight: Float,
+    bold: Boolean = false,
+    color: Color = Color.Unspecified
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        color = color,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.weight(weight)
+    )
+}
+
+@Composable
+fun StatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -267,7 +576,7 @@ fun ExerciseSelector(
 
     ExposedDropdownMenuBox(
         expanded = expanded,
-        onExpandedChange = { expanded = it },
+        onExpandedChange = { expanded = !expanded },
         modifier = modifier
     ) {
         OutlinedTextField(
@@ -276,7 +585,7 @@ fun ExerciseSelector(
             readOnly = true,
             label = { Text("Exercise") },
             trailingIcon = {
-                Icon(Icons.Default.ArrowDropDown, contentDescription = "Select exercise")
+                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -301,6 +610,33 @@ fun ExerciseSelector(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun VelocityLossStopAlert(
+    thresholdPercent: Int,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .background(VbtStopAlert.copy(alpha = 0.95f), RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.vbt_stop_alert_title, thresholdPercent),
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = stringResource(R.string.vbt_stop_alert_message),
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.9f)
+        )
     }
 }
 

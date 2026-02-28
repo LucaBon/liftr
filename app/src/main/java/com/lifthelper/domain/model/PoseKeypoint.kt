@@ -11,7 +11,8 @@ data class PoseResult(
     val landmarks: List<PoseKeypoint>,
     val timestamp: Long,
     val imageWidth: Int = 640,
-    val imageHeight: Int = 480
+    val imageHeight: Int = 480,
+    val isPortrait: Boolean = false  // Track orientation for coordinate normalization
 ) {
     companion object {
         // MediaPipe Pose landmark indices (Full set: 0-32)

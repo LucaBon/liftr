@@ -3,7 +3,7 @@ package com.lifthelper.ui.screens.home
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -56,17 +56,17 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // View History Button
+            // Analytics Button
             OutlinedButton(
                 onClick = onViewHistory,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    imageVector = Icons.Default.History,
+                    imageVector = Icons.Default.BarChart,
                     contentDescription = null
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(stringResource(R.string.view_history))
+                Text(stringResource(R.string.analytics_title))
             }
 
             Spacer(modifier = Modifier.height(8.dp))

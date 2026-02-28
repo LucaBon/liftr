@@ -2,6 +2,7 @@ package com.lifthelper.vision.pose
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
@@ -17,22 +18,35 @@ import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
 import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.util.Constants
+import com.lifthelper.vision.camera.LensDistortionCorrector
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class PoseDetector @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val logger: Logger
+    private val logger: Logger,
+    private val lensDistortionCorrector: LensDistortionCorrector
 ) : IPoseDetector {
     companion object {
         private const val TAG = "PoseDetector"
     }
+    /**
+     * Cached result with its associated dimensions to avoid stale dimension mismatch (BUG-E fix).
+     */
+    private data class CachedResult(
+        val result: PoseLandmarkerResult,
+        val width: Int,
+        val height: Int
+    )
+
     private var poseLandmarker: PoseLandmarker? = null
-    private var latestResult: PoseLandmarkerResult? = null
-    private var lastProcessedTimestamp = 0L
-    private var isProcessing = false
+    // Thread-safe: accessed from MediaPipe callback thread and camera processing thread (BUG-A fix)
+    private val cachedResult = AtomicReference<CachedResult?>(null)
+    @Volatile private var lastProcessedTimestamp = 0L
+    @Volatile private var isProcessing = false
     private val minFrameIntervalMs = 66L // ~15 FPS max - more aggressive for buffer management
 
     private var detectionCount = 0
@@ -76,7 +90,14 @@ class PoseDetector @Inject constructor(
                 .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
                 .setResultListener { result, _ ->
                     detectionCount++
-                    latestResult = result
+                    // Note: dimensions are set when processImageProxy sends the frame.
+                    // The callback only updates the result; dimensions come from the cached value.
+                    val current = cachedResult.get()
+                    cachedResult.set(CachedResult(
+                        result = result,
+                        width = current?.width ?: 0,
+                        height = current?.height ?: 0
+                    ))
                     isProcessing = false
                     if (detectionCount % 30 == 0) {
                         logger.d(TAG, "Pose detections: $detectionCount, skipped frames: $skippedFrames")
@@ -109,7 +130,12 @@ class PoseDetector @Inject constructor(
                     .setMinPosePresenceConfidence(Constants.POSE_MIN_PRESENCE_CONFIDENCE)
                     .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
                     .setResultListener { result, _ ->
-                        latestResult = result
+                        val current = cachedResult.get()
+                        cachedResult.set(CachedResult(
+                            result = result,
+                            width = current?.width ?: 0,
+                            height = current?.height ?: 0
+                        ))
                         isProcessing = false
                     }
                     .setErrorListener { error ->
@@ -130,47 +156,129 @@ class PoseDetector @Inject constructor(
         }
     }
 
-    override fun detectPose(imageProxy: ImageProxy, timestamp: Long): PoseResult? {
+    override fun detectPose(frame: com.lifthelper.domain.model.CameraFrame): PoseResult? {
+        return frame.data.process(object : com.lifthelper.domain.model.FrameProcessor<PoseResult?> {
+            override fun process(data: Any): PoseResult? {
+                return processImageProxy(data as ImageProxy, frame.timestamp)
+            }
+        })
+    }
+
+    /**
+     * Internal method to process ImageProxy frame data.
+     * This keeps the Android-specific logic isolated.
+     */
+    private fun processImageProxy(imageProxy: ImageProxy, timestamp: Long): PoseResult? {
+        var originalBitmap: Bitmap? = null
+        var rotatedBitmap: Bitmap? = null
+
         try {
             if (poseLandmarker == null) {
                 logger.w(TAG, "PoseLandmarker not initialized")
                 return null
             }
 
-            // Get actual image dimensions
-            val imageWidth = imageProxy.width
-            val imageHeight = imageProxy.height
+            // Get image rotation from CameraX (0°, 90°, 180°, or 270°)
+            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+
+            // Get original image dimensions (before rotation)
+            val originalWidth = imageProxy.width
+            val originalHeight = imageProxy.height
 
             // Skip frame if we're still processing or too soon since last frame
             val timeSinceLastFrame = timestamp - lastProcessedTimestamp
             if (isProcessing || timeSinceLastFrame < minFrameIntervalMs) {
-                // Return latest cached result without processing new frame
-                return latestResult?.let { convertToPoseResult(it, timestamp, imageWidth, imageHeight) }
+                skippedFrames++
+                // Return latest cached result with its ORIGINAL dimensions (BUG-E fix:
+                // never mix cached landmarks with current frame's dimensions)
+                val cached = cachedResult.get()
+                return cached?.let { convertToPoseResult(it.result, timestamp, it.width, it.height) }
             }
 
             // Mark as processing and update timestamp
             isProcessing = true
             lastProcessedTimestamp = timestamp
 
-            // Convert ImageProxy to MPImage
-            val bitmap = imageProxyToBitmap(imageProxy)
+            // Convert ImageProxy to Bitmap
+            originalBitmap = imageProxyToBitmap(imageProxy)
 
-            // Log bitmap dimensions to debug size mismatch
-            if (detectionCount % 90 == 0) {
-                logger.d(TAG, "MediaPipe receiving: ImageProxy=${imageWidth}x${imageHeight}, Bitmap=${bitmap.width}x${bitmap.height}")
+            // Rotate bitmap to upright orientation for MediaPipe
+            // MediaPipe expects upright images (person's head at top)
+            val (finalBitmap, finalWidth, finalHeight) = if (rotationDegrees != 0) {
+                rotatedBitmap = rotateBitmap(originalBitmap, rotationDegrees.toFloat())
+                // After rotation, width and height are swapped for 90° and 270° rotations
+                val newWidth = rotatedBitmap.width
+                val newHeight = rotatedBitmap.height
+
+                Triple(rotatedBitmap, newWidth, newHeight)
+            } else {
+                // No rotation needed, use original bitmap
+                rotatedBitmap = originalBitmap
+                Triple(originalBitmap, originalWidth, originalHeight)
             }
 
-            val mpImage = BitmapImageBuilder(bitmap).build()
+            // Log rotation info to debug portrait mode issues
+            if (detectionCount % 90 == 0) {
+                logger.d(TAG, "Image rotation: ${rotationDegrees}°, " +
+                        "Original: ${originalWidth}x${originalHeight}, " +
+                        "Rotated: ${finalBitmap.width}x${finalBitmap.height}, " +
+                        "Final dimensions for PoseResult: ${finalWidth}x${finalHeight}")
+            }
+
+            val mpImage = BitmapImageBuilder(finalBitmap).build()
+
+            // Pre-set dimensions so the async callback can use them (BUG-A/E fix)
+            val current = cachedResult.get()
+            if (current != null) {
+                cachedResult.set(CachedResult(current.result, finalWidth, finalHeight))
+            }
 
             // Detect pose (async, result comes via callback)
             poseLandmarker?.detectAsync(mpImage, timestamp)
 
             // Return latest result (may be from previous frame)
-            return latestResult?.let { convertToPoseResult(it, timestamp, imageWidth, imageHeight) }
+            // Use cached dimensions that match the cached landmarks
+            val cached = cachedResult.get()
+            return cached?.let { convertToPoseResult(it.result, timestamp, it.width, it.height) }
         } catch (e: Exception) {
-            logger.e(TAG, "Pose detection failed")
+            logger.e(TAG, "Pose detection failed", e)
             isProcessing = false
             return null
+        } finally {
+            // Always recycle bitmaps to prevent memory leaks
+            // If rotation occurred, we have two separate bitmaps to recycle
+            // If no rotation, originalBitmap and rotatedBitmap reference the same object
+            if (rotatedBitmap != null && rotatedBitmap != originalBitmap) {
+                rotatedBitmap.recycle()
+            }
+            originalBitmap?.recycle()
+        }
+    }
+
+    /**
+     * Rotate a bitmap by the specified angle.
+     *
+     * This is critical for portrait mode where the camera sensor provides
+     * landscape images that need to be rotated 90° for MediaPipe to detect
+     * upright poses correctly.
+     *
+     * @param source The original bitmap
+     * @param angle Rotation angle in degrees (typically 0°, 90°, 180°, or 270°)
+     * @return Rotated bitmap (may be the same instance if angle is 0)
+     */
+    private fun rotateBitmap(source: Bitmap, angle: Float): Bitmap {
+        if (angle == 0f) {
+            return source
+        }
+
+        val matrix = Matrix()
+        matrix.postRotate(angle)
+
+        return try {
+            Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+        } catch (e: Exception) {
+            logger.e(TAG, "Failed to rotate bitmap by $angle degrees", e)
+            source  // Return original on failure
         }
     }
 
@@ -241,12 +349,23 @@ class PoseDetector @Inject constructor(
             )
         }
 
-        // Log image dimensions for debugging orientation handling
+        // Apply lens distortion correction to all landmarks
+        val correctedLandmarks = lensDistortionCorrector.correctLandmarks(
+            landmarks,
+            imageWidth,
+            imageHeight
+        )
+
+        // Determine orientation based on image dimensions
+        val isPortrait = imageHeight > imageWidth
+
+        // Log image dimensions and correction status for debugging
         logger.d(TAG,
             "PoseResult created: ${imageWidth}x${imageHeight}, " +
-            "orientation: ${if (imageHeight > imageWidth) "portrait" else "landscape"}")
+            "orientation: ${if (isPortrait) "portrait" else "landscape"}, " +
+            "lens correction: ${lensDistortionCorrector.getCorrectionMode()}")
 
-        return PoseResult(landmarks, timestamp, imageWidth, imageHeight)
+        return PoseResult(correctedLandmarks, timestamp, imageWidth, imageHeight, isPortrait)
     }
 
     /**
@@ -278,7 +397,7 @@ class PoseDetector @Inject constructor(
             isProcessing = false
             poseLandmarker?.close()
             poseLandmarker = null
-            latestResult = null
+            cachedResult.set(null)
             logger.d(TAG, "✅ PoseDetector closed")
         } catch (e: Exception) {
             logger.e(TAG, "Error closing PoseDetector")

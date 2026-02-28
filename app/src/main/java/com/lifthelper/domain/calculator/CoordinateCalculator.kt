@@ -2,6 +2,8 @@ package com.lifthelper.domain.calculator
 
 import com.lifthelper.domain.model.PoseKeypoint
 import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.sqrt
 
 /**
@@ -60,7 +62,7 @@ class CoordinateCalculator {
 
         val headY = visibleHeadLandmarks
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= 0.5f }
+            .filter { it.visibility >= com.lifthelper.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
             .map { it.y }
             .average()
             .toFloat()
@@ -73,7 +75,7 @@ class CoordinateCalculator {
         val referenceY = if (ankleVisible) {
             val ankles = listOf(27, 28)
                 .mapNotNull { landmarks.getOrNull(it) }
-                .filter { it.visibility >= 0.5f }
+                .filter { it.visibility >= com.lifthelper.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
                 .map { it.y }
                 .average()
                 .toFloat()
@@ -81,7 +83,7 @@ class CoordinateCalculator {
         } else {
             val knees = listOf(25, 26)
                 .mapNotNull { landmarks.getOrNull(it) }
-                .filter { it.visibility >= 0.5f }
+                .filter { it.visibility >= com.lifthelper.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
                 .map { it.y }
                 .average()
                 .toFloat()
@@ -220,7 +222,7 @@ class CoordinateCalculator {
     fun averageY(landmarks: List<PoseKeypoint>, vararg indices: Int): Float {
         return indices.toList()
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= 0.5f }
+            .filter { it.visibility >= com.lifthelper.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
             .map { it.y }
             .average()
             .toFloat()
@@ -238,10 +240,66 @@ class CoordinateCalculator {
     fun averageX(landmarks: List<PoseKeypoint>, vararg indices: Int): Float {
         return indices.toList()
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= 0.5f }
+            .filter { it.visibility >= com.lifthelper.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
             .map { it.x }
             .average()
             .toFloat()
+    }
+
+    /**
+     * Calculates the angle at vertex B formed by rays BA and BC.
+     *
+     * Uses the dot product formula: cos(angle) = (BA · BC) / (|BA| * |BC|)
+     * Returns the angle in degrees in the range [0, 180].
+     * Returns 0 if either segment has zero length.
+     *
+     * @param ax X coordinate of point A
+     * @param ay Y coordinate of point A
+     * @param bx X coordinate of point B (vertex)
+     * @param by Y coordinate of point B (vertex)
+     * @param cx X coordinate of point C
+     * @param cy Y coordinate of point C
+     * @return Angle at B in degrees [0, 180]
+     */
+    fun angleBetweenPoints(
+        ax: Float, ay: Float,
+        bx: Float, by: Float,
+        cx: Float, cy: Float
+    ): Float {
+        val bax = ax - bx
+        val bay = ay - by
+        val bcx = cx - bx
+        val bcy = cy - by
+
+        val dot = bax * bcx + bay * bcy
+        val magBA = sqrt(bax * bax + bay * bay)
+        val magBC = sqrt(bcx * bcx + bcy * bcy)
+
+        if (magBA == 0f || magBC == 0f) return 0f
+
+        val cosAngle = (dot / (magBA * magBC)).coerceIn(-1f, 1f)
+        return Math.toDegrees(acos(cosAngle).toDouble()).toFloat()
+    }
+
+    /**
+     * Calculates the torso angle from vertical.
+     *
+     * 0 degrees means the torso is perfectly upright (shoulder directly above hip).
+     * 90 degrees means the torso is horizontal.
+     *
+     * @param shoulderX X coordinate of shoulder midpoint
+     * @param shoulderY Y coordinate of shoulder midpoint
+     * @param hipX X coordinate of hip midpoint
+     * @param hipY Y coordinate of hip midpoint
+     * @return Torso angle from vertical in degrees [0, 90]
+     */
+    fun torsoAngle(
+        shoulderX: Float, shoulderY: Float,
+        hipX: Float, hipY: Float
+    ): Float {
+        return Math.toDegrees(
+            atan2(abs(shoulderX - hipX), abs(shoulderY - hipY)).toDouble()
+        ).toFloat()
     }
 
     /**

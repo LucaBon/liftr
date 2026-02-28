@@ -43,4 +43,116 @@
     <!-- Permissions -->
     <string name="camera_permission_required">Camera permission is required to track your movements</string>
     <string name="grant_permission">Grant Permission</string>
+
+    <!-- Measurement Accuracy -->
+    <string name="accuracy_info_title">Measurement Accuracy</string>
+    <string name="accuracy_info_description">Lift Helper uses computer vision and biomechanics calculations to track your movements. Accuracy depends on several factors:</string>
+    <string name="accuracy_centered">Best accuracy (98–99%): Keep your body centered in the frame</string>
+    <string name="accuracy_edge">Reduced accuracy (90–95%): Measurements near frame edges affected by lens distortion</string>
+    <string name="accuracy_optimal">Optimal conditions: Portrait or landscape mode, proper lighting, full body visible</string>
+    <string name="accuracy_tip">Tip: The app automatically corrects for lens distortion on supported devices. For best results, follow the centering guide during calibration.</string>
+
+    <!-- Lens Distortion Info -->
+    <string name="lens_correction_enabled">Lens distortion correction: Enabled (device-specific)</string>
+    <string name="lens_correction_empirical">Lens distortion correction: Enabled (generic model)</string>
+    <string name="lens_correction_disabled">Lens distortion correction: Disabled</string>
+    <string name="lens_correction_info">Smartphone cameras have barrel distortion that affects measurements near edges. This app applies correction when possible.</string>
+
+    <!-- VBT Zones -->
+    <string name="vbt_zone_grinding">Grinding</string>
+    <string name="vbt_zone_max_strength">Max Strength</string>
+    <string name="vbt_zone_strength_speed">Strength-Speed</string>
+    <string name="vbt_zone_speed_strength">Speed-Strength</string>
+    <string name="vbt_zone_speed_power">Speed/Power</string>
+    <string name="vbt_velocity_loss_label">Loss: %d%%</string>
+    <string name="vbt_stop_alert_title">VELOCITY DROP > %d%%</string>
+    <string name="vbt_stop_alert_message">Consider ending the set</string>
+    <string name="vbt_estimated_1rm">Est. 1RM: %.1f kg</string>
+    <string name="vbt_estimated_1rm_data_points">Based on %d data points</string>
+    <string name="vbt_settings_title">VBT Settings</string>
+    <string name="vbt_zones_enabled">VBT Zones</string>
+    <string name="vbt_zones_enabled_description">Show velocity zone colors during workout</string>
+    <string name="vbt_velocity_loss_threshold">Velocity Loss Threshold</string>
+    <string name="vbt_velocity_loss_threshold_description">Alert when rep velocity drops below fastest rep by this percentage</string>
+    <string name="vbt_threshold_disabled">Disabled</string>
+
+    <!-- Feedback Settings -->
+    <string name="feedback_settings_title">Feedback</string>
+    <string name="audio_feedback_enabled">Audio Feedback</string>
+    <string name="audio_feedback_description">Voice cues and beeps on rep completion, form alerts, and velocity loss</string>
+    <string name="haptic_feedback_enabled">Haptic Feedback</string>
+    <string name="haptic_feedback_description">Vibration pulses on rep completion, form alerts, and velocity loss</string>
+
+    <!-- Bench Press Form Issues -->
+    <string name="bench_elbow_flare">Elbows flaring out</string>
+    <string name="bench_elbow_flare_suggestion">Tuck elbows closer to your torso (45° angle)</string>
+    <string name="bench_bar_drift">Bar drifting horizontally</string>
+    <string name="bench_bar_drift_suggestion">Keep the bar path more vertical</string>
+    <string name="bench_asymmetry">Uneven press</string>
+    <string name="bench_asymmetry_suggestion">Press the bar evenly with both arms</string>
+    <string name="bench_incomplete_lockout">Incomplete lockout</string>
+    <string name="bench_incomplete_lockout_suggestion">Fully extend your arms at the top</string>
+
+    <!-- Deadlift Form Issues -->
+    <string name="deadlift_back_rounding">Back rounding detected</string>
+    <string name="deadlift_back_rounding_suggestion">Keep chest up and back flat</string>
+    <string name="deadlift_forward_lean">Excessive forward lean</string>
+    <string name="deadlift_forward_lean_suggestion">Engage lats and keep chest proud</string>
+    <string name="deadlift_incomplete_lockout">Lockout incomplete</string>
+    <string name="deadlift_incomplete_lockout_suggestion">Drive hips through and stand tall at the top</string>
+    <string name="deadlift_bar_drift">Bar drifting away from body</string>
+    <string name="deadlift_bar_drift_suggestion">Keep the bar close to your shins and thighs</string>
+
+    <!-- Set Summary -->
+    <string name="set_summary_title">Set Summary</string>
+    <string name="set_summary_overall_score">Overall Score</string>
+    <string name="set_summary_rep_header">Rep</string>
+    <string name="set_summary_vel_header">Vel</string>
+    <string name="set_summary_depth_header">Depth</string>
+    <string name="set_summary_form_header">Form</string>
+    <string name="set_summary_tempo_header">Tempo</string>
+    <string name="set_summary_score_header">Score</string>
+    <string name="set_summary_form_issues">Form Issues</string>
+    <string name="set_summary_avg_velocity">Avg Velocity</string>
+    <string name="set_summary_velocity_loss">Vel. Loss</string>
+    <string name="set_summary_dismiss">Dismiss</string>
+    <string name="set_summary_best_rep">Best</string>
+    <string name="set_summary_worst_rep">Worst</string>
+    <string name="set_summary_reps_format">%d/%d reps</string>
+    <string name="set_summary_no_reps">No reps completed</string>
+    <string name="score_excellent">Excellent</string>
+    <string name="score_good">Good</string>
+    <string name="score_fair">Fair</string>
+    <string name="score_poor">Poor</string>
+    <string name="score_bad">Bad</string>
+
+    <!-- Orientation Info -->
+    <string name="orientation_portrait_only">Portrait mode only (for consistent measurements)</string>
+    <string name="orientation_landscape_only">Landscape mode only (for consistent measurements)</string>
+    <string name="orientation_both">Portrait and landscape supported</string>
+    <string name="orientation_inverted_blocked">Inverted orientations are blocked to ensure accuracy</string>
+
+    <!-- Save Workout -->
+    <string name="save_workout_title">Save Workout</string>
+    <string name="save_workout_message">You have %d completed sets. Save this workout?</string>
+    <string name="save_workout_save">Save</string>
+    <string name="save_workout_discard">Discard</string>
+
+    <!-- Analytics Screen -->
+    <string name="analytics_title">Analytics</string>
+    <string name="analytics_all_exercises">All</string>
+    <string name="analytics_personal_records">Personal Records</string>
+    <string name="analytics_velocity_trend">Velocity Trend</string>
+    <string name="analytics_volume">Weekly Volume</string>
+    <string name="analytics_estimated_1rm">Estimated 1RM</string>
+    <string name="analytics_quality_trend">Quality Score</string>
+    <string name="analytics_recent_workouts">Recent Workouts</string>
+    <string name="analytics_no_data">No workout data yet. Complete a workout to see your analytics.</string>
+    <string name="analytics_select_exercise">Select an exercise to see velocity, 1RM, and quality trends.</string>
+    <string name="analytics_tonnage_format">%.0f kg</string>
+    <string name="analytics_week_change">%+.0f%% vs last week</string>
+
+    <!-- PR Celebration -->
+    <string name="pr_celebration_title">NEW PR!</string>
+    <string name="pr_celebration_dismiss">Continue</string>
 </resources>

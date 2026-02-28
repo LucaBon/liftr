@@ -4,14 +4,18 @@ import com.lifthelper.domain.exercise.ExerciseCriteria
 import com.lifthelper.domain.exercise.ExerciseMetrics
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.ExerciseStrategy
+import com.lifthelper.domain.exercise.ExerciseThresholds
 import com.lifthelper.domain.exercise.FormIssue
 import com.lifthelper.domain.exercise.FormValidationResult
 import com.lifthelper.domain.exercise.PhaseTransitionResult
 import com.lifthelper.domain.exercise.Severity
+import com.lifthelper.domain.exercise.SquatDepthValidator
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.CalibrationData
+import com.lifthelper.domain.model.DepthValidationResult
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.value.Joules
 import com.lifthelper.domain.value.Kilograms
@@ -19,7 +23,9 @@ import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.Watts
 import com.lifthelper.domain.vision.IPositionCalculator
+import com.lifthelper.vision.calculator.BodyPartPositions
 import com.lifthelper.vision.tracking.MovementPhase
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs
 
@@ -43,10 +49,11 @@ class FrontSquatStrategy @Inject constructor(
 
     override val exerciseType = ExerciseType.FRONT_SQUAT
 
-    private val criteria = ExerciseCriteria(
-        minDescentDepth = Meters(0.30f),  // 30cm minimum descent
-        returnTolerance = Meters(0.15f),  // 15cm tolerance for return
-        minVelocity = MetersPerSecond(0.1f),
+    // Thread-safe: updated by settings changes, read during frame processing (BUG-B fix)
+    private val criteriaRef = AtomicReference(ExerciseCriteria(
+        minDescentDepth = ExerciseThresholds.FrontSquat.MIN_DESCENT_DEPTH,
+        returnTolerance = ExerciseThresholds.FrontSquat.RETURN_TOLERANCE,
+        minVelocity = ExerciseThresholds.FrontSquat.MIN_VELOCITY,
         targetBodyParts = listOf(
             PoseResult.NOSE,
             PoseResult.LEFT_SHOULDER,
@@ -57,12 +64,21 @@ class FrontSquatStrategy @Inject constructor(
             PoseResult.RIGHT_KNEE,
             PoseResult.LEFT_ELBOW,
             PoseResult.RIGHT_ELBOW  // Important for front squat form
-        )
-    )
+        ),
+        squatDepthType = SquatDepthType.DEFAULT
+    ))
 
     companion object {
         private const val TAG = "FrontSquatStrategy"
-        private const val HIP_KNEE_ALIGNMENT_TOLERANCE = 0.05f // 5cm tolerance
+    }
+
+    /**
+     * Updates the squat depth type requirement for this strategy.
+     * This allows dynamic configuration based on user preferences.
+     */
+    fun updateSquatDepthType(depthType: SquatDepthType) {
+        criteriaRef.updateAndGet { it.copy(squatDepthType = depthType) }
+        logger.d(TAG, "Updated squat depth type to: ${depthType.displayName}")
     }
 
     override fun detectPhase(
@@ -93,18 +109,25 @@ class FrontSquatStrategy @Inject constructor(
         val currentKneesY = bodyPositions.kneesY?.let {
             positionCalculator.pixelsToMeters(it, poseResult, calibrationData)
         }
+        val currentHipsX = bodyPositions.hipsX?.let {
+            positionCalculator.pixelsToMeters(it, poseResult, calibrationData)
+        }
+        val currentKneesX = bodyPositions.kneesX?.let {
+            positionCalculator.pixelsToMeters(it, poseResult, calibrationData)
+        }
 
-        // Update state with current positions
+        // Update state with current positions (including X coordinates for femur angle)
         val updatedState = currentState.withCurrentPositions(
-            currentHeadY,
-            currentShouldersY,
-            currentHipsY,
-            currentKneesY
+            headY = currentHeadY,
+            shouldersY = currentShouldersY,
+            hipsY = currentHipsY,
+            kneesY = currentKneesY,
+            hipsX = currentHipsX,
+            kneesX = currentKneesX
         )
 
-        // For front squat, bar position is at shoulders
-        // We'll use shoulders as primary reference, with head as backup
-        val barPosition = currentShouldersY ?: currentHeadY
+        // Calculate bar position for front squat (bar rests on front shoulders)
+        val barPosition = calculateFrontSquatBarPosition(currentShouldersY, currentHeadY)
 
         // State machine for phase detection
         return when (updatedState.currentPhase) {
@@ -113,6 +136,22 @@ class FrontSquatStrategy @Inject constructor(
             MovementPhase.BOTTOM -> detectBottomTransition(updatedState, barPosition)
             MovementPhase.CONCENTRIC -> detectConcentricTransition(updatedState, barPosition)
             MovementPhase.TOP -> detectTopTransition(updatedState, barPosition)
+        }
+    }
+
+    /**
+     * Calculate bar position for front squat.
+     * Bar rests on front shoulders (deltoids), so shoulders position is primary.
+     *
+     * @param shouldersY Current shoulders Y position in meters
+     * @param headY Current head Y position in meters (used as fallback)
+     * @return Bar position in meters, or null if cannot be determined
+     */
+    private fun calculateFrontSquatBarPosition(shouldersY: Float?, headY: Float?): Float? {
+        return when {
+            shouldersY != null -> shouldersY  // Primary: shoulders (where bar rests)
+            headY != null -> headY  // Fallback: head position
+            else -> null
         }
     }
 
@@ -145,8 +184,8 @@ class FrontSquatStrategy @Inject constructor(
         val startingBarPosition = state.startingShouldersY ?: state.startingHeadY ?: barPosition
         val displacement = barPosition - startingBarPosition
 
-        // Start eccentric phase if moving down more than 5cm
-        if (displacement > 0.05f) {
+        // Start eccentric phase if moving down more than threshold
+        if (displacement > ExerciseThresholds.FrontSquat.IDLE_TO_ECCENTRIC_THRESHOLD) {
             logger.d(TAG, "Phase: IDLE -> ECCENTRIC (displacement: %.2f m)".format(displacement))
             val newState = state
                 .withCurrentPhase(MovementPhase.ECCENTRIC)
@@ -166,7 +205,9 @@ class FrontSquatStrategy @Inject constructor(
     }
 
     private fun detectEccentricTransition(state: ExercisePhaseState, barPosition: Float?): PhaseTransitionResult {
-        if (barPosition == null || state.startingShouldersY == null) {
+        val startingShouldersY = state.startingShouldersY
+
+        if (barPosition == null || startingShouldersY == null) {
             return PhaseTransitionResult(
                 newState = state,
                 repCompleted = false,
@@ -174,18 +215,20 @@ class FrontSquatStrategy @Inject constructor(
             )
         }
 
-        val startingBarPosition = state.startingShouldersY!!
+        val startingBarPosition = startingShouldersY
         val descent = barPosition - startingBarPosition
 
         // Track lowest position
-        val updatedState = if (state.lowestBarPosition == null || barPosition > state.lowestBarPosition!!) {
+        val lowestBar = state.lowestBarPosition
+        val updatedState = if (lowestBar == null || barPosition > lowestBar) {
             state.withLowestBarPosition(barPosition)
         } else {
             state
         }
 
-        val sufficientDepth = descent >= criteria.minDescentDepth.value
-        val hipsAtDepth = checkSquatDepth(state)
+        val sufficientDepth = descent >= criteriaRef.get().minDescentDepth.value
+        val depthResult = validateSquatDepth(state)
+        val hipsAtDepth = depthResult?.isValid ?: false
 
         logger.d(TAG, "ECCENTRIC: descent=%.2f m, sufficientDepth=$sufficientDepth, hipsAtDepth=$hipsAtDepth".format(descent))
 
@@ -194,7 +237,8 @@ class FrontSquatStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = updatedState.withCurrentPhase(MovementPhase.BOTTOM),
                 repCompleted = false,
-                debugInfo = "Reached bottom: %.2f m descent".format(descent)
+                debugInfo = "Reached bottom: %.2f m descent".format(descent),
+                depthValidation = depthResult
             )
         }
 
@@ -206,7 +250,9 @@ class FrontSquatStrategy @Inject constructor(
     }
 
     private fun detectBottomTransition(state: ExercisePhaseState, barPosition: Float?): PhaseTransitionResult {
-        if (barPosition == null || state.lowestBarPosition == null) {
+        val lowestBar = state.lowestBarPosition
+
+        if (barPosition == null || lowestBar == null) {
             return PhaseTransitionResult(
                 newState = state,
                 repCompleted = false,
@@ -215,11 +261,11 @@ class FrontSquatStrategy @Inject constructor(
         }
 
         // Check if starting to ascend (bar moving up by at least 3cm from lowest point)
-        val ascent = state.lowestBarPosition!! - barPosition
+        val ascent = lowestBar - barPosition
 
         logger.d(TAG, "BOTTOM: ascent=%.2f m".format(ascent))
 
-        if (ascent > 0.03f) {
+        if (ascent > ExerciseThresholds.FrontSquat.BOTTOM_TO_CONCENTRIC_THRESHOLD) {
             logger.d(TAG, "Phase: BOTTOM -> CONCENTRIC")
             return PhaseTransitionResult(
                 newState = state.withCurrentPhase(MovementPhase.CONCENTRIC),
@@ -236,7 +282,9 @@ class FrontSquatStrategy @Inject constructor(
     }
 
     private fun detectConcentricTransition(state: ExercisePhaseState, barPosition: Float?): PhaseTransitionResult {
-        if (barPosition == null || state.startingShouldersY == null) {
+        val startingShouldersY = state.startingShouldersY
+
+        if (barPosition == null || startingShouldersY == null) {
             return PhaseTransitionResult(
                 newState = state,
                 repCompleted = false,
@@ -244,13 +292,13 @@ class FrontSquatStrategy @Inject constructor(
             )
         }
 
-        val startingBarPosition = state.startingShouldersY!!
+        val startingBarPosition = startingShouldersY
         val returnDistance = abs(barPosition - startingBarPosition)
 
         logger.d(TAG, "CONCENTRIC: returnDist=%.2f m".format(returnDistance))
 
         // Check if returned to starting position (within tolerance)
-        if (returnDistance <= criteria.returnTolerance.value) {
+        if (returnDistance <= criteriaRef.get().returnTolerance.value) {
             logger.d(TAG, "Phase: CONCENTRIC -> TOP (rep completed)")
             return PhaseTransitionResult(
                 newState = state.withCurrentPhase(MovementPhase.TOP),
@@ -267,7 +315,9 @@ class FrontSquatStrategy @Inject constructor(
     }
 
     private fun detectTopTransition(state: ExercisePhaseState, barPosition: Float?): PhaseTransitionResult {
-        if (barPosition == null || state.startingShouldersY == null) {
+        val startingShouldersY = state.startingShouldersY
+
+        if (barPosition == null || startingShouldersY == null) {
             return PhaseTransitionResult(
                 newState = state,
                 repCompleted = false,
@@ -275,11 +325,11 @@ class FrontSquatStrategy @Inject constructor(
             )
         }
 
-        val startingBarPosition = state.startingShouldersY!!
+        val startingBarPosition = startingShouldersY
         val descent = barPosition - startingBarPosition
 
         // Check if starting new rep (descending again)
-        if (descent > 0.05f) {
+        if (descent > ExerciseThresholds.FrontSquat.IDLE_TO_ECCENTRIC_THRESHOLD) {
             logger.d(TAG, "Phase: TOP -> ECCENTRIC (new rep)")
             return PhaseTransitionResult(
                 newState = state
@@ -291,7 +341,7 @@ class FrontSquatStrategy @Inject constructor(
         }
 
         // Check if stabilized at top (ready for next rep)
-        if (abs(descent) < 0.02f) {
+        if (abs(descent) < ExerciseThresholds.FrontSquat.TOP_STABILIZATION_THRESHOLD) {
             logger.d(TAG, "Phase: TOP -> IDLE")
             return PhaseTransitionResult(
                 newState = state.withCurrentPhase(MovementPhase.IDLE),
@@ -308,23 +358,32 @@ class FrontSquatStrategy @Inject constructor(
     }
 
     /**
-     * Check if squat depth is adequate (hips at or below knees)
+     * Validates squat depth using robust multi-method validation with confidence scoring.
+     *
+     * @return DepthValidationResult if sufficient landmark data is available, null otherwise
      */
-    private fun checkSquatDepth(state: ExercisePhaseState): Boolean {
+    private fun validateSquatDepth(state: ExercisePhaseState): DepthValidationResult? {
         if (state.currentHipsY == null || state.currentKneesY == null) {
-            // If we can't verify depth, assume it's OK to avoid false negatives
-            return true
+            logger.w(TAG, "Cannot verify squat depth - missing hip or knee landmarks")
+            return null
         }
 
-        // In normalized coordinates with Y-axis pointing down:
-        // Hips Y >= Knees Y means hips are at or below knees
-        val depthOK = state.currentHipsY!! >= (state.currentKneesY!! - HIP_KNEE_ALIGNMENT_TOLERANCE)
+        val depthType = criteriaRef.get().squatDepthType
 
-        if (depthOK) {
-            logger.d(TAG, "Squat depth OK: hips=%.2f m, knees=%.2f m".format(state.currentHipsY, state.currentKneesY))
+        val validationResult = SquatDepthValidator.validateDepth(
+            state = state,
+            depthType = depthType,
+            tolerance = Meters(ExerciseThresholds.FrontSquat.DEPTH_TOLERANCE)
+        )
+
+        if (validationResult.isValid) {
+            logger.d(TAG, "Squat depth PASS for ${depthType.displayName}")
+        } else {
+            logger.d(TAG, "Squat depth FAIL for ${depthType.displayName}")
         }
+        logger.d(TAG, validationResult.debugInfo)
 
-        return depthOK
+        return validationResult
     }
 
     override fun calculateMetrics(
@@ -360,20 +419,200 @@ class FrontSquatStrategy @Inject constructor(
         poseResult: PoseResult,
         calibrationData: CalibrationData
     ): FormValidationResult {
-        // TODO: This method needs refactoring to accept ExercisePhaseState
-        // For now, returning basic validation based on current frame only
         val issues = mutableListOf<FormIssue>()
+        val landmarks = poseResult.landmarks
 
-        // Note: Full form validation requires access to ExercisePhaseState
-        // which should be passed from the caller
+        // Get body part positions
+        val bodyPositions = positionCalculator.getBodyPartPositions(poseResult)
+
+        if (bodyPositions == null) {
+            // Cannot validate without body positions
+            return FormValidationResult(isValid = true, issues = issues)
+        }
+
+        // 1. Check knee alignment (knee valgus/varus)
+        val kneeIssue = checkKneeAlignment(landmarks)
+        if (kneeIssue != null) {
+            issues.add(kneeIssue)
+        }
+
+        // 2. Check torso uprightness (critical for front squat)
+        val torsoIssue = checkTorsoUprightness(landmarks, bodyPositions)
+        if (torsoIssue != null) {
+            issues.add(torsoIssue)
+        }
+
+        // 3. Check elbow position (elbows should be high)
+        val elbowIssue = checkElbowPosition(landmarks)
+        if (elbowIssue != null) {
+            issues.add(elbowIssue)
+        }
+
+        // 4. Check foot stability (heel lift)
+        val footIssue = checkFootStability(landmarks)
+        if (footIssue != null) {
+            issues.add(footIssue)
+        }
+
+        // Consider form valid if no CRITICAL severity issues
+        val isValid = issues.none { it.severity == Severity.CRITICAL }
 
         return FormValidationResult(
-            isValid = true,
+            isValid = isValid,
             issues = issues
         )
     }
 
-    override fun getRequiredLandmarks(): List<Int> = criteria.targetBodyParts
+    /**
+     * Check for knee valgus (knees caving inward) or varus (knees bowing outward).
+     * Same as back squat - knees should track over toes.
+     */
+    private fun checkKneeAlignment(landmarks: List<com.lifthelper.domain.model.PoseKeypoint>): FormIssue? {
+        val leftKnee = landmarks.getOrNull(25)
+        val rightKnee = landmarks.getOrNull(26)
+        val leftHip = landmarks.getOrNull(23)
+        val rightHip = landmarks.getOrNull(24)
 
-    override fun getCriteria(): ExerciseCriteria = criteria
+        if (leftKnee == null || rightKnee == null || leftHip == null || rightHip == null) {
+            return null
+        }
+
+        if (leftKnee.visibility < 0.5f || rightKnee.visibility < 0.5f ||
+            leftHip.visibility < 0.5f || rightHip.visibility < 0.5f) {
+            return null
+        }
+
+        val kneeWidth = kotlin.math.abs(rightKnee.x - leftKnee.x)
+        val hipWidth = kotlin.math.abs(rightHip.x - leftHip.x)
+
+        // Knees should be approximately as wide as hips (±20%)
+        val kneeToHipRatio = kneeWidth / hipWidth
+
+        return when {
+            kneeToHipRatio < 0.70f -> FormIssue(
+                severity = Severity.CRITICAL,
+                message = "Knees are caving inward (valgus)",
+                suggestion = "Push knees outward to align with feet"
+            )
+            kneeToHipRatio > 1.30f -> FormIssue(
+                severity = Severity.WARNING,
+                message = "Knees are bowing outward (varus)",
+                suggestion = "Bring knees slightly inward to align with hips"
+            )
+            else -> null
+        }
+    }
+
+    /**
+     * Check torso uprightness - critical for front squat.
+     * Front squat requires more upright torso than back squat to prevent bar rolling off.
+     */
+    private fun checkTorsoUprightness(
+        landmarks: List<com.lifthelper.domain.model.PoseKeypoint>,
+        bodyPositions: BodyPartPositions
+    ): FormIssue? {
+        val shoulders = bodyPositions.shouldersY ?: return null
+        val hips = bodyPositions.hipsY ?: return null
+        val shouldersX = bodyPositions.hipsX ?: return null
+        val hipsX = bodyPositions.hipsX ?: return null
+
+        // Calculate torso angle from vertical
+        val torsoVerticalDistance = kotlin.math.abs(shoulders - hips)
+        val torsoHorizontalDistance = kotlin.math.abs(shouldersX - hipsX)
+
+        if (torsoVerticalDistance < 0.01f) return null  // Avoid division by zero
+
+        // Angle from vertical in degrees (0° = perfectly upright)
+        val angleFromVertical = Math.toDegrees(
+            kotlin.math.atan2(torsoHorizontalDistance, torsoVerticalDistance).toDouble()
+        ).toFloat()
+
+        // Front squat requires more upright torso (stricter thresholds than back squat)
+        return when {
+            angleFromVertical > 35f -> FormIssue(
+                severity = Severity.CRITICAL,
+                message = "Excessive forward lean (${angleFromVertical.toInt()}°)",
+                suggestion = "Keep chest up and elbows high to maintain upright torso"
+            )
+            angleFromVertical > 25f -> FormIssue(
+                severity = Severity.WARNING,
+                message = "Moderate forward lean (${angleFromVertical.toInt()}°)",
+                suggestion = "Try to stay more upright - drive elbows up"
+            )
+            else -> null
+        }
+    }
+
+    /**
+     * Check elbow position - elbows should be high and parallel to ground.
+     * This is critical for front squat to keep bar secure on shoulders.
+     */
+    private fun checkElbowPosition(landmarks: List<com.lifthelper.domain.model.PoseKeypoint>): FormIssue? {
+        val leftElbow = landmarks.getOrNull(13)
+        val rightElbow = landmarks.getOrNull(14)
+        val leftShoulder = landmarks.getOrNull(11)
+        val rightShoulder = landmarks.getOrNull(12)
+
+        if (leftElbow == null || rightElbow == null ||
+            leftShoulder == null || rightShoulder == null) {
+            return null
+        }
+
+        if (leftElbow.visibility < 0.5f || rightElbow.visibility < 0.5f ||
+            leftShoulder.visibility < 0.5f || rightShoulder.visibility < 0.5f) {
+            return null
+        }
+
+        // Calculate average elbow and shoulder Y positions
+        val avgElbowY = (leftElbow.y + rightElbow.y) / 2f
+        val avgShoulderY = (leftShoulder.y + rightShoulder.y) / 2f
+
+        // Elbows should be at or above shoulder level (smaller Y = higher)
+        val elbowDrop = avgElbowY - avgShoulderY
+
+        return when {
+            elbowDrop > 0.15f -> FormIssue(
+                severity = Severity.CRITICAL,
+                message = "Elbows dropped significantly below shoulders",
+                suggestion = "Drive elbows up and keep them high throughout the movement"
+            )
+            elbowDrop > 0.08f -> FormIssue(
+                severity = Severity.WARNING,
+                message = "Elbows lowering below optimal position",
+                suggestion = "Focus on keeping elbows parallel to ground"
+            )
+            else -> null
+        }
+    }
+
+    /**
+     * Check foot stability - detect heel lift which compromises stability.
+     */
+    private fun checkFootStability(landmarks: List<com.lifthelper.domain.model.PoseKeypoint>): FormIssue? {
+        val leftHeel = landmarks.getOrNull(29)
+        val rightHeel = landmarks.getOrNull(30)
+        val leftAnkle = landmarks.getOrNull(27)
+        val rightAnkle = landmarks.getOrNull(28)
+
+        if (leftHeel == null || rightHeel == null || leftAnkle == null || rightAnkle == null) {
+            return null
+        }
+
+        // Check if heels are visible and stable
+        val heelVisibility = (leftHeel.visibility + rightHeel.visibility) / 2f
+
+        return if (heelVisibility < 0.3f) {
+            FormIssue(
+                severity = Severity.WARNING,
+                message = "Heels lifting off ground",
+                suggestion = "Keep entire foot flat on ground - may need to improve ankle mobility"
+            )
+        } else {
+            null
+        }
+    }
+
+    override fun getRequiredLandmarks(): List<Int> = criteriaRef.get().targetBodyParts
+
+    override fun getCriteria(): ExerciseCriteria = criteriaRef.get()
 }

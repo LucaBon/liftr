@@ -48,11 +48,18 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideLensDistortionCorrector(logger: Logger): com.lifthelper.vision.camera.LensDistortionCorrector {
+        return com.lifthelper.vision.camera.LensDistortionCorrector(logger)
+    }
+
+    @Provides
+    @Singleton
     fun provideCameraManager(
         @ApplicationContext context: Context,
-        @CameraExecutor executor: ExecutorService
+        @CameraExecutor executor: ExecutorService,
+        lensDistortionCorrector: com.lifthelper.vision.camera.LensDistortionCorrector
     ): com.lifthelper.vision.camera.CameraManager {
-        return com.lifthelper.vision.camera.CameraManager(context, executor)
+        return com.lifthelper.vision.camera.CameraManager(context, executor, lensDistortionCorrector)
     }
 
     // Domain layer components

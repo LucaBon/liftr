@@ -26,7 +26,9 @@ data class AnthropometricCalibrationState(
     val anthropometricData: AnthropometricData? = null,
     val poseResult: com.lifthelper.domain.model.PoseResult? = null,
     val errorMessage: String? = null,
-    val isBuffering: Boolean = false  // True during final 2 seconds when collecting frames
+    val isBuffering: Boolean = false,  // True during final 2 seconds when collecting frames
+    val bodyCenterX: Float? = null,  // Horizontal center position of body (0-1 range)
+    val alignmentMessage: String? = null  // Current alignment guidance message
 )
 
 @HiltViewModel
@@ -35,7 +37,9 @@ class AnthropometricCalibrationViewModel @Inject constructor(
     private val positionCalculator: PositionCalculator,
     private val calibrationRepository: CalibrationRepository,
     private val cameraManager: com.lifthelper.vision.camera.CameraManager,
-    private val anthropometricDataBuilder: com.lifthelper.domain.builder.AnthropometricDataBuilder
+    private val anthropometricDataBuilder: com.lifthelper.domain.builder.AnthropometricDataBuilder,
+    private val coordinateCalculator: com.lifthelper.domain.calculator.CoordinateCalculator,
+    private val cameraAlignmentChecker: com.lifthelper.vision.calculator.CameraAlignmentChecker
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnthropometricCalibrationState())
@@ -70,16 +74,31 @@ class AnthropometricCalibrationViewModel @Inject constructor(
         val timestamp = System.currentTimeMillis()
 
         try {
-            val poseResult = poseDetector.detectPose(imageProxy, timestamp)
+            // Convert ImageProxy to CameraFrame for domain layer
+            val cameraFrame = com.lifthelper.vision.adapter.ImageProxyAdapter.toCameraFrame(imageProxy)
+            val poseResult = poseDetector.detectPose(cameraFrame)
 
             if (poseResult != null) {
                 // Check calibration quality (full body visible?)
                 val quality = positionCalculator.getCalibrationQuality(poseResult, calibrationData)
 
+                // Check camera alignment (including center alignment)
+                val aspectRatioResult = coordinateCalculator.calculateAspectRatio(
+                    poseResult.imageWidth,
+                    poseResult.imageHeight
+                )
+                val alignmentResult = cameraAlignmentChecker.checkAlignment(
+                    poseResult,
+                    aspectRatioResult.ratio,
+                    aspectRatioResult.isPortrait
+                )
+
                 _uiState.update { state ->
                     state.copy(
                         poseResult = poseResult,
-                        calibrationQuality = quality
+                        calibrationQuality = quality,
+                        bodyCenterX = alignmentResult.bodyCenterX,
+                        alignmentMessage = alignmentResult.message
                     )
                 }
 

@@ -1,6 +1,13 @@
 package com.lifthelper.data.repository
 
+import androidx.room.withTransaction
+import com.lifthelper.data.local.database.LiftDatabase
+import com.lifthelper.data.local.database.dao.RepDao
+import com.lifthelper.data.local.database.dao.SetDao
 import com.lifthelper.data.local.database.dao.WorkoutDao
+import com.lifthelper.data.local.database.entities.WorkoutEntity
+import com.lifthelper.data.mapper.RepMapper
+import com.lifthelper.data.mapper.SetMapper
 import com.lifthelper.data.mapper.WorkoutMapper
 import com.lifthelper.domain.error.LiftHelperError
 import com.lifthelper.domain.logging.Logger
@@ -14,16 +21,15 @@ import java.sql.SQLException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Implementation of WorkoutRepository.
- *
- * Provides data access for workout operations using Room database.
- * Handles entity/domain conversion and error handling with Result<T>.
- */
 @Singleton
 class WorkoutRepositoryImpl @Inject constructor(
+    private val database: LiftDatabase,
     private val workoutDao: WorkoutDao,
+    private val setDao: SetDao,
+    private val repDao: RepDao,
     private val mapper: WorkoutMapper,
+    private val setMapper: SetMapper,
+    private val repMapper: RepMapper,
     private val logger: Logger
 ) : WorkoutRepository {
 
@@ -32,10 +38,26 @@ class WorkoutRepositoryImpl @Inject constructor(
     }
 
     override suspend fun saveWorkout(workout: Workout): Result<Long> = runCatching {
-        val entity = mapper.toEntity(workout)
-        val workoutId = workoutDao.insertWorkout(entity)
-        logger.d(TAG, "Workout saved successfully with ID: $workoutId")
-        workoutId
+        database.withTransaction {
+            val workoutEntity = mapper.toEntity(workout)
+            val workoutId = workoutDao.insertWorkout(workoutEntity)
+
+            workout.sets.forEach { set ->
+                val setEntity = setMapper.toEntity(set).copy(workoutId = workoutId)
+                val setId = setDao.insertSet(setEntity)
+
+                val repEntities = set.reps.map { rep ->
+                    repMapper.toEntity(rep).copy(setId = setId)
+                }
+                if (repEntities.isNotEmpty()) {
+                    repDao.insertReps(repEntities)
+                }
+            }
+
+            logger.d(TAG, "Workout saved: id=$workoutId, sets=${workout.sets.size}, " +
+                "totalReps=${workout.sets.sumOf { it.reps.size }}")
+            workoutId
+        }
     }.mapError { error ->
         when (error) {
             is SQLException -> LiftHelperError.DatabaseError(
@@ -54,18 +76,15 @@ class WorkoutRepositoryImpl @Inject constructor(
 
     override fun getWorkouts(): Flow<List<Workout>> {
         return workoutDao.getAllWorkouts()
-            .map { entities ->
-                mapper.toDomainList(entities)
+            .map { workoutEntities ->
+                workoutEntities.map { loadWorkoutWithSetsAndReps(it) }
             }
     }
 
     override suspend fun getWorkoutById(id: Long): Result<Workout> = runCatching {
         val entity = workoutDao.getWorkoutById(id)
-        if (entity != null) {
-            mapper.toDomain(entity)
-        } else {
-            throw LiftHelperError.DatabaseError("Workout with ID $id not found")
-        }
+            ?: throw LiftHelperError.DatabaseError("Workout with ID $id not found")
+        loadWorkoutWithSetsAndReps(entity)
     }.mapError { error ->
         when (error) {
             is LiftHelperError -> error
@@ -105,5 +124,15 @@ class WorkoutRepositoryImpl @Inject constructor(
         }
     }.onError { error ->
         logger.e(TAG, "Delete failed: ${error.message}", error)
+    }
+
+    private suspend fun loadWorkoutWithSetsAndReps(workoutEntity: WorkoutEntity): Workout {
+        val setEntities = setDao.getSetsForWorkoutSync(workoutEntity.id)
+        val sets = setEntities.map { setEntity ->
+            val repEntities = repDao.getRepsForSetSync(setEntity.id)
+            val reps = repEntities.map { repMapper.toDomain(it) }
+            setMapper.toDomain(setEntity, reps)
+        }
+        return mapper.toDomain(workoutEntity, sets)
     }
 }

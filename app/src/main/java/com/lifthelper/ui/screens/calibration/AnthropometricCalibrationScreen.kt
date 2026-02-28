@@ -26,6 +26,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.domain.model.CalibrationQuality
+import com.lifthelper.ui.components.CenterAlignmentGuide
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.util.OrientationMode
 import com.lifthelper.util.rememberOrientation
@@ -74,6 +75,15 @@ fun AnthropometricCalibrationScreen(
                     isFrontCamera = cameraManager.isFrontCamera(),
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
+
+                // Center alignment guide (to minimize lens distortion)
+                if (!uiState.isCapturing && uiState.poseResult != null) {
+                    CenterAlignmentGuide(
+                        bodyCenterX = uiState.bodyCenterX,
+                        showInstructions = true,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
 
                 // Body outline guide
                 if (!uiState.isCapturing) {

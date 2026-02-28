@@ -27,7 +27,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -219,7 +220,7 @@ tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
     violationRules {
         rule {
             limit {
-                minimum = "0.70".toBigDecimal() // 70% minimum coverage
+                minimum = "0.80".toBigDecimal() // 80% minimum line coverage (IMPROVE-4)
             }
         }
 
@@ -228,7 +229,7 @@ tasks.register<JacocoCoverageVerification>("jacocoTestCoverageVerification") {
             limit {
                 counter = "BRANCH"
                 value = "COVEREDRATIO"
-                minimum = "0.60".toBigDecimal() // 60% branch coverage
+                minimum = "0.70".toBigDecimal() // 70% branch coverage (IMPROVE-4)
             }
             excludes = listOf(
                 "*.di.*",

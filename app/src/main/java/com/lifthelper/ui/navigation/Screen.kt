@@ -10,5 +10,6 @@ sealed class Screen(val route: String) {
         fun createRoute(setId: Long) = "analysis/$setId"
     }
     object History : Screen("history")
+    object Analytics : Screen("analytics")
     object Settings : Screen("settings")
 }

@@ -2,9 +2,34 @@
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.kts.
 
-# Keep MediaPipe classes
+# Keep MediaPipe classes (native libs + Java API)
 -keep class com.google.mediapipe.** { *; }
+-dontwarn com.google.mediapipe.**
 
-# Keep data classes for serialization
+# Keep domain model data classes (serialization, Room converters)
 -keep class com.lifthelper.domain.model.** { *; }
 -keep class com.lifthelper.data.local.database.entities.** { *; }
+
+# Room database — keep generated DAO implementations
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep @androidx.room.Entity class * { *; }
+-keep @androidx.room.Dao interface * { *; }
+
+# Kotlin serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+-keepclassmembers @kotlinx.serialization.Serializable class ** {
+    *** Companion;
+    kotlinx.serialization.KSerializer serializer(...);
+}
+
+# Hilt — keep generated components
+-keep class dagger.hilt.** { *; }
+-keep class * extends dagger.hilt.android.internal.managers.ViewComponentManager$FragmentContextWrapper { *; }
+
+# CameraX
+-keep class androidx.camera.** { *; }
+
+# Coroutines
+-keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}

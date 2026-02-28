@@ -2,8 +2,12 @@ package com.lifthelper.di
 
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.logging.Logger
+import com.lifthelper.domain.repository.AnalyticsRepository
 import com.lifthelper.domain.repository.CalibrationRepository
+import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.repository.WorkoutRepository
+import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
+import com.lifthelper.domain.usecase.GetAnalyticsSummaryUseCase
 import com.lifthelper.domain.usecase.LoadCalibrationUseCase
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
 import com.lifthelper.domain.usecase.SaveWorkoutUseCase
@@ -36,6 +40,7 @@ object UseCaseModule {
         velocityCalculator: IVelocityCalculator,
         positionCalculator: IPositionCalculator,
         strategyFactory: ExerciseStrategyFactory,
+        settingsRepository: SettingsRepository,
         logger: Logger
     ): ProcessWorkoutFrameUseCase {
         return ProcessWorkoutFrameUseCase(
@@ -43,6 +48,7 @@ object UseCaseModule {
             velocityCalculator = velocityCalculator,
             positionCalculator = positionCalculator,
             strategyFactory = strategyFactory,
+            settingsRepository = settingsRepository,
             logger = logger
         )
     }
@@ -68,5 +74,21 @@ object UseCaseModule {
         calibrationRepository: CalibrationRepository
     ): LoadCalibrationUseCase {
         return LoadCalibrationUseCase(calibrationRepository)
+    }
+
+    @Provides
+    @ViewModelScoped
+    fun provideGetAnalyticsSummaryUseCase(
+        analyticsRepository: AnalyticsRepository
+    ): GetAnalyticsSummaryUseCase {
+        return GetAnalyticsSummaryUseCase(analyticsRepository)
+    }
+
+    @Provides
+    @ViewModelScoped
+    fun provideCheckPersonalRecordsUseCase(
+        analyticsRepository: AnalyticsRepository
+    ): CheckPersonalRecordsUseCase {
+        return CheckPersonalRecordsUseCase(analyticsRepository)
     }
 }

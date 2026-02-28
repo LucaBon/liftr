@@ -3,6 +3,8 @@ package com.lifthelper.data.local.database
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.lifthelper.data.local.database.dao.RepDao
 import com.lifthelper.data.local.database.dao.SetDao
 import com.lifthelper.data.local.database.dao.WorkoutDao
@@ -16,7 +18,7 @@ import com.lifthelper.data.local.database.entities.WorkoutEntity
         SetEntity::class,
         RepEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -24,4 +26,12 @@ abstract class LiftDatabase : RoomDatabase() {
     abstract fun workoutDao(): WorkoutDao
     abstract fun setDao(): SetDao
     abstract fun repDao(): RepDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reps ADD COLUMN qualityScore INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+    }
 }

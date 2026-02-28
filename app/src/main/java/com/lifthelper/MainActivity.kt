@@ -47,26 +47,35 @@ class MainActivity : ComponentActivity() {
                 if (orientation == ORIENTATION_UNKNOWN) return
 
                 // Map sensor orientation to screen orientation
-                // Only allow standard portrait and landscape (not inverted)
-                val newOrientation = when (orientation) {
-                    in 45..134 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE  // Landscape (left)
-                    in 135..224 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT          // Portrait (inverted - block this)
-                    in 225..314 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE         // Landscape (right)
-                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT                 // Portrait (normal)
+                val detectedOrientation = when (orientation) {
+                    in 45..134 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE  // 270° - Left landscape
+                    in 135..224 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT  // 180° - Upside down
+                    in 225..314 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE         // 90° - Right landscape
+                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT                 // 0° - Normal portrait
                 }
 
-                // Only allow portrait and landscape (not reverse variants)
-                when (newOrientation) {
-                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                // ONLY allow standard portrait (0°) and landscape (90°)
+                // Block reverse portrait (180°) and reverse landscape (270°)
+                val allowedOrientation = when (detectedOrientation) {
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT ->
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ->
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+
+                    // Block inverted orientations - keep current orientation
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
                     ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> {
-                        if (requestedOrientation != newOrientation) {
-                            requestedOrientation = newOrientation
-                        }
+                        // Don't change orientation - user is holding device in unsupported position
+                        return
                     }
-                    else -> {
-                        // Block inverted portrait - keep current orientation
-                    }
+
+                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+
+                // Apply orientation change if different from current
+                if (requestedOrientation != allowedOrientation) {
+                    requestedOrientation = allowedOrientation
                 }
             }
         }

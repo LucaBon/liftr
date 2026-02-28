@@ -136,7 +136,8 @@ object PoseResultTestFixtures {
             landmarks = landmarks,
             timestamp = System.currentTimeMillis(),
             imageWidth = imageWidth,
-            imageHeight = imageHeight
+            imageHeight = imageHeight,
+            isPortrait = isPortrait
         )
     }
 

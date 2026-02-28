@@ -34,5 +34,6 @@ data class RepEntity(
     val concentricDuration: Float,
     val velocityProfile: List<VelocityProfile>, // Full frame-by-frame data
     val positionProfile: List<PositionProfile>, // Full position tracking
-    val timestamp: Long
+    val timestamp: Long,
+    val qualityScore: Int = 0 // Rep quality score (0-100), 0 = not scored
 )

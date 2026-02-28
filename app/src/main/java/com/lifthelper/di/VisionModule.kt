@@ -37,9 +37,11 @@ abstract class VisionModule {
 
     /**
      * Binds VelocityCalculator to IVelocityCalculator interface.
+     *
+     * NOTE: NOT a singleton - each injection gets a new instance.
+     * This ensures thread safety as each workout session has its own state.
      */
     @Binds
-    @Singleton
     abstract fun bindVelocityCalculator(
         impl: VelocityCalculator
     ): IVelocityCalculator

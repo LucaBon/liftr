@@ -16,3 +16,23 @@ val VelocityOrange = Color(0xFFFF9800)
 val VelocityYellow = Color(0xFFFFEB3B)
 val VelocityLightGreen = Color(0xFF8BC34A)
 val VelocityGreen = Color(0xFF4CAF50)
+
+// VBT Zone Colors (Gonzalez-Badillo zones)
+val VbtGrinding = Color(0xFFE53935)
+val VbtMaxStrength = Color(0xFFFF9800)
+val VbtStrengthSpeed = Color(0xFFFFEB3B)
+val VbtSpeedStrength = Color(0xFF4CAF50)
+val VbtSpeedPower = Color(0xFF2196F3)
+val VbtStopAlert = Color(0xFFD32F2F)
+
+// Chart Colors
+val ChartPrimary = Color(0xFF6750A4)
+val ChartBackSquat = Color(0xFF4CAF50)
+val ChartFrontSquat = Color(0xFF8BC34A)
+val ChartBenchPress = Color(0xFF2196F3)
+val ChartDeadlift = Color(0xFFFF9800)
+val ChartClean = Color(0xFF9C27B0)
+val ChartSnatch = Color(0xFFE91E63)
+
+// PR Celebration
+val PrGold = Color(0xFFFFD700)

@@ -24,6 +24,7 @@ import com.lifthelper.domain.value.Percentage
  * @property velocityProfile Frame-by-frame velocity data
  * @property positionProfile Frame-by-frame position data
  * @property timestamp Timestamp when the rep was completed
+ * @property qualityScore Quality score for this rep (0-100), 0 = not scored
  */
 data class Rep(
     val id: Long = 0,
@@ -39,7 +40,8 @@ data class Rep(
     val concentricDuration: Float,
     val velocityProfile: List<VelocityProfile>,
     val positionProfile: List<PositionProfile>,
-    val timestamp: Long
+    val timestamp: Long,
+    val qualityScore: Int = 0
 ) {
     /**
      * Returns the total duration of the rep in seconds.

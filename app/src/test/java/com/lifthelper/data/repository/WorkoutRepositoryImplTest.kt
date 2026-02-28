@@ -1,27 +1,29 @@
 package com.lifthelper.data.repository
 
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import androidx.room.withTransaction
 import app.cash.turbine.test
+import com.lifthelper.data.local.database.LiftDatabase
+import com.lifthelper.data.local.database.dao.RepDao
+import com.lifthelper.data.local.database.dao.SetDao
 import com.lifthelper.data.local.database.dao.WorkoutDao
 import com.lifthelper.data.local.database.entities.WorkoutEntity
+import com.lifthelper.data.mapper.RepMapper
+import com.lifthelper.data.mapper.SetMapper
 import com.lifthelper.data.mapper.WorkoutMapper
 import com.lifthelper.domain.error.LiftHelperError
 import com.lifthelper.domain.logging.Logger
-import com.lifthelper.domain.model.ExerciseType
-import com.lifthelper.domain.model.Set
 import com.lifthelper.domain.model.Workout
-import com.lifthelper.domain.value.Kilograms
-import com.lifthelper.domain.value.Meters
-import com.lifthelper.domain.value.MetersPerSecond
-import com.lifthelper.domain.value.RepCount
-import com.lifthelper.domain.value.Watts
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -40,8 +42,13 @@ class WorkoutRepositoryImplTest {
     @get:Rule
     val instantExecutorRule = InstantTaskExecutorRule()
 
+    private lateinit var database: LiftDatabase
     private lateinit var workoutDao: WorkoutDao
+    private lateinit var setDao: SetDao
+    private lateinit var repDao: RepDao
     private lateinit var mapper: WorkoutMapper
+    private lateinit var setMapper: SetMapper
+    private lateinit var repMapper: RepMapper
     private lateinit var logger: Logger
     private lateinit var repository: WorkoutRepositoryImpl
 
@@ -64,18 +71,42 @@ class WorkoutRepositoryImplTest {
 
     @Before
     fun setup() {
+        database = mockk(relaxed = true)
         workoutDao = mockk()
+        setDao = mockk(relaxed = true)
+        repDao = mockk(relaxed = true)
         mapper = mockk()
-        logger = mockk(relaxed = true) // Relaxed to avoid verifying every log call
-        repository = WorkoutRepositoryImpl(workoutDao, mapper, logger)
+        setMapper = mockk(relaxed = true)
+        repMapper = mockk(relaxed = true)
+        logger = mockk(relaxed = true)
+
+        // Mock withTransaction — suspend lambda + MockK don't mix well,
+        // so we mock the return value directly. Cascade logic is covered
+        // by instrumented tests with a real Room database.
+        mockkStatic("androidx.room.RoomDatabaseKt")
+
+        repository = WorkoutRepositoryImpl(
+            database = database,
+            workoutDao = workoutDao,
+            setDao = setDao,
+            repDao = repDao,
+            mapper = mapper,
+            setMapper = setMapper,
+            repMapper = repMapper,
+            logger = logger
+        )
+    }
+
+    @After
+    fun tearDown() {
+        unmockkStatic("androidx.room.RoomDatabaseKt")
     }
 
     @Test
     fun `saveWorkout should return success with workout ID when save succeeds`() = runTest {
         // Given
         val expectedId = 1L
-        every { mapper.toEntity(testWorkout) } returns testWorkoutEntity
-        coEvery { workoutDao.insertWorkout(testWorkoutEntity) } returns expectedId
+        coEvery { database.withTransaction<Long>(any()) } returns expectedId
 
         // When
         val result = repository.saveWorkout(testWorkout)
@@ -83,16 +114,12 @@ class WorkoutRepositoryImplTest {
         // Then
         assertTrue(result.isSuccess)
         assertEquals(expectedId, result.getOrNull())
-        coVerify { workoutDao.insertWorkout(testWorkoutEntity) }
-        verify { mapper.toEntity(testWorkout) }
     }
 
     @Test
     fun `saveWorkout should return database error when DAO throws exception`() = runTest {
         // Given
-        val exception = RuntimeException("Database error")
-        every { mapper.toEntity(testWorkout) } returns testWorkoutEntity
-        coEvery { workoutDao.insertWorkout(testWorkoutEntity) } throws exception
+        coEvery { database.withTransaction<Long>(any()) } throws RuntimeException("Database error")
 
         // When
         val result = repository.saveWorkout(testWorkout)
@@ -108,29 +135,26 @@ class WorkoutRepositoryImplTest {
     fun `getWorkouts should return flow of workouts`() = runTest {
         // Given
         val entities = listOf(testWorkoutEntity)
-        val workouts = listOf(testWorkout)
         every { workoutDao.getAllWorkouts() } returns flowOf(entities)
-        every { mapper.toDomainList(entities) } returns workouts
+        coEvery { setDao.getSetsForWorkoutSync(testWorkoutEntity.id) } returns emptyList()
+        every { mapper.toDomain(testWorkoutEntity, emptyList()) } returns testWorkout
 
         // When
         repository.getWorkouts().test {
             // Then
             val emittedWorkouts = awaitItem()
-            assertEquals(workouts, emittedWorkouts)
             assertEquals(1, emittedWorkouts.size)
             assertEquals(testWorkout.id, emittedWorkouts[0].id)
             awaitComplete()
         }
 
         verify { workoutDao.getAllWorkouts() }
-        verify { mapper.toDomainList(entities) }
     }
 
     @Test
     fun `getWorkouts should return empty list when no workouts exist`() = runTest {
         // Given
         every { workoutDao.getAllWorkouts() } returns flowOf(emptyList())
-        every { mapper.toDomainList(emptyList()) } returns emptyList()
 
         // When
         repository.getWorkouts().test {
@@ -146,7 +170,8 @@ class WorkoutRepositoryImplTest {
         // Given
         val workoutId = 1L
         coEvery { workoutDao.getWorkoutById(workoutId) } returns testWorkoutEntity
-        every { mapper.toDomain(testWorkoutEntity) } returns testWorkout
+        coEvery { setDao.getSetsForWorkoutSync(testWorkoutEntity.id) } returns emptyList()
+        every { mapper.toDomain(testWorkoutEntity, emptyList()) } returns testWorkout
 
         // When
         val result = repository.getWorkoutById(workoutId)

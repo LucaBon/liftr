@@ -34,7 +34,8 @@ class RepMapper @Inject constructor() {
             concentricDuration = entity.concentricDuration,
             velocityProfile = entity.velocityProfile,
             positionProfile = entity.positionProfile,
-            timestamp = entity.timestamp
+            timestamp = entity.timestamp,
+            qualityScore = entity.qualityScore
         )
     }
 
@@ -69,7 +70,8 @@ class RepMapper @Inject constructor() {
             concentricDuration = domain.concentricDuration,
             velocityProfile = domain.velocityProfile,
             positionProfile = domain.positionProfile,
-            timestamp = domain.timestamp
+            timestamp = domain.timestamp,
+            qualityScore = domain.qualityScore
         )
     }
 }

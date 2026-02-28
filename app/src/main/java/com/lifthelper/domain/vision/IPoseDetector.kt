@@ -1,6 +1,6 @@
 package com.lifthelper.domain.vision
 
-import androidx.camera.core.ImageProxy
+import com.lifthelper.domain.model.CameraFrame
 import com.lifthelper.domain.model.PoseResult
 
 /**
@@ -11,13 +11,12 @@ import com.lifthelper.domain.model.PoseResult
  */
 interface IPoseDetector {
     /**
-     * Detects pose from a camera image.
+     * Detects pose from a camera frame.
      *
-     * @param imageProxy The camera image to process
-     * @param timestamp The timestamp of the frame
+     * @param frame The camera frame to process
      * @return PoseResult if a pose was detected, null otherwise
      */
-    fun detectPose(imageProxy: ImageProxy, timestamp: Long): PoseResult?
+    fun detectPose(frame: CameraFrame): PoseResult?
 
     /**
      * Switches the pose detection model.

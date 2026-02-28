@@ -15,6 +15,7 @@ import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.Watts
 import com.lifthelper.domain.vision.IPositionCalculator
+import com.lifthelper.vision.calculator.BodyPartPositions
 import com.lifthelper.vision.tracking.MovementPhase
 import io.mockk.every
 import io.mockk.mockk
@@ -55,12 +56,9 @@ class BackSquatStrategyIntegrationTest {
     @Test
     fun `complete squat rep should progress through all phases correctly`() {
         // Setup position calculator to return realistic body positions
-        every { positionCalculator.getBodyPartPositions(any()) } returns mockk {
-            every { headY } returns 100f
-            every { shouldersY } returns 200f
-            every { hipsY } returns 500f
-            every { kneesY } returns 800f
-        }
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 800f
+        )
 
         // Starting position
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.5f
@@ -118,14 +116,11 @@ class BackSquatStrategyIntegrationTest {
     }
 
     @Test
-    fun `insufficient depth should be detected in form validation`() {
-        // Setup shallow squat
-        every { positionCalculator.getBodyPartPositions(any()) } returns mockk {
-            every { headY } returns 100f
-            every { shouldersY } returns 200f
-            every { hipsY } returns 400f // Hips not low enough
-            every { kneesY } returns 500f // Hips above knees
-        }
+    fun `insufficient depth should prevent transition to BOTTOM phase`() {
+        // Setup shallow squat - hips above knees (insufficient depth)
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 400f, kneesY = 500f
+        )
 
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.75f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.25f
@@ -139,25 +134,26 @@ class BackSquatStrategyIntegrationTest {
         var result = strategy.detectPhase(poseResult, calibrationData, state)
         state = result.newState
 
-        // Move to eccentric phase
+        // Try to move to eccentric phase with insufficient depth
+        // Even with enough bar descent, insufficient hip-below-knee depth
+        // should prevent transition to BOTTOM
+        every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.2f // Descended
+        every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.7f
+
         result = strategy.detectPhase(poseResult, calibrationData, state)
+        state = result.newState
 
-        // Validate form at insufficient depth
-        val validation = strategy.validateForm(poseResult, calibrationData)
-
-        assertFalse(validation.issues.isEmpty())
-        assertTrue(validation.issues.any { it.message.contains("depth") })
+        // Should be in ECCENTRIC (not BOTTOM) because hips are above knees
+        assertEquals(MovementPhase.ECCENTRIC, state.currentPhase)
+        assertFalse(result.repCompleted)
     }
 
     @Test
     fun `calculateMetrics should return correct values with velocity data`() {
         // Setup positions for metrics calculation
-        every { positionCalculator.getBodyPartPositions(any()) } returns mockk {
-            every { headY } returns 100f
-            every { shouldersY } returns 200f
-            every { hipsY } returns 500f
-            every { kneesY } returns 800f
-        }
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 800f
+        )
 
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.5f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.0f
@@ -206,12 +202,9 @@ class BackSquatStrategyIntegrationTest {
     @Test
     fun `reset should clear all state and allow new rep`() {
         // Setup and perform partial rep
-        every { positionCalculator.getBodyPartPositions(any()) } returns mockk {
-            every { headY } returns 100f
-            every { shouldersY } returns 200f
-            every { hipsY } returns 500f
-            every { kneesY } returns 800f
-        }
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 800f
+        )
 
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.5f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.0f
@@ -272,12 +265,9 @@ class BackSquatStrategyIntegrationTest {
     @Test
     fun `good form squat should pass validation`() {
         // Setup proper depth squat
-        every { positionCalculator.getBodyPartPositions(any()) } returns mockk {
-            every { headY } returns 100f
-            every { shouldersY } returns 200f
-            every { hipsY } returns 850f // Hips below knees
-            every { kneesY } returns 800f
-        }
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 850f, kneesY = 800f
+        )
 
         every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 1.1f
         every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.6f
@@ -303,7 +293,10 @@ class BackSquatStrategyIntegrationTest {
         val landmarks = List(33) { PoseKeypoint(0f, 0f, 0f, 1f) }
         return PoseResult(
             landmarks = landmarks,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            imageWidth = 1920,
+            imageHeight = 1080,
+            isPortrait = false
         )
     }
 }

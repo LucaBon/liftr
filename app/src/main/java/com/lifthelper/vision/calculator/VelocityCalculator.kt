@@ -13,18 +13,28 @@ import com.lifthelper.util.CircularBuffer
 import com.lifthelper.util.Constants
 import javax.inject.Inject
 
+/**
+ * Velocity calculator with per-instance state.
+ *
+ * NOTE: This class should NOT be a singleton. Each workout session should have its own
+ * instance with its own state. The @Inject constructor without @Singleton annotation
+ * in VisionModule ensures a new instance is created for each injection, providing
+ * thread safety and proper state isolation per workout session.
+ */
 class VelocityCalculator @Inject constructor(
     private val positionCalculator: PositionCalculator,
-    private val kalmanFilter: KalmanFilter1D,
     private val logger: Logger
 ) : IVelocityCalculator {
 
     companion object {
         private const val TAG = "VelocityCalculator"
     }
+
+    // State per instance - safe because each workout session gets its own instance
     private val positionHistory = CircularBuffer<PositionData>(Constants.VELOCITY_HISTORY_SIZE)
 
     // Separate Kalman filters for each body part
+    private val kalmanFilter = KalmanFilter1D()
     private val hipsKalmanFilter = KalmanFilter1D()
     private val shouldersKalmanFilter = KalmanFilter1D()
     private val headKalmanFilter = KalmanFilter1D()

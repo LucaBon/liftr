@@ -1,8 +1,13 @@
 package com.lifthelper.ui.screens.workout
 
+import com.lifthelper.domain.exercise.VelocityLossState
 import com.lifthelper.domain.model.CalibrationQuality
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.model.RepQualityScore
+import com.lifthelper.domain.model.PersonalRecord
+import com.lifthelper.domain.model.SetSummary
+import com.lifthelper.domain.model.VbtZone
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.RepCount
@@ -20,5 +25,14 @@ data class WorkoutState(
     val error: UiError? = null,
     val isLoading: Boolean = false,
     val targetVelocityRange: ClosedFloatingPointRange<Float>? = null,
-    val calibrationQuality: CalibrationQuality = CalibrationQuality.NONE
+    val calibrationQuality: CalibrationQuality = CalibrationQuality.NONE,
+    val vbtZone: VbtZone? = null,
+    val velocityLossState: VelocityLossState = VelocityLossState(),
+    val estimatedOneRM: Kilograms? = null,
+    val vbtZonesEnabled: Boolean = true,
+    val currentRepScore: RepQualityScore? = null,
+    val lastSetSummary: SetSummary? = null,
+    val completedSetCount: Int = 0,
+    val newPersonalRecords: List<PersonalRecord> = emptyList(),
+    val workoutSaved: Boolean = false
 )

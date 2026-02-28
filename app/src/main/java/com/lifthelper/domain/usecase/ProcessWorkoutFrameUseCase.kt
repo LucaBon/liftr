@@ -6,17 +6,24 @@ import com.lifthelper.domain.error.PoseErrorCode
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.CalibrationQuality
+import com.lifthelper.domain.model.DepthValidationResult
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.exercise.FormValidationResult
+import com.lifthelper.domain.exercise.strategy.BackSquatStrategy
+import com.lifthelper.domain.exercise.strategy.FrontSquatStrategy
+import com.lifthelper.domain.repository.SettingsKeys
+import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.domain.vision.IPositionCalculator
 import com.lifthelper.domain.vision.IVelocityCalculator
 import com.lifthelper.vision.tracking.MovementPhase
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 /**
@@ -30,6 +37,7 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
     private val velocityCalculator: IVelocityCalculator,
     private val positionCalculator: IPositionCalculator,
     private val strategyFactory: ExerciseStrategyFactory,
+    private val settingsRepository: SettingsRepository,
     private val logger: Logger
 ) : UseCase<ProcessWorkoutFrameUseCase.Params, FrameProcessingResult>() {
 
@@ -45,8 +53,9 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
      */
     override suspend fun invoke(params: Params): FrameProcessingResult {
         try {
-            // 1. Detect pose
-            val poseResult = poseDetector.detectPose(params.imageProxy, params.timestamp)
+            // 1. Convert ImageProxy to CameraFrame and detect pose
+            val cameraFrame = com.lifthelper.vision.adapter.ImageProxyAdapter.toCameraFrame(params.imageProxy)
+            val poseResult = poseDetector.detectPose(cameraFrame)
                 ?: return FrameProcessingResult.NoPoseDetected
 
             // Check if we have calibration data
@@ -62,8 +71,9 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
                 timestamp = params.timestamp
             )
 
-            // 3. Get exercise strategy
+            // 3. Get exercise strategy and configure squat depth if applicable
             val strategy = strategyFactory.getStrategy(params.exerciseType)
+            configureSquatDepth(strategy, params.exerciseType)
 
             // 4. Detect movement phase and count reps (only when recording)
             val phaseResult = if (params.isRecording) {
@@ -104,25 +114,60 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
             )
 
         } catch (e: LiftHelperError.PoseDetectionError) {
-            logger.e(TAG, "Pose detection failed: ${e.message}", e)
+            val context = "exercise=${params.exerciseType.name}, timestamp=${params.timestamp}"
+            logger.e(TAG, "Pose detection failed [$context]: ${e.message}", e)
             return FrameProcessingResult.Error(
-                message = e.message ?: "Pose detection failed",
+                message = "Pose detection failed for ${params.exerciseType.name}: ${e.message ?: "Unknown error"}",
                 cause = e
             )
         } catch (e: LiftHelperError) {
-            logger.e(TAG, "Frame processing failed: ${e.message}", e)
+            val context = "exercise=${params.exerciseType.name}, timestamp=${params.timestamp}, recording=${params.isRecording}"
+            logger.e(TAG, "Frame processing failed [$context]: ${e.message}", e)
             return FrameProcessingResult.Error(
-                message = e.message ?: "Unknown error",
+                message = "Frame processing failed for ${params.exerciseType.name}: ${e.message ?: "Unknown error"}",
                 cause = e
             )
         } catch (e: Exception) {
-            logger.e(TAG, "Unexpected frame processing error", e)
+            val context = "exercise=${params.exerciseType.name}, timestamp=${params.timestamp}"
+            logger.e(TAG, "Unexpected error [$context]", e)
             return FrameProcessingResult.Error(
-                message = "Unexpected error processing frame",
+                message = "Unexpected error processing ${params.exerciseType.name} frame: ${e.javaClass.simpleName}",
                 cause = e
             )
         } finally {
             params.imageProxy.close()
+        }
+    }
+
+    /**
+     * Configures squat depth setting for squat exercise strategies.
+     * Loads the user's preferred squat depth from settings and updates the strategy.
+     */
+    private suspend fun configureSquatDepth(
+        strategy: com.lifthelper.domain.exercise.ExerciseStrategy,
+        exerciseType: ExerciseType
+    ) {
+        // Only configure depth for squat exercises
+        when (strategy) {
+            is BackSquatStrategy -> {
+                val depthTypeName = settingsRepository.getStringSetting(
+                    SettingsKeys.SQUAT_DEPTH_BACK_SQUAT,
+                    SquatDepthType.DEFAULT.name
+                ).first()
+                val depthType = SquatDepthType.fromString(depthTypeName)
+                strategy.updateSquatDepthType(depthType)
+            }
+            is FrontSquatStrategy -> {
+                val depthTypeName = settingsRepository.getStringSetting(
+                    SettingsKeys.SQUAT_DEPTH_FRONT_SQUAT,
+                    SquatDepthType.DEFAULT.name
+                ).first()
+                val depthType = SquatDepthType.fromString(depthTypeName)
+                strategy.updateSquatDepthType(depthType)
+            }
+            else -> {
+                // Not a squat exercise, no depth configuration needed
+            }
         }
     }
 
@@ -166,7 +211,8 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
             newState = phaseTransitionResult.newState,
             repCounted = phaseTransitionResult.repCompleted,
             repCount = newRepCount,
-            debugInfo = phaseTransitionResult.debugInfo
+            debugInfo = phaseTransitionResult.debugInfo,
+            depthValidation = phaseTransitionResult.depthValidation
         )
     }
 
@@ -227,7 +273,8 @@ data class PhaseResult(
     val newState: ExercisePhaseState,  // Updated immutable state
     val repCounted: Boolean,
     val repCount: Int,
-    val debugInfo: String
+    val debugInfo: String,
+    val depthValidation: DepthValidationResult? = null
 ) {
     // Convenience property for backwards compatibility
     val phase: MovementPhase

@@ -17,7 +17,9 @@ import com.lifthelper.vision.tracking.MovementPhase
  * @property currentHeadY Current head Y position in meters (null if not detected)
  * @property currentShouldersY Current shoulders Y position in meters (null if not detected)
  * @property currentHipsY Current hips Y position in meters (null if not detected)
+ * @property currentHipsX Current hips X position in meters (null if not detected)
  * @property currentKneesY Current knees Y position in meters (null if not detected)
+ * @property currentKneesX Current knees X position in meters (null if not detected)
  */
 data class ExercisePhaseState(
     val currentPhase: MovementPhase = MovementPhase.IDLE,
@@ -28,7 +30,22 @@ data class ExercisePhaseState(
     val currentHeadY: Float? = null,
     val currentShouldersY: Float? = null,
     val currentHipsY: Float? = null,
-    val currentKneesY: Float? = null
+    val currentHipsX: Float? = null,
+    val currentKneesY: Float? = null,
+    val currentKneesX: Float? = null,
+    // Bench press fields
+    val currentWristsY: Float? = null,
+    val currentWristsX: Float? = null,
+    val currentElbowsY: Float? = null,
+    val currentElbowAngle: Float? = null,
+    val startingWristsY: Float? = null,
+    val lowestWristsY: Float? = null,
+    // Deadlift fields
+    val highestHipsY: Float? = null,
+    val startingTorsoAngle: Float? = null,
+    val currentAnklesY: Float? = null,
+    val currentAnklesX: Float? = null,
+    val currentShouldersX: Float? = null
 ) {
     /**
      * Create a new state with updated current phase.
@@ -57,13 +74,17 @@ data class ExercisePhaseState(
         headY: Float?,
         shouldersY: Float?,
         hipsY: Float?,
-        kneesY: Float?
+        kneesY: Float?,
+        hipsX: Float? = null,
+        kneesX: Float? = null
     ): ExercisePhaseState =
         copy(
             currentHeadY = headY,
             currentShouldersY = shouldersY,
             currentHipsY = hipsY,
-            currentKneesY = kneesY
+            currentKneesY = kneesY,
+            currentHipsX = hipsX,
+            currentKneesX = kneesX
         )
 
     /**
@@ -71,6 +92,54 @@ data class ExercisePhaseState(
      */
     fun withLowestBarPosition(position: Float?): ExercisePhaseState =
         copy(lowestBarPosition = position)
+
+    /**
+     * Create a new state with updated wrist positions (bench press).
+     */
+    fun withWristPositions(wristsY: Float?, wristsX: Float? = null): ExercisePhaseState =
+        copy(currentWristsY = wristsY, currentWristsX = wristsX)
+
+    /**
+     * Create a new state with updated elbow data (bench press).
+     */
+    fun withElbowData(elbowsY: Float?, elbowAngle: Float? = null): ExercisePhaseState =
+        copy(currentElbowsY = elbowsY, currentElbowAngle = elbowAngle)
+
+    /**
+     * Create a new state with starting wrist Y position (bench press).
+     */
+    fun withStartingWristsY(wristsY: Float?): ExercisePhaseState =
+        copy(startingWristsY = wristsY)
+
+    /**
+     * Create a new state with lowest wrist Y position (bench press bottom).
+     */
+    fun withLowestWristsY(position: Float?): ExercisePhaseState =
+        copy(lowestWristsY = position)
+
+    /**
+     * Create a new state with highest hip Y position (deadlift lockout).
+     */
+    fun withHighestHipsY(position: Float?): ExercisePhaseState =
+        copy(highestHipsY = position)
+
+    /**
+     * Create a new state with starting torso angle (deadlift back rounding reference).
+     */
+    fun withStartingTorsoAngle(angle: Float?): ExercisePhaseState =
+        copy(startingTorsoAngle = angle)
+
+    /**
+     * Create a new state with updated ankle positions (deadlift).
+     */
+    fun withAnklePositions(anklesY: Float?, anklesX: Float? = null): ExercisePhaseState =
+        copy(currentAnklesY = anklesY, currentAnklesX = anklesX)
+
+    /**
+     * Create a new state with updated shoulder X position (deadlift bar drift).
+     */
+    fun withShouldersX(shouldersX: Float?): ExercisePhaseState =
+        copy(currentShouldersX = shouldersX)
 
     companion object {
         /**

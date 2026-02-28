@@ -17,6 +17,7 @@ import com.lifthelper.ui.screens.home.HomeScreen
 import com.lifthelper.ui.screens.home.HomeViewModel
 import com.lifthelper.ui.screens.workout.WorkoutScreen
 import com.lifthelper.ui.screens.settings.SettingsScreen
+import com.lifthelper.ui.screens.analytics.AnalyticsScreen
 import com.lifthelper.ui.screens.history.HistoryScreen
 
 @Composable
@@ -77,7 +78,7 @@ fun NavGraph(
         composable(Screen.Home.route) {
             HomeScreen(
                 onStartWorkout = { navController.navigate(Screen.Workout.route) },
-                onViewHistory = { navController.navigate(Screen.History.route) },
+                onViewHistory = { navController.navigate(Screen.Analytics.route) },
                 onSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
@@ -116,6 +117,10 @@ fun NavGraph(
             )
         }
 
-        // TODO: Add Analysis screen
+        composable(Screen.Analytics.route) {
+            AnalyticsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }

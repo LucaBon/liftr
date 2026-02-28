@@ -12,7 +12,8 @@ enum class AlignmentIssue {
     NONE,           // Camera is properly aligned
     TILTED,         // Camera is tilted (rotated)
     SIDE_VIEW,      // Viewing from side angle instead of front
-    TILTED_AND_SIDE // Both issues present
+    TILTED_AND_SIDE,// Both issues present
+    OFF_CENTER      // Body not centered in frame (lens distortion risk)
 }
 
 /**
@@ -23,6 +24,7 @@ data class AlignmentCheckResult(
     val tiltAngleDegrees: Float = 0f,
     val shoulderHipWidthRatio: Float = 1f,  // Ratio of shoulder width to hip width
     val shoulderWidthToHeightRatio: Float = 0f,  // Shoulder width as percentage of height
+    val bodyCenterX: Float = 0.5f,  // Horizontal center position of body (0-1 range)
     val message: String = ""
 )
 
@@ -36,6 +38,10 @@ class CameraAlignmentChecker {
         private const val MAX_TILT_ANGLE_DEGREES = 8f  // Maximum acceptable camera tilt
         private const val MIN_SHOULDER_WIDTH_RATIO = 0.15f  // Minimum shoulder width / height ratio for frontal view
         private const val MAX_SHOULDER_HIP_WIDTH_DIFFERENCE = 0.25f  // Max acceptable difference between shoulder and hip widths
+
+        // Center alignment thresholds (to minimize lens distortion)
+        private const val MIN_CENTER_X = 0.35f  // Minimum X position for centered body
+        private const val MAX_CENTER_X = 0.65f  // Maximum X position for centered body
     }
 
     /**
@@ -101,11 +107,17 @@ class CameraAlignmentChecker {
         val isSideView = shoulderWidthToHeightRatio < MIN_SHOULDER_WIDTH_RATIO ||
                         abs(shoulderHipWidthRatio - 1f) > MAX_SHOULDER_HIP_WIDTH_DIFFERENCE
 
+        // 3. Check if body is centered in frame (to minimize lens distortion)
+        // Calculate body center as average of shoulders and hips
+        val bodyCenterX = (leftShoulder.x + rightShoulder.x + leftHip.x + rightHip.x) / 4f
+        val isOffCenter = bodyCenterX < MIN_CENTER_X || bodyCenterX > MAX_CENTER_X
+
         // Determine issue and create message
         val issue = when {
             isTilted && isSideView -> AlignmentIssue.TILTED_AND_SIDE
             isTilted -> AlignmentIssue.TILTED
             isSideView -> AlignmentIssue.SIDE_VIEW
+            isOffCenter -> AlignmentIssue.OFF_CENTER
             else -> AlignmentIssue.NONE
         }
 
@@ -116,6 +128,12 @@ class CameraAlignmentChecker {
                 "Please face the camera directly (front view). Current shoulder width: ${(shoulderWidthToHeightRatio * 100).toInt()}% of height."
             AlignmentIssue.TILTED_AND_SIDE ->
                 "Camera is tilted ${abs(avgTilt).toInt()}° and viewing from side. Hold phone upright and face camera directly."
+            AlignmentIssue.OFF_CENTER ->
+                if (bodyCenterX < 0.5f) {
+                    "Move to the right - keep your body centered in the frame for best accuracy."
+                } else {
+                    "Move to the left - keep your body centered in the frame for best accuracy."
+                }
             AlignmentIssue.NONE ->
                 "Camera alignment is good"
         }
@@ -125,6 +143,7 @@ class CameraAlignmentChecker {
             tiltAngleDegrees = avgTilt,
             shoulderHipWidthRatio = shoulderHipWidthRatio,
             shoulderWidthToHeightRatio = shoulderWidthToHeightRatio,
+            bodyCenterX = bodyCenterX,
             message = message
         )
     }

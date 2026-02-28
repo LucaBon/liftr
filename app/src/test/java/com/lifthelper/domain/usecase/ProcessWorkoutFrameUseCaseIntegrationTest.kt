@@ -14,7 +14,9 @@ import com.lifthelper.domain.model.CalibrationQuality
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.model.VelocityData
+import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.value.Joules
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
@@ -28,6 +30,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -48,6 +51,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     private lateinit var velocityCalculator: IVelocityCalculator
     private lateinit var positionCalculator: IPositionCalculator
     private lateinit var strategyFactory: ExerciseStrategyFactory
+    private lateinit var settingsRepository: SettingsRepository
     private lateinit var logger: Logger
     private lateinit var useCase: ProcessWorkoutFrameUseCase
 
@@ -61,7 +65,10 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
 
     private val poseResult = PoseResult(
         landmarks = List(33) { PoseKeypoint(0f, 0f, 0f, 1f) },
-        timestamp = System.currentTimeMillis()
+        timestamp = System.currentTimeMillis(),
+        imageWidth = 1920,
+        imageHeight = 1080,
+        isPortrait = false
     )
 
     private val velocityData = VelocityData(
@@ -77,13 +84,18 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         velocityCalculator = mockk()
         positionCalculator = mockk()
         strategyFactory = mockk()
+        settingsRepository = mockk()
         logger = mockk(relaxed = true)
+
+        // Mock settings repository to return default depth type
+        every { settingsRepository.getStringSetting(any(), any()) } returns flowOf(SquatDepthType.DEFAULT.name)
 
         useCase = ProcessWorkoutFrameUseCase(
             poseDetector,
             velocityCalculator,
             positionCalculator,
             strategyFactory,
+            settingsRepository,
             logger
         )
     }
@@ -95,7 +107,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
@@ -149,7 +161,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val imageProxy = mockk<ImageProxy>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns null
+        every { poseDetector.detectPose(any()) } returns null
 
         val params = ProcessWorkoutFrameUseCase.Params(
             imageProxy = imageProxy,
@@ -175,7 +187,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val imageProxy = mockk<ImageProxy>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
 
         val params = ProcessWorkoutFrameUseCase.Params(
             imageProxy = imageProxy,
@@ -202,7 +214,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.validateForm(any(), any()) } returns FormValidationResult(
@@ -244,7 +256,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
@@ -294,7 +306,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val timestamp = System.currentTimeMillis()
         val frontSquatStrategy = mockk<ExerciseStrategy>()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.FRONT_SQUAT) } returns frontSquatStrategy
         every { frontSquatStrategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(
@@ -339,7 +351,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val imageProxy = mockk<ImageProxy>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } throws RuntimeException("Test error")
+        every { poseDetector.detectPose(any()) } throws RuntimeException("Test error")
 
         val params = ProcessWorkoutFrameUseCase.Params(
             imageProxy = imageProxy,
@@ -366,7 +378,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
-        coEvery { poseDetector.detectPose(imageProxy, timestamp) } returns poseResult
+        every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns null // No velocity data
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
         every { strategy.detectPhase(any(), any(), any()) } returns PhaseTransitionResult(

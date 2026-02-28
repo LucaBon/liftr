@@ -1,8 +1,10 @@
 package com.lifthelper.domain.exercise
 
 import com.lifthelper.domain.model.CalibrationData
+import com.lifthelper.domain.model.DepthValidationResult
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseResult
+import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.value.Joules
 import com.lifthelper.domain.value.Kilograms
@@ -88,11 +90,13 @@ interface ExerciseStrategy {
  * @property newState The new exercise phase state after transition (immutable)
  * @property repCompleted Whether a complete rep was just finished
  * @property debugInfo Debug information about the phase detection
+ * @property depthValidation Depth validation result when transitioning through BOTTOM phase (squats only)
  */
 data class PhaseTransitionResult(
     val newState: ExercisePhaseState,
     val repCompleted: Boolean,
-    val debugInfo: String = ""
+    val debugInfo: String = "",
+    val depthValidation: DepthValidationResult? = null
 )
 
 /**
@@ -155,10 +159,12 @@ enum class Severity {
  * @property returnTolerance Tolerance for returning to starting position
  * @property minVelocity Minimum velocity threshold for movement detection
  * @property targetBodyParts List of landmark indices that are the focus of the exercise
+ * @property squatDepthType The squat depth variation requirement (for squat exercises only)
  */
 data class ExerciseCriteria(
     val minDescentDepth: Meters,
     val returnTolerance: Meters,
     val minVelocity: MetersPerSecond,
-    val targetBodyParts: List<Int>
+    val targetBodyParts: List<Int>,
+    val squatDepthType: SquatDepthType = SquatDepthType.DEFAULT
 )
