@@ -39,8 +39,13 @@ data class Set(
     val jumpHeight: Meters? = null,
     val timestamp: Long,
     val notes: String = "",
-    val reps: List<Rep> = emptyList()
+    val reps: List<Rep> = emptyList(),
+    val isManual: Boolean = false,
+    val exerciseName: String? = null
 ) {
+    val displayName: String
+        get() = exerciseName ?: exerciseType.getDisplayName()
+
     /**
      * Returns whether the target reps were achieved.
      */

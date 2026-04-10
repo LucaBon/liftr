@@ -37,7 +37,9 @@ class SetMapper @Inject constructor() {
             jumpHeight = entity.jumpHeight?.let { Meters(it) },
             timestamp = entity.timestamp,
             notes = entity.notes,
-            reps = reps
+            reps = reps,
+            isManual = entity.isManual,
+            exerciseName = entity.exerciseName
         )
     }
 
@@ -70,7 +72,9 @@ class SetMapper @Inject constructor() {
             avgPower = domain.avgPower?.value,
             jumpHeight = domain.jumpHeight?.value,
             timestamp = domain.timestamp,
-            notes = domain.notes
+            notes = domain.notes,
+            isManual = domain.isManual,
+            exerciseName = domain.exerciseName
         )
     }
 }

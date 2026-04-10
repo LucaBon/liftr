@@ -31,5 +31,7 @@ data class SetEntity(
     val avgPower: Float? = null,
     val jumpHeight: Float? = null,
     val timestamp: Long,
-    val notes: String = ""
+    val notes: String = "",
+    val isManual: Boolean = false,
+    val exerciseName: String? = null
 )

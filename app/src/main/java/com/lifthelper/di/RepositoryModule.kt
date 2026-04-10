@@ -2,10 +2,12 @@ package com.lifthelper.di
 
 import com.lifthelper.data.repository.AnalyticsRepositoryImpl
 import com.lifthelper.data.repository.CalibrationRepositoryImpl
+import com.lifthelper.data.repository.CustomExerciseRepositoryImpl
 import com.lifthelper.data.repository.SettingsRepositoryImpl
 import com.lifthelper.data.repository.WorkoutRepositoryImpl
 import com.lifthelper.domain.repository.AnalyticsRepository
 import com.lifthelper.domain.repository.CalibrationRepository
+import com.lifthelper.domain.repository.CustomExerciseRepository
 import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.repository.WorkoutRepository
 import dagger.Binds
@@ -57,4 +59,10 @@ abstract class RepositoryModule {
     abstract fun bindAnalyticsRepository(
         impl: AnalyticsRepositoryImpl
     ): AnalyticsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCustomExerciseRepository(
+        impl: CustomExerciseRepositoryImpl
+    ): CustomExerciseRepository
 }
