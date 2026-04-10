@@ -4,15 +4,23 @@ import androidx.camera.core.ImageProxy
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifthelper.domain.exercise.BarPathAnalyzer
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.FormIssue
 import com.lifthelper.domain.exercise.RepQualityScorer
 import com.lifthelper.domain.exercise.Severity
+import com.lifthelper.domain.exercise.TempoAdherence
+import com.lifthelper.domain.exercise.TempoCue
+import com.lifthelper.domain.exercise.TempoState
+import com.lifthelper.domain.exercise.TempoTracker
 import com.lifthelper.domain.exercise.VelocityLossState
 import com.lifthelper.domain.exercise.VelocityLossTracker
 import com.lifthelper.domain.feedback.IFeedbackEmitter
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.AggregateFormIssue
+import com.lifthelper.domain.model.BarPathData
+import com.lifthelper.domain.model.BarPathPoint
+import com.lifthelper.domain.model.TempoPrescription
 import com.lifthelper.domain.model.CalibrationData
 import com.lifthelper.domain.model.DepthValidationResult
 import com.lifthelper.domain.model.ExerciseType
@@ -31,7 +39,9 @@ import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
 import com.lifthelper.domain.usecase.FrameProcessingResult
 import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
+import com.lifthelper.domain.usecase.LogManualSetUseCase
 import com.lifthelper.domain.usecase.SaveWorkoutUseCase
+import com.lifthelper.domain.repository.CustomExerciseRepository
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
@@ -40,6 +50,8 @@ import com.lifthelper.ui.common.UiError
 import com.lifthelper.ui.common.toUiError
 import com.lifthelper.vision.tracking.MovementPhase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -51,6 +63,8 @@ class WorkoutViewModel @Inject constructor(
     private val processFrameUseCase: ProcessWorkoutFrameUseCase,
     private val saveWorkoutUseCase: SaveWorkoutUseCase,
     private val checkPersonalRecordsUseCase: CheckPersonalRecordsUseCase,
+    private val logManualSetUseCase: LogManualSetUseCase,
+    private val customExerciseRepository: CustomExerciseRepository,
     private val calibrationRepository: CalibrationRepository,
     private val settingsRepository: SettingsRepository,
     private val feedbackEmitter: IFeedbackEmitter,
@@ -94,8 +108,12 @@ class WorkoutViewModel @Inject constructor(
     // Track previous rep count to detect new reps
     private var previousRepCount = 0
 
+    // --- Bar Path: real-time state for overlay ---
+    private val _currentBarPathPoints = MutableStateFlow<List<BarPathPoint>>(emptyList())
+    val currentBarPathPoints: StateFlow<List<BarPathPoint>> = _currentBarPathPoints.asStateFlow()
+
     // --- Rep Quality Scoring: per-rep accumulators ---
-    private var currentRepBarXPositions = mutableListOf<Float>()
+    private var currentRepBarPathPoints = mutableListOf<BarPathPoint>()
     private var currentRepFormIssues = mutableListOf<FormIssue>()
     private var currentRepEccentricStartTime: Long = 0L
     private var currentRepBottomTime: Long = 0L
@@ -107,12 +125,24 @@ class WorkoutViewModel @Inject constructor(
     private var setRepVelocities = mutableListOf<MetersPerSecond>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
+    // --- Bar Path: per-set analyzed paths ---
+    private var setBarPaths = mutableListOf<BarPathData>()
+
     // --- Per-set Rep domain objects for persistence ---
     private var setReps = mutableListOf<Rep>()
 
     // --- Session-level accumulators for workout persistence ---
     private val completedSets = mutableListOf<Set>()
     private var workoutStartTime: Long = 0L
+
+    // --- Tempo Training ---
+    private var tempoState: TempoState? = null
+    @Volatile private var tempoModeEnabled = false
+    private var lastTempoCountdownSecond = -1
+
+    // --- Rest Timer ---
+    private var restTimerJob: Job? = null
+    @Volatile private var restTimerEnabled = true
 
     init {
         logger.d(TAG, "WorkoutViewModel initialized")
@@ -124,6 +154,9 @@ class WorkoutViewModel @Inject constructor(
         }
         loadVbtSettings()
         loadFeedbackSettings()
+        loadRestTimerSettings()
+        loadTempoSettings()
+        loadCustomExerciseNames()
     }
 
     private fun loadVbtSettings() {
@@ -317,11 +350,18 @@ class WorkoutViewModel @Inject constructor(
             when (newPhase) {
                 MovementPhase.ECCENTRIC -> {
                     // New rep starting: reset per-rep accumulators
-                    currentRepBarXPositions.clear()
+                    currentRepBarPathPoints.clear()
+                    _currentBarPathPoints.value = emptyList()
                     currentRepFormIssues.clear()
                     currentRepDepthValidation = null
                     currentRepEccentricStartTime = now
                     currentRepBottomTime = 0L
+                    // Reset tempo state for new rep
+                    tempoState?.let { ts ->
+                        tempoState = TempoTracker.reset(ts.prescription)
+                        tempoState = TempoTracker.onPhaseTransition(tempoState!!, newPhase, now)
+                        lastTempoCountdownSecond = -1
+                    }
                 }
                 MovementPhase.BOTTOM -> {
                     currentRepBottomTime = now
@@ -329,15 +369,31 @@ class WorkoutViewModel @Inject constructor(
                     result.phaseResult?.depthValidation?.let {
                         currentRepDepthValidation = it
                     }
+                    tempoState?.let { ts ->
+                        tempoState = TempoTracker.onPhaseTransition(ts, newPhase, now)
+                    }
                 }
-                else -> { /* No special action for other transitions */ }
+                else -> {
+                    // Update tempo state for CONCENTRIC and TOP transitions
+                    tempoState?.let { ts ->
+                        tempoState = TempoTracker.onPhaseTransition(ts, newPhase, now)
+                    }
+                }
             }
         }
 
-        // Collect bar X position during active rep phases
+        // Emit tempo cues every frame during recording
+        tempoState?.let { ts ->
+            val cue = TempoTracker.getCue(ts, now)
+            _uiState.update { it.copy(tempoState = ts, tempoCue = cue) }
+            emitTempoCueFeedback(cue, ts, now)
+        }
+
+        // Collect bar path position during active rep phases
         if (newPhase in listOf(MovementPhase.ECCENTRIC, MovementPhase.BOTTOM, MovementPhase.CONCENTRIC)) {
-            extractBarXPosition(result.poseResult, _uiState.value.selectedExercise)?.let {
-                currentRepBarXPositions.add(it)
+            extractBarPathPoint(result.poseResult, result.velocityData, _uiState.value.selectedExercise)?.let {
+                currentRepBarPathPoints.add(it)
+                _currentBarPathPoints.value = currentRepBarPathPoints.toList()
             }
             // Collect unique form issues during the rep
             result.formValidation.issues.forEach { issue ->
@@ -366,15 +422,31 @@ class WorkoutViewModel @Inject constructor(
             (now - currentRepBottomTime) / 1000f
         } else 0f
 
+        // Calculate tempo adherence if in tempo mode
+        val tempoAdherence: TempoAdherence? = tempoState?.let { ts ->
+            // Finalize the concentric phase duration before scoring
+            val finalizedState = TempoTracker.onPhaseTransition(ts, MovementPhase.IDLE, now)
+            tempoState = TempoTracker.reset(ts.prescription)
+            TempoTracker.calculateAdherence(finalizedState)
+        }
+
         val score = RepQualityScorer.scoreRep(
             exerciseType = _uiState.value.selectedExercise,
             depthValidation = currentRepDepthValidation,
-            barXPositions = currentRepBarXPositions.toList(),
+            barXPositions = currentRepBarPathPoints.map { it.normalizedX },
             eccentricDuration = eccentricDuration,
             concentricDuration = concentricDuration,
             previousConcentricDurations = previousConcentricDurations.toList(),
-            formIssues = currentRepFormIssues.toList()
+            formIssues = currentRepFormIssues.toList(),
+            tempoAdherence = tempoAdherence
         )
+
+        // Analyze bar path for this rep
+        val barPathData = BarPathAnalyzer.analyze(
+            repNumber = setRepScores.size + 1,
+            points = currentRepBarPathPoints.toList()
+        )
+        setBarPaths.add(barPathData)
 
         setRepScores.add(score)
         previousConcentricDurations.add(concentricDuration)
@@ -413,30 +485,47 @@ class WorkoutViewModel @Inject constructor(
     }
 
     /**
-     * Extracts the horizontal bar tracking position from the pose result.
+     * Extracts a full bar path point from the pose result and velocity data.
      * The tracked body part depends on the exercise type.
      */
-    private fun extractBarXPosition(poseResult: PoseResult, exerciseType: ExerciseType): Float? {
+    private fun extractBarPathPoint(
+        poseResult: PoseResult,
+        velocityData: com.lifthelper.domain.model.VelocityData?,
+        exerciseType: ExerciseType
+    ): BarPathPoint? {
         val landmarks = poseResult.landmarks
-        return when (exerciseType) {
+        val (nx, ny) = when (exerciseType) {
             ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> {
                 val left = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
                 val right = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-                averageX(left, right)
+                averageXY(left, right) ?: return null
             }
             ExerciseType.BENCH_PRESS, ExerciseType.DEADLIFT -> {
                 val left = landmarks.getOrNull(PoseResult.LEFT_WRIST)
                 val right = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-                averageX(left, right)
+                averageXY(left, right) ?: return null
             }
-            else -> null
+            else -> return null
         }
+
+        val ppm = calibrationData?.pixelsPerMeter ?: 1f
+        val imageWidth = poseResult.imageWidth.toFloat()
+        val imageHeight = poseResult.imageHeight.toFloat()
+
+        return BarPathPoint(
+            normalizedX = nx,
+            normalizedY = ny,
+            realWorldXCm = (nx * imageWidth / ppm) * 100f,
+            realWorldYCm = (ny * imageHeight / ppm) * 100f,
+            velocity = velocityData?.instantaneous ?: MetersPerSecond(0f),
+            timestamp = System.currentTimeMillis()
+        )
     }
 
-    private fun averageX(a: PoseKeypoint?, b: PoseKeypoint?): Float? {
+    private fun averageXY(a: PoseKeypoint?, b: PoseKeypoint?): Pair<Float, Float>? {
         if (a == null || b == null) return null
         if (a.visibility < 0.5f || b.visibility < 0.5f) return null
-        return (a.x + b.x) / 2f
+        return Pair((a.x + b.x) / 2f, (a.y + b.y) / 2f)
     }
 
     /**
@@ -459,7 +548,8 @@ class WorkoutViewModel @Inject constructor(
         exerciseState = ExercisePhaseState.initial()  // Reset to fresh state
 
         // Reset rep quality scoring accumulators
-        currentRepBarXPositions.clear()
+        currentRepBarPathPoints.clear()
+        _currentBarPathPoints.value = emptyList()
         currentRepFormIssues.clear()
         currentRepDepthValidation = null
         currentRepEccentricStartTime = 0L
@@ -467,8 +557,18 @@ class WorkoutViewModel @Inject constructor(
         setRepScores.clear()
         setRepVelocities.clear()
         previousConcentricDurations.clear()
+        setBarPaths.clear()
         setReps.clear()
         previousPhase = MovementPhase.IDLE
+
+        // Initialize tempo tracking if enabled
+        val prescription = _uiState.value.tempoPrescription
+        if (tempoModeEnabled && prescription != null) {
+            tempoState = TempoTracker.reset(prescription)
+            lastTempoCountdownSecond = -1
+        } else {
+            tempoState = null
+        }
 
         _uiState.update {
             it.copy(
@@ -478,7 +578,9 @@ class WorkoutViewModel @Inject constructor(
                 vbtZone = null,
                 velocityLossState = VelocityLossTracker.reset(velocityLossThreshold),
                 currentRepScore = null,
-                lastSetSummary = null
+                lastSetSummary = null,
+                tempoState = tempoState,
+                tempoCue = null
             )
         }
         logger.d(TAG, "Recording state updated, exercise state reset, VBT loss tracker reset")
@@ -515,6 +617,34 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Emits audio/haptic feedback for tempo cues. Debounces countdown to once per second.
+     */
+    private fun emitTempoCueFeedback(cue: TempoCue, state: TempoState, now: Long) {
+        when (cue) {
+            is TempoCue.Countdown -> {
+                val secondsLeft = cue.remainingSeconds.toInt()
+                if (secondsLeft != lastTempoCountdownSecond && secondsLeft > 0) {
+                    lastTempoCountdownSecond = secondsLeft
+                    if (cue.phase == MovementPhase.BOTTOM || cue.phase == MovementPhase.TOP) {
+                        feedbackEmitter.emit(FeedbackEvent.TempoHold(secondsLeft))
+                    } else {
+                        feedbackEmitter.emit(FeedbackEvent.TempoCountdown(secondsLeft, cue.phase))
+                    }
+                }
+            }
+            is TempoCue.TooFast -> {
+                feedbackEmitter.emit(FeedbackEvent.TempoSpeedCue(isTooFast = true))
+            }
+            is TempoCue.TooSlow -> {
+                feedbackEmitter.emit(FeedbackEvent.TempoSpeedCue(isTooFast = false))
+            }
+            is TempoCue.OnPace, is TempoCue.Explosive, is TempoCue.None -> {
+                // No audio feedback needed
+            }
+        }
+    }
+
     fun stopRecording() {
         logger.i(TAG, "STOP RECORDING - Total reps: ${_uiState.value.repCount}")
 
@@ -541,6 +671,9 @@ class WorkoutViewModel @Inject constructor(
             checkForPersonalRecords(completedSet)
         }
 
+        // Clear real-time bar path overlay
+        _currentBarPathPoints.value = emptyList()
+
         _uiState.update {
             it.copy(
                 isRecording = false,
@@ -552,6 +685,11 @@ class WorkoutViewModel @Inject constructor(
         if (summary != null) {
             logger.i(TAG, "Set summary: overall=${summary.overallScore}/100 " +
                 "(${summary.overallGrade.label}), reps=${summary.completedReps.value}")
+        }
+
+        // Auto-start rest timer after tracked set if enabled
+        if (restTimerEnabled && summary != null) {
+            startRestTimer()
         }
     }
 
@@ -649,7 +787,8 @@ class WorkoutViewModel @Inject constructor(
             overallScore = scores.map { it.totalScore }.average().toInt(),
             bestRepIndex = scores.indices.maxByOrNull { scores[it].totalScore } ?: 0,
             worstRepIndex = scores.indices.minByOrNull { scores[it].totalScore } ?: 0,
-            aggregateFormIssues = aggregateFormIssues(scores)
+            aggregateFormIssues = aggregateFormIssues(scores),
+            repBarPaths = setBarPaths.toList()
         )
     }
 
@@ -694,11 +833,174 @@ class WorkoutViewModel @Inject constructor(
     fun setExercise(exercise: ExerciseType) {
         logger.i(TAG, "Exercise changed to: $exercise")
         savedStateHandle[KEY_EXERCISE] = exercise.name
+        // Clear rest timer when exercise changes
+        skipRest()
         _uiState.update { it.copy(selectedExercise = exercise) }
+    }
+
+    // ── Manual Entry ─────────────────────────────────────────────────
+
+    fun toggleManualEntryMode() {
+        _uiState.update { it.copy(isManualEntryMode = !it.isManualEntryMode) }
+    }
+
+    fun logManualSet(exerciseName: String, weight: Float, reps: Int, notes: String = "") {
+        if (exerciseName.isBlank() || weight <= 0f || reps <= 0) return
+
+        // Initialize workout start time on first set
+        if (completedSets.isEmpty()) {
+            workoutStartTime = System.currentTimeMillis()
+        }
+
+        viewModelScope.launch {
+            val set = logManualSetUseCase(
+                exerciseName = exerciseName,
+                weight = weight,
+                reps = reps,
+                notes = notes
+            )
+            completedSets.add(set)
+            logger.i(TAG, "Manual set logged: $exerciseName ${weight}kg x $reps (${completedSets.size} sets in session)")
+            _uiState.update { it.copy(completedSetCount = completedSets.size) }
+
+            // Start rest timer after manual set if enabled
+            if (restTimerEnabled) {
+                startRestTimer()
+            }
+        }
+    }
+
+    private fun loadCustomExerciseNames() {
+        viewModelScope.launch {
+            customExerciseRepository.getExerciseNames().collect { names ->
+                _uiState.update { it.copy(customExerciseNames = names) }
+            }
+        }
+    }
+
+    // ── Tempo Training ───────────────────────────────────────────────
+
+    private fun loadTempoSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.TEMPO_MODE_ENABLED,
+                false
+            ).collect { enabled ->
+                tempoModeEnabled = enabled
+                _uiState.update { it.copy(tempoModeEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.LAST_TEMPO_PRESCRIPTION,
+                ""
+            ).collect { notation ->
+                if (notation.isNotEmpty()) {
+                    TempoPrescription.fromString(notation)?.let { prescription ->
+                        _uiState.update { it.copy(tempoPrescription = prescription) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun toggleTempoMode(enabled: Boolean) {
+        tempoModeEnabled = enabled
+        _uiState.update { it.copy(tempoModeEnabled = enabled) }
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(SettingsKeys.TEMPO_MODE_ENABLED, enabled)
+        }
+    }
+
+    fun setTempoPrescription(prescription: TempoPrescription) {
+        _uiState.update { it.copy(tempoPrescription = prescription) }
+        viewModelScope.launch {
+            settingsRepository.saveStringSetting(
+                SettingsKeys.LAST_TEMPO_PRESCRIPTION,
+                "${prescription.eccentricSeconds.toInt()}-${prescription.pauseBottomSeconds.toInt()}-" +
+                    "${if (prescription.isExplosiveConcentric) "X" else prescription.concentricSeconds.toInt().toString()}-" +
+                    "${prescription.pauseTopSeconds.toInt()}"
+            )
+        }
+    }
+
+    // ── Rest Timer ──────────────────────────────────────────────────
+
+    private fun loadRestTimerSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.REST_TIMER_ENABLED,
+                true
+            ).collect { enabled ->
+                restTimerEnabled = enabled
+                _uiState.update { it.copy(restTimerEnabled = enabled) }
+            }
+        }
+    }
+
+    fun getRestDurationForExercise(exerciseType: ExerciseType): Int {
+        // Default durations in seconds
+        return when (exerciseType) {
+            ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> 180
+            ExerciseType.BENCH_PRESS -> 120
+            ExerciseType.DEADLIFT -> 180
+            else -> 90
+        }
+    }
+
+    fun startRestTimer(durationOverride: Int? = null) {
+        restTimerJob?.cancel()
+
+        val exercise = _uiState.value.selectedExercise
+        val duration = durationOverride ?: getRestDurationForExercise(exercise)
+
+        _uiState.update {
+            it.copy(
+                restTimerState = com.lifthelper.domain.model.RestTimerState(
+                    totalSeconds = duration,
+                    remainingSeconds = duration,
+                    exerciseType = exercise
+                )
+            )
+        }
+
+        restTimerJob = viewModelScope.launch {
+            while (_uiState.value.restTimerState?.isComplete == false) {
+                delay(1000)
+                _uiState.update { state ->
+                    val timer = state.restTimerState ?: return@update state
+                    if (timer.isRunning) {
+                        val newRemaining = (timer.remainingSeconds - 1).coerceAtLeast(0)
+                        if (newRemaining == 0) {
+                            feedbackEmitter.emit(FeedbackEvent.RestComplete)
+                        }
+                        state.copy(restTimerState = timer.copy(remainingSeconds = newRemaining))
+                    } else state
+                }
+            }
+        }
+    }
+
+    fun skipRest() {
+        restTimerJob?.cancel()
+        _uiState.update { it.copy(restTimerState = null) }
+    }
+
+    fun extendRest(seconds: Int = 30) {
+        _uiState.update { state ->
+            val timer = state.restTimerState ?: return@update state
+            state.copy(
+                restTimerState = timer.copy(
+                    totalSeconds = timer.totalSeconds + seconds,
+                    remainingSeconds = timer.remainingSeconds + seconds
+                )
+            )
+        }
     }
 
     override fun onCleared() {
         super.onCleared()
+        restTimerJob?.cancel()
         feedbackEmitter.stopCurrentSpeech()
     }
 }

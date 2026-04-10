@@ -109,6 +109,23 @@ class FeedbackManager @Inject constructor(
                 speak("Personal record!", TextToSpeech.QUEUE_FLUSH)
                 vibrateTriple()
             }
+            is FeedbackEvent.RestComplete -> {
+                speak("Rest complete", TextToSpeech.QUEUE_FLUSH)
+                vibrateDouble()
+            }
+            is FeedbackEvent.TempoCountdown -> {
+                speak("${event.remainingSeconds}", TextToSpeech.QUEUE_FLUSH)
+            }
+            is FeedbackEvent.TempoHold -> {
+                if (event.remainingSeconds > 0) {
+                    speak("Hold ${event.remainingSeconds}", TextToSpeech.QUEUE_FLUSH)
+                }
+            }
+            is FeedbackEvent.TempoSpeedCue -> {
+                val cue = if (event.isTooFast) "Slower" else "Faster"
+                speak(cue, TextToSpeech.QUEUE_FLUSH)
+                vibrateMedium()
+            }
         }
     }
 

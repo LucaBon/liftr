@@ -17,7 +17,9 @@ import com.lifthelper.domain.repository.CalibrationRepository
 import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.usecase.FrameProcessingResult
 import com.lifthelper.domain.usecase.PhaseResult
+import com.lifthelper.domain.repository.CustomExerciseRepository
 import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
+import com.lifthelper.domain.usecase.LogManualSetUseCase
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
 import com.lifthelper.domain.usecase.SaveWorkoutUseCase
 import com.lifthelper.domain.value.Kilograms
@@ -58,6 +60,8 @@ class WorkoutViewModelFeedbackTest {
     private lateinit var processFrameUseCase: ProcessWorkoutFrameUseCase
     private lateinit var saveWorkoutUseCase: SaveWorkoutUseCase
     private lateinit var checkPersonalRecordsUseCase: CheckPersonalRecordsUseCase
+    private lateinit var logManualSetUseCase: LogManualSetUseCase
+    private lateinit var customExerciseRepository: CustomExerciseRepository
     private lateinit var calibrationRepository: CalibrationRepository
     private lateinit var settingsRepository: SettingsRepository
     private lateinit var logger: Logger
@@ -79,6 +83,8 @@ class WorkoutViewModelFeedbackTest {
         processFrameUseCase = mockk(relaxed = true)
         saveWorkoutUseCase = mockk(relaxed = true)
         checkPersonalRecordsUseCase = mockk(relaxed = true)
+        logManualSetUseCase = mockk(relaxed = true)
+        customExerciseRepository = mockk()
         calibrationRepository = mockk()
         settingsRepository = mockk()
         logger = mockk(relaxed = true)
@@ -89,11 +95,17 @@ class WorkoutViewModelFeedbackTest {
         every { settingsRepository.getFloatSetting("velocity_loss_threshold", any()) } returns flowOf(0.20f)
         every { settingsRepository.getBooleanSetting("audio_feedback_enabled", true) } returns flowOf(true)
         every { settingsRepository.getBooleanSetting("haptic_feedback_enabled", true) } returns flowOf(true)
+        every { settingsRepository.getBooleanSetting("rest_timer_enabled", true) } returns flowOf(true)
+        every { settingsRepository.getBooleanSetting("tempo_mode_enabled", false) } returns flowOf(false)
+        every { settingsRepository.getStringSetting("last_tempo_prescription", "") } returns flowOf("")
+        every { customExerciseRepository.getExerciseNames() } returns flowOf(emptyList())
 
         viewModel = WorkoutViewModel(
             processFrameUseCase = processFrameUseCase,
             saveWorkoutUseCase = saveWorkoutUseCase,
             checkPersonalRecordsUseCase = checkPersonalRecordsUseCase,
+            logManualSetUseCase = logManualSetUseCase,
+            customExerciseRepository = customExerciseRepository,
             calibrationRepository = calibrationRepository,
             settingsRepository = settingsRepository,
             feedbackEmitter = feedbackEmitter,
@@ -127,6 +139,8 @@ class WorkoutViewModelFeedbackTest {
             processFrameUseCase = processFrameUseCase,
             saveWorkoutUseCase = saveWorkoutUseCase,
             checkPersonalRecordsUseCase = checkPersonalRecordsUseCase,
+            logManualSetUseCase = logManualSetUseCase,
+            customExerciseRepository = customExerciseRepository,
             calibrationRepository = calibrationRepository,
             settingsRepository = settingsRepository,
             feedbackEmitter = feedbackEmitter,

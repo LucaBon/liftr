@@ -8,9 +8,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material3.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
@@ -31,14 +33,21 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.R
+import com.lifthelper.ui.components.common.StatItem
 import com.lifthelper.domain.exercise.Severity
 import com.lifthelper.domain.model.RepQualityScore
 import com.lifthelper.domain.model.ScoreGrade
 import com.lifthelper.domain.model.SetSummary
+import com.lifthelper.ui.components.BarPathOverlay
+import com.lifthelper.ui.components.BarPathReplayCard
 import com.lifthelper.ui.components.CalibrationWarningOverlay
+import com.lifthelper.ui.components.ManualEntryForm
 import com.lifthelper.ui.components.PrCelebrationOverlay
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.ui.components.RealTimeFeedbackOverlay
+import com.lifthelper.ui.components.RestTimerOverlay
+import com.lifthelper.ui.components.TempoInputWidget
+import com.lifthelper.ui.components.TempoProgressBar
 import com.lifthelper.ui.theme.VbtStopAlert
 import com.lifthelper.util.Constants.TAG_WORKOUT
 import com.lifthelper.util.getRotationDegrees
@@ -57,6 +66,7 @@ fun WorkoutScreen(
     val cameraViewModel: WorkoutCameraViewModel = hiltViewModel()
     val cameraManager = cameraViewModel.cameraManager
     val uiState by viewModel.uiState.collectAsState()
+    val barPathPoints by viewModel.currentBarPathPoints.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val orientation = rememberOrientation()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -126,7 +136,7 @@ fun WorkoutScreen(
                             onNavigateBack()
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -159,6 +169,18 @@ fun WorkoutScreen(
                     isFrontCamera = cameraManager.isFrontCamera()
                 )
 
+                // Bar path overlay (between pose skeleton and feedback HUD)
+                if (uiState.isRecording && barPathPoints.isNotEmpty()) {
+                    BarPathOverlay(
+                        barPathPoints = barPathPoints,
+                        imageWidth = uiState.poseResult?.imageWidth ?: 640,
+                        imageHeight = uiState.poseResult?.imageHeight ?: 480,
+                        modifier = Modifier.fillMaxSize(),
+                        rotationDegrees = orientation.getRotationDegrees(),
+                        isFrontCamera = cameraManager.isFrontCamera()
+                    )
+                }
+
                 // Real-time feedback overlay
                 if (uiState.isRecording) {
                     RealTimeFeedbackOverlay(
@@ -170,6 +192,19 @@ fun WorkoutScreen(
                         velocityLossState = uiState.velocityLossState,
                         vbtZonesEnabled = uiState.vbtZonesEnabled
                     )
+
+                    // Tempo progress bar overlay
+                    val currentTempoState = uiState.tempoState
+                    val currentTempoCue = uiState.tempoCue
+                    if (uiState.tempoModeEnabled && currentTempoState != null && currentTempoCue != null) {
+                        TempoProgressBar(
+                            tempoState = currentTempoState,
+                            tempoCue = currentTempoCue,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 100.dp)
+                        )
+                    }
 
                     // Velocity loss stop alert banner
                     if (uiState.velocityLossState.shouldStop) {
@@ -204,7 +239,7 @@ fun WorkoutScreen(
                     }
                 }
 
-                // Control buttons at bottom
+                // Control panel at bottom
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -213,24 +248,96 @@ fun WorkoutScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Exercise selector (only visible when not recording)
                     if (!uiState.isRecording) {
-                        ExerciseSelector(
-                            selectedExercise = uiState.selectedExercise,
-                            onExerciseSelected = { viewModel.setExercise(it) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    // Start/Stop recording button
-                    if (!uiState.isRecording) {
-                        Button(
-                            onClick = { viewModel.startRecording() },
-                            modifier = Modifier.fillMaxWidth()
+                        // Mode toggle: Camera / Manual
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(stringResource(R.string.start_recording))
+                            FilterChip(
+                                selected = !uiState.isManualEntryMode,
+                                onClick = { if (uiState.isManualEntryMode) viewModel.toggleManualEntryMode() },
+                                label = { Text(stringResource(R.string.mode_camera)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = uiState.isManualEntryMode,
+                                onClick = { if (!uiState.isManualEntryMode) viewModel.toggleManualEntryMode() },
+                                label = { Text(stringResource(R.string.mode_manual)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        if (uiState.isManualEntryMode) {
+                            // Manual entry form
+                            ManualEntryForm(
+                                exerciseNames = uiState.customExerciseNames,
+                                onLogSet = { name, weight, reps, notes ->
+                                    viewModel.logManualSet(name, weight, reps, notes)
+                                }
+                            )
+                        } else {
+                            // Camera setup panel — exercise, weight, reps
+                            WorkoutSetupPanel(
+                                selectedExercise = uiState.selectedExercise,
+                                weight = uiState.weight.value,
+                                targetReps = uiState.targetReps.value,
+                                onExerciseSelected = { viewModel.setExercise(it) },
+                                onWeightChanged = { viewModel.setWeight(it) },
+                                onTargetRepsChanged = { viewModel.setTargetReps(it) }
+                            )
+
+                            // Tempo mode toggle and input
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                        RoundedCornerShape(12.dp)
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.tempo_mode_enabled),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Switch(
+                                    checked = uiState.tempoModeEnabled,
+                                    onCheckedChange = { viewModel.toggleTempoMode(it) }
+                                )
+                            }
+
+                            if (uiState.tempoModeEnabled) {
+                                TempoInputWidget(
+                                    prescription = uiState.tempoPrescription,
+                                    onPrescriptionChanged = { viewModel.setTempoPrescription(it) },
+                                    modifier = Modifier
+                                        .background(
+                                            MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(12.dp)
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.startRecording() },
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = uiState.weight.value > 0f
+                            ) {
+                                Text(stringResource(R.string.start_recording))
+                            }
                         }
                     } else {
+                        // Compact info chip during recording
+                        WorkoutInfoChip(
+                            exerciseName = uiState.selectedExercise.getDisplayName(),
+                            weight = uiState.weight.value,
+                            targetReps = uiState.targetReps.value
+                        )
+
                         Button(
                             onClick = { viewModel.stopRecording() },
                             modifier = Modifier.fillMaxWidth(),
@@ -281,6 +388,17 @@ fun WorkoutScreen(
             onDismiss = { viewModel.dismissPRCelebration() }
         )
     }
+
+    // Rest timer overlay
+    uiState.restTimerState?.let { timerState ->
+        if (!timerState.isComplete) {
+            RestTimerOverlay(
+                timerState = timerState,
+                onSkip = { viewModel.skipRest() },
+                onExtend = { viewModel.extendRest() }
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -325,6 +443,12 @@ fun SetSummarySheet(
                     bestIndex = summary.bestRepIndex,
                     worstIndex = summary.worstRepIndex
                 )
+            }
+
+            // Bar path replay card
+            if (summary.repBarPaths.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                BarPathReplayCard(repBarPaths = summary.repBarPaths)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -498,21 +622,7 @@ fun RowScope.TableCell(
     )
 }
 
-@Composable
-fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
+// Uses shared StatItem from com.lifthelper.ui.components.common
 
 @Composable
 fun CameraPreview(
@@ -600,7 +710,9 @@ fun ExerciseSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            com.lifthelper.domain.model.ExerciseType.entries.forEach { exercise ->
+            com.lifthelper.domain.model.ExerciseType.entries
+                .filter { !it.isJumpExercise() }
+                .forEach { exercise ->
                 DropdownMenuItem(
                     text = { Text(exercise.getDisplayName()) },
                     onClick = {
@@ -611,6 +723,97 @@ fun ExerciseSelector(
             }
         }
     }
+}
+
+@Composable
+fun WorkoutSetupPanel(
+    selectedExercise: com.lifthelper.domain.model.ExerciseType,
+    weight: Float,
+    targetReps: Int,
+    onExerciseSelected: (com.lifthelper.domain.model.ExerciseType) -> Unit,
+    onWeightChanged: (Float) -> Unit,
+    onTargetRepsChanged: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var weightText by remember(weight) {
+        mutableStateOf(if (weight > 0f) weight.toInt().toString() else "")
+    }
+    var repsText by remember(targetReps) {
+        mutableStateOf(targetReps.toString())
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                RoundedCornerShape(16.dp)
+            )
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        ExerciseSelector(
+            selectedExercise = selectedExercise,
+            onExerciseSelected = onExerciseSelected,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = weightText,
+                onValueChange = { text ->
+                    weightText = text
+                    text.toFloatOrNull()?.let { onWeightChanged(it) }
+                },
+                label = { Text(stringResource(R.string.weight_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
+            )
+            OutlinedTextField(
+                value = repsText,
+                onValueChange = { text ->
+                    repsText = text
+                    text.toIntOrNull()?.let { onTargetRepsChanged(it) }
+                },
+                label = { Text(stringResource(R.string.target_reps)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun WorkoutInfoChip(
+    exerciseName: String,
+    weight: Float,
+    targetReps: Int,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = "$exerciseName \u00B7 ${weight.toInt()}kg \u00B7 $targetReps reps",
+        style = MaterialTheme.typography.labelLarge,
+        color = Color.White,
+        modifier = modifier
+            .background(
+                Color.Black.copy(alpha = 0.6f),
+                RoundedCornerShape(20.dp)
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    )
 }
 
 @Composable

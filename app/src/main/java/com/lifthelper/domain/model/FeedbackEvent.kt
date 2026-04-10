@@ -1,6 +1,7 @@
 package com.lifthelper.domain.model
 
 import com.lifthelper.domain.exercise.FormIssue
+import com.lifthelper.vision.tracking.MovementPhase
 
 /**
  * Events that should trigger audio and/or haptic feedback during a workout.
@@ -29,4 +30,16 @@ sealed class FeedbackEvent {
 
     /** A personal record was just broken. */
     data object PersonalRecord : FeedbackEvent()
+
+    /** Rest timer has completed — time to start the next set. */
+    data object RestComplete : FeedbackEvent()
+
+    /** Tempo countdown tick during a prescribed phase. */
+    data class TempoCountdown(val remainingSeconds: Int, val phase: MovementPhase) : FeedbackEvent()
+
+    /** Tempo hold cue during a pause phase (bottom or top). */
+    data class TempoHold(val remainingSeconds: Int) : FeedbackEvent()
+
+    /** Tempo speed correction cue. */
+    data class TempoSpeedCue(val isTooFast: Boolean) : FeedbackEvent()
 }

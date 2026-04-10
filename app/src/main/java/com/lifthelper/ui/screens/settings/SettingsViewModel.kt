@@ -40,10 +40,21 @@ class SettingsViewModel @Inject constructor(
     private val _hapticFeedbackEnabled = MutableStateFlow(true)
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
 
+    private val _restTimerEnabled = MutableStateFlow(true)
+    val restTimerEnabled: StateFlow<Boolean> = _restTimerEnabled.asStateFlow()
+
+    private val _restDurationDefault = MutableStateFlow(90)
+    val restDurationDefault: StateFlow<Int> = _restDurationDefault.asStateFlow()
+
+    private val _tempoModeEnabled = MutableStateFlow(false)
+    val tempoModeEnabled: StateFlow<Boolean> = _tempoModeEnabled.asStateFlow()
+
     init {
         loadSquatDepthSettings()
         loadVbtSettings()
         loadFeedbackSettings()
+        loadRestTimerSettings()
+        loadTempoSettings()
     }
 
     private fun loadSquatDepthSettings() {
@@ -166,6 +177,69 @@ class SettingsViewModel @Inject constructor(
                 enabled
             ).onSuccess {
                 _hapticFeedbackEnabled.value = enabled
+            }
+        }
+    }
+
+    private fun loadRestTimerSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.REST_TIMER_ENABLED,
+                true
+            ).collect { enabled ->
+                _restTimerEnabled.value = enabled
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getFloatSetting(
+                SettingsKeys.REST_DURATION_DEFAULT,
+                90f
+            ).collect { duration ->
+                _restDurationDefault.value = duration.toInt()
+            }
+        }
+    }
+
+    fun updateRestTimerEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(
+                SettingsKeys.REST_TIMER_ENABLED,
+                enabled
+            ).onSuccess {
+                _restTimerEnabled.value = enabled
+            }
+        }
+    }
+
+    fun updateRestDurationDefault(seconds: Int) {
+        viewModelScope.launch {
+            settingsRepository.saveFloatSetting(
+                SettingsKeys.REST_DURATION_DEFAULT,
+                seconds.toFloat()
+            ).onSuccess {
+                _restDurationDefault.value = seconds
+            }
+        }
+    }
+
+    private fun loadTempoSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.TEMPO_MODE_ENABLED,
+                false
+            ).collect { enabled ->
+                _tempoModeEnabled.value = enabled
+            }
+        }
+    }
+
+    fun updateTempoModeEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(
+                SettingsKeys.TEMPO_MODE_ENABLED,
+                enabled
+            ).onSuccess {
+                _tempoModeEnabled.value = enabled
             }
         }
     }

@@ -41,4 +41,15 @@ object SettingsKeys {
      * Boolean value, default true.
      */
     const val HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
+
+    // Rest Timer
+    const val REST_TIMER_ENABLED = "rest_timer_enabled"
+    const val REST_DURATION_SQUAT = "rest_duration_squat"
+    const val REST_DURATION_BENCH = "rest_duration_bench"
+    const val REST_DURATION_DEADLIFT = "rest_duration_deadlift"
+    const val REST_DURATION_DEFAULT = "rest_duration_default"
+
+    // Tempo Training
+    const val TEMPO_MODE_ENABLED = "tempo_mode_enabled"
+    const val LAST_TEMPO_PRESCRIPTION = "last_tempo_prescription"
 }
