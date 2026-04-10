@@ -140,6 +140,85 @@ object ExerciseThresholds {
     }
 
     /**
+     * Thresholds for clean exercise (Olympic lift).
+     */
+    object Clean {
+        /** Minimum pull height to detect pull start (5cm) */
+        val MIN_PULL_HEIGHT = Meters(0.05f)
+
+        /** Return tolerance for bar back to floor (10cm) */
+        val RETURN_TOLERANCE = Meters(0.10f)
+
+        /** Minimum velocity to be considered moving */
+        val MIN_VELOCITY = MetersPerSecond(0.05f)
+
+        /** Wrist rise threshold to transition from IDLE to FIRST_PULL (5cm) */
+        const val IDLE_TO_FIRST_PULL_THRESHOLD = 0.05f
+
+        /** Hip velocity threshold to detect second pull (0.5 m/s) */
+        const val FIRST_TO_SECOND_PULL_HIP_VELOCITY = 0.5f
+
+        /** Wrist velocity reversal threshold for catch detection (-0.2 m/s) */
+        const val CATCH_WRIST_VELOCITY = -0.2f
+
+        /** Wrist velocity stabilization threshold at catch (0.1 m/s) */
+        const val CATCH_STABILIZE_THRESHOLD = 0.1f
+
+        /** Hip proximity to standing for recovery completion (10cm) */
+        const val RECOVERY_HIP_THRESHOLD = 0.10f
+
+        /** Minimum elbow angle during first pull before early arm bend warning (degrees) */
+        const val EARLY_ARM_BEND_ANGLE = 160f
+
+        /** Maximum downward wrist velocity at catch before bar crash warning (m/s) */
+        const val BAR_CRASH_VELOCITY = 1.5f
+
+        /** Maximum horizontal displacement before forward jump warning (m) */
+        const val FORWARD_JUMP_MAX = 0.10f
+
+        /** Minimum velocity at 1RM — Kipp et al. (2012) */
+        const val MIN_VELOCITY_AT_1RM = 0.80f
+    }
+
+    /**
+     * Thresholds for snatch exercise (Olympic lift).
+     */
+    object Snatch {
+        /** Minimum pull height to detect pull start (5cm) */
+        val MIN_PULL_HEIGHT = Meters(0.05f)
+
+        /** Return tolerance for bar back to floor (10cm) */
+        val RETURN_TOLERANCE = Meters(0.10f)
+
+        /** Minimum velocity to be considered moving */
+        val MIN_VELOCITY = MetersPerSecond(0.05f)
+
+        /** Wrist rise threshold to transition from IDLE to FIRST_PULL (5cm) */
+        const val IDLE_TO_FIRST_PULL_THRESHOLD = 0.05f
+
+        /** Hip velocity threshold to detect second pull (0.5 m/s) */
+        const val FIRST_TO_SECOND_PULL_HIP_VELOCITY = 0.5f
+
+        /** Wrists must be within this distance above head level at catch (m) */
+        const val CATCH_WRIST_ABOVE_HEAD = 0.05f
+
+        /** Maximum X drift for overhead stability check (m) */
+        const val OVERHEAD_STABILITY_DRIFT = 0.05f
+
+        /** Hips at or below knees for sufficient catch depth (m, 0 = at knee level) */
+        const val CATCH_DEPTH_THRESHOLD = 0.0f
+
+        /** Maximum distance wrists can be behind head (m) */
+        const val BAR_BEHIND_HEAD_MAX = 0.15f
+
+        /** Hip proximity to standing for recovery completion (10cm) */
+        const val RECOVERY_HIP_THRESHOLD = 0.10f
+
+        /** Minimum velocity at 1RM — Kipp et al. (2012) */
+        const val MIN_VELOCITY_AT_1RM = 0.90f
+    }
+
+    /**
      * Camera and pose detection thresholds.
      */
     object Camera {

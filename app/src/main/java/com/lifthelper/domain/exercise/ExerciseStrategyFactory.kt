@@ -2,8 +2,10 @@ package com.lifthelper.domain.exercise
 
 import com.lifthelper.domain.exercise.strategy.BackSquatStrategy
 import com.lifthelper.domain.exercise.strategy.BenchPressStrategy
+import com.lifthelper.domain.exercise.strategy.CleanStrategy
 import com.lifthelper.domain.exercise.strategy.DeadliftStrategy
 import com.lifthelper.domain.exercise.strategy.FrontSquatStrategy
+import com.lifthelper.domain.exercise.strategy.SnatchStrategy
 import com.lifthelper.domain.model.ExerciseType
 import javax.inject.Inject
 
@@ -18,7 +20,9 @@ class ExerciseStrategyFactory @Inject constructor(
     private val backSquatStrategy: BackSquatStrategy,
     private val frontSquatStrategy: FrontSquatStrategy,
     private val benchPressStrategy: BenchPressStrategy,
-    private val deadliftStrategy: DeadliftStrategy
+    private val deadliftStrategy: DeadliftStrategy,
+    private val cleanStrategy: CleanStrategy,
+    private val snatchStrategy: SnatchStrategy
 ) {
     /**
      * Gets the appropriate strategy for the given exercise type.
@@ -33,6 +37,8 @@ class ExerciseStrategyFactory @Inject constructor(
             ExerciseType.FRONT_SQUAT -> frontSquatStrategy
             ExerciseType.BENCH_PRESS -> benchPressStrategy
             ExerciseType.DEADLIFT -> deadliftStrategy
+            ExerciseType.CLEAN -> cleanStrategy
+            ExerciseType.SNATCH -> snatchStrategy
             else -> throw UnsupportedExerciseException(
                 "Exercise $exerciseType not yet implemented. " +
                 "Supported exercises: ${getSupportedExercises().joinToString { it.getDisplayName() }}"
@@ -46,7 +52,7 @@ class ExerciseStrategyFactory @Inject constructor(
      * @return List of all implemented strategies
      */
     fun getAllStrategies(): List<ExerciseStrategy> {
-        return listOf(backSquatStrategy, frontSquatStrategy, benchPressStrategy, deadliftStrategy)
+        return listOf(backSquatStrategy, frontSquatStrategy, benchPressStrategy, deadliftStrategy, cleanStrategy, snatchStrategy)
     }
 
     /**

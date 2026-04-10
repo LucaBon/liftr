@@ -3,8 +3,10 @@ package com.lifthelper.di
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.exercise.strategy.BackSquatStrategy
 import com.lifthelper.domain.exercise.strategy.BenchPressStrategy
+import com.lifthelper.domain.exercise.strategy.CleanStrategy
 import com.lifthelper.domain.exercise.strategy.DeadliftStrategy
 import com.lifthelper.domain.exercise.strategy.FrontSquatStrategy
+import com.lifthelper.domain.exercise.strategy.SnatchStrategy
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.vision.IPositionCalculator
 import dagger.Module
@@ -72,6 +74,30 @@ object ExerciseModule {
     }
 
     /**
+     * Provides CleanStrategy.
+     */
+    @Provides
+    @Singleton
+    fun provideCleanStrategy(
+        positionCalculator: IPositionCalculator,
+        logger: Logger
+    ): CleanStrategy {
+        return CleanStrategy(positionCalculator, logger)
+    }
+
+    /**
+     * Provides SnatchStrategy.
+     */
+    @Provides
+    @Singleton
+    fun provideSnatchStrategy(
+        positionCalculator: IPositionCalculator,
+        logger: Logger
+    ): SnatchStrategy {
+        return SnatchStrategy(positionCalculator, logger)
+    }
+
+    /**
      * Provides ExerciseStrategyFactory.
      */
     @Provides
@@ -80,13 +106,17 @@ object ExerciseModule {
         backSquatStrategy: BackSquatStrategy,
         frontSquatStrategy: FrontSquatStrategy,
         benchPressStrategy: BenchPressStrategy,
-        deadliftStrategy: DeadliftStrategy
+        deadliftStrategy: DeadliftStrategy,
+        cleanStrategy: CleanStrategy,
+        snatchStrategy: SnatchStrategy
     ): ExerciseStrategyFactory {
         return ExerciseStrategyFactory(
             backSquatStrategy = backSquatStrategy,
             frontSquatStrategy = frontSquatStrategy,
             benchPressStrategy = benchPressStrategy,
-            deadliftStrategy = deadliftStrategy
+            deadliftStrategy = deadliftStrategy,
+            cleanStrategy = cleanStrategy,
+            snatchStrategy = snatchStrategy
         )
     }
 }

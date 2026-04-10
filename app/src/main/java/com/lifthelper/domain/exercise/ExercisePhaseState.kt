@@ -45,7 +45,16 @@ data class ExercisePhaseState(
     val startingTorsoAngle: Float? = null,
     val currentAnklesY: Float? = null,
     val currentAnklesX: Float? = null,
-    val currentShouldersX: Float? = null
+    val currentShouldersX: Float? = null,
+    // Olympic lift fields
+    val peakPullVelocity: Float? = null,
+    val catchPosition: Float? = null,
+    val firstPullStartTime: Long? = null,
+    val secondPullStartTime: Long? = null,
+    val catchTime: Long? = null,
+    val previousWristsY: Float? = null,
+    val previousHipsY: Float? = null,
+    val previousTimestamp: Long? = null
 ) {
     /**
      * Create a new state with updated current phase.
@@ -140,6 +149,36 @@ data class ExercisePhaseState(
      */
     fun withShouldersX(shouldersX: Float?): ExercisePhaseState =
         copy(currentShouldersX = shouldersX)
+
+    /**
+     * Create a new state with updated Olympic lift tracking data.
+     */
+    fun withOlympicLiftData(
+        peakPullVelocity: Float? = this.peakPullVelocity,
+        catchPosition: Float? = this.catchPosition,
+        firstPullStartTime: Long? = this.firstPullStartTime,
+        secondPullStartTime: Long? = this.secondPullStartTime,
+        catchTime: Long? = this.catchTime
+    ): ExercisePhaseState = copy(
+        peakPullVelocity = peakPullVelocity,
+        catchPosition = catchPosition,
+        firstPullStartTime = firstPullStartTime,
+        secondPullStartTime = secondPullStartTime,
+        catchTime = catchTime
+    )
+
+    /**
+     * Create a new state with updated previous frame positions (Olympic lift velocity calculation).
+     */
+    fun withPreviousPositions(
+        wristsY: Float? = this.previousWristsY,
+        hipsY: Float? = this.previousHipsY,
+        timestamp: Long? = this.previousTimestamp
+    ): ExercisePhaseState = copy(
+        previousWristsY = wristsY,
+        previousHipsY = hipsY,
+        previousTimestamp = timestamp
+    )
 
     companion object {
         /**
