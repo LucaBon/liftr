@@ -69,7 +69,7 @@ fun PrCelebrationOverlay(
             ) {
                 Icon(
                     imageVector = Icons.Default.EmojiEvents,
-                    contentDescription = null,
+                    contentDescription = "Personal Record",
                     tint = PrGold,
                     modifier = Modifier
                         .size(64.dp)

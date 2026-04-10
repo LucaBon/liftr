@@ -6,7 +6,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lifthelper.R
+import com.lifthelper.ui.components.common.StatItem
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.TimeRange
 import com.lifthelper.domain.model.Workout
@@ -41,7 +48,7 @@ fun AnalyticsScreen(
                 title = { Text(stringResource(R.string.analytics_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -117,7 +124,10 @@ fun AnalyticsScreen(
                     // Personal Records
                     if (summary.personalRecords.isNotEmpty()) {
                         item {
-                            SectionHeader(stringResource(R.string.analytics_personal_records))
+                            SectionHeader(
+                            title = stringResource(R.string.analytics_personal_records),
+                            icon = { Icon(Icons.Default.EmojiEvents, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                        )
                         }
                         item {
                             PersonalRecordsCard(records = summary.personalRecords)
@@ -127,7 +137,10 @@ fun AnalyticsScreen(
                     // Weekly Volume chart (always shown)
                     if (summary.weeklyVolumes.isNotEmpty()) {
                         item {
-                            SectionHeader(stringResource(R.string.analytics_volume))
+                            SectionHeader(
+                            title = stringResource(R.string.analytics_volume),
+                            icon = { Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                        )
                         }
                         item {
                             VolumeTonnageChart(weeklyVolumes = summary.weeklyVolumes)
@@ -139,7 +152,10 @@ fun AnalyticsScreen(
                         // Velocity Trend
                         if (summary.velocityTrend.isNotEmpty()) {
                             item {
-                                SectionHeader(stringResource(R.string.analytics_velocity_trend))
+                                SectionHeader(
+                                title = stringResource(R.string.analytics_velocity_trend),
+                                icon = { Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                            )
                             }
                             item {
                                 VelocityTrendChart(dataPoints = summary.velocityTrend)
@@ -149,7 +165,10 @@ fun AnalyticsScreen(
                         // Estimated 1RM
                         if (summary.estimated1RMTrend.isNotEmpty()) {
                             item {
-                                SectionHeader(stringResource(R.string.analytics_estimated_1rm))
+                                SectionHeader(
+                                title = stringResource(R.string.analytics_estimated_1rm),
+                                icon = { Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                            )
                             }
                             item {
                                 Estimated1RMChart(dataPoints = summary.estimated1RMTrend)
@@ -159,7 +178,10 @@ fun AnalyticsScreen(
                         // Quality Score
                         if (summary.qualityScoreTrend.isNotEmpty()) {
                             item {
-                                SectionHeader(stringResource(R.string.analytics_quality_trend))
+                                SectionHeader(
+                                title = stringResource(R.string.analytics_quality_trend),
+                                icon = { Icon(Icons.Default.Star, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                            )
                             }
                             item {
                                 QualityScoreChart(dataPoints = summary.qualityScoreTrend)
@@ -187,7 +209,10 @@ fun AnalyticsScreen(
                     // Recent Workouts
                     if (summary.recentWorkouts.isNotEmpty()) {
                         item {
-                            SectionHeader(stringResource(R.string.analytics_recent_workouts))
+                            SectionHeader(
+                            title = stringResource(R.string.analytics_recent_workouts),
+                            icon = { Icon(Icons.Default.Timeline, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }
+                        )
                         }
                         items(summary.recentWorkouts, key = { it.id }) { workout ->
                             RecentWorkoutCard(workout = workout)
@@ -209,12 +234,19 @@ private fun EmptyAnalytics(paddingValues: PaddingValues) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        Icon(
+            imageVector = Icons.Outlined.BarChart,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = stringResource(R.string.analytics_title),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.analytics_no_data),
             style = MaterialTheme.typography.bodyMedium,
@@ -290,24 +322,23 @@ private fun SummaryStatsRow(
     }
 }
 
-@Composable
-private fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = value, style = MaterialTheme.typography.titleLarge)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
+// Uses shared StatItem from com.lifthelper.ui.components.common
 
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium
-    )
+private fun SectionHeader(
+    title: String,
+    icon: @Composable (() -> Unit)? = null
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        icon?.invoke()
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
 }
 
 @Composable

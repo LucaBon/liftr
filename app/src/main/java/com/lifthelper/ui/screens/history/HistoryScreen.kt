@@ -4,8 +4,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lifthelper.domain.model.Workout
+import com.lifthelper.ui.components.common.StatItem
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -31,7 +33,7 @@ fun HistoryScreen(
                 title = { Text("Workout History") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -58,12 +60,19 @@ fun HistoryScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
+                    Icon(
+                        imageVector = Icons.Outlined.History,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Workout History",
                         style = MaterialTheme.typography.headlineMedium,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "No workouts recorded yet. Complete a workout session to see your history here!",
                         style = MaterialTheme.typography.bodyMedium,
@@ -141,13 +150,23 @@ private fun WorkoutCard(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 workout.sets.forEachIndexed { index, set ->
-                    Text(
-                        text = "Set ${index + 1}: ${set.exerciseType.getDisplayName()} - " +
-                                "${set.weight.value}kg x ${set.completedReps.value} reps @ " +
-                                "%.2f m/s avg".format(set.avgVelocity.value),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (set.isManual) {
+                        Text(
+                            text = "Set ${index + 1}: ${set.displayName} - " +
+                                    "${set.weight.value}kg x ${set.completedReps.value} reps" +
+                                    if (set.notes.isNotBlank()) " \u00B7 ${set.notes}" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "Set ${index + 1}: ${set.displayName} - " +
+                                    "${set.weight.value}kg x ${set.completedReps.value} reps @ " +
+                                    "%.2f m/s avg".format(set.avgVelocity.value),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
@@ -184,14 +203,4 @@ private fun WorkoutCard(
     }
 }
 
-@Composable
-private fun StatItem(label: String, value: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(text = value, style = MaterialTheme.typography.titleSmall)
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
+// Uses shared StatItem from com.lifthelper.ui.components.common
