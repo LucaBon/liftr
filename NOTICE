@@ -1,0 +1,87 @@
+LiftHelper
+Copyright (C) 2025-2026 Luca Bonura
+
+This product is licensed under the GNU Affero General Public License v3.0.
+See the LICENSE file at the root of the repository for the full license text.
+
+================================================================================
+Third-party software
+================================================================================
+
+This product includes, depends on, or otherwise interacts with the following
+third-party software. Each component is distributed under its own license;
+consult each project for the full license text and attribution requirements.
+
+--------------------------------------------------------------------------------
+Google MediaPipe Tasks Vision (Pose Landmarker)
+https://github.com/google/mediapipe
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+AndroidX CameraX
+https://developer.android.com/jetpack/androidx/releases/camera
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+AndroidX Jetpack (Core, Lifecycle, Activity, Navigation, DataStore, Room)
+https://developer.android.com/jetpack
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Jetpack Compose (UI, Material3, Material Icons Extended)
+https://developer.android.com/jetpack/compose
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Dagger Hilt
+https://github.com/google/dagger
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Kotlin Coroutines
+https://github.com/Kotlin/kotlinx.coroutines
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Kotlinx Serialization
+https://github.com/Kotlin/kotlinx.serialization
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+MPAndroidChart
+https://github.com/PhilJay/MPAndroidChart
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Timber
+https://github.com/JakeWharton/timber
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Accompanist Permissions
+https://github.com/google/accompanist
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+JUnit 4 (test scope)
+https://junit.org/junit4/
+License: Eclipse Public License 1.0
+
+--------------------------------------------------------------------------------
+MockK (test scope)
+https://github.com/mockk/mockk
+License: Apache License 2.0
+
+--------------------------------------------------------------------------------
+Turbine (test scope)
+https://github.com/cashapp/turbine
+License: Apache License 2.0
+
+================================================================================
+
+Trademarks
+----------
+"Android", "Google", "MediaPipe", "Jetpack", and "Firebase" are trademarks of
+Google LLC. "Kotlin" and "JetBrains" are trademarks of JetBrains s.r.o. All
+other trademarks are the property of their respective owners. Use of these
+names in this NOTICE is for attribution only and does not imply any endorsement.
