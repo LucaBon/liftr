@@ -10,11 +10,32 @@
     <string name="continue_button">Continue</string>
     <string name="skip_button">Skip for now</string>
 
+    <!-- Settings Screen -->
+    <string name="settings_back">Back</string>
+    <string name="settings_section_calibration">Calibration</string>
+    <string name="settings_recalibrate">Re-calibrate</string>
+    <string name="settings_recalibrate_desc">Update your height and shoulder width measurements</string>
+    <string name="settings_capture_body">Capture Body Measurements</string>
+    <string name="settings_capture_body_desc">Use camera to capture detailed body proportions</string>
+    <string name="settings_view_measurements">View/Edit Measurements</string>
+    <string name="settings_view_measurements_desc">View and manually adjust your body measurements</string>
+    <string name="settings_section_exercise">Exercise Settings</string>
+    <string name="settings_back_squat_depth">Back Squat Depth</string>
+    <string name="settings_front_squat_depth">Front Squat Depth</string>
+    <string name="settings_depth_type_label">Depth Type</string>
+    <string name="settings_threshold_label">Threshold</string>
+
     <!-- Home Screen -->
     <string name="home_title">Lift Helper</string>
     <string name="start_workout">Start Workout</string>
     <string name="view_history">View History</string>
     <string name="settings">Settings</string>
+    <string name="home_last_workout">Last Workout</string>
+    <string name="home_stat_sets">Sets</string>
+    <string name="home_stat_reps">Reps</string>
+    <string name="home_stat_avg_vel">Avg Vel</string>
+    <string name="home_empty_title">Ready to lift?</string>
+    <string name="home_empty_subtitle">Start your first workout to track your progress</string>
 
     <!-- Workout Screen -->
     <string name="workout_title">Workout</string>
@@ -103,6 +124,26 @@
     <string name="deadlift_bar_drift">Bar drifting away from body</string>
     <string name="deadlift_bar_drift_suggestion">Keep the bar close to your shins and thighs</string>
 
+    <!-- Clean Form Issues -->
+    <string name="clean_early_arm_bend">Early arm bend during first pull</string>
+    <string name="clean_early_arm_bend_suggestion">Keep arms straight until the second pull</string>
+    <string name="clean_bar_crash">Bar crash at catch position</string>
+    <string name="clean_bar_crash_suggestion">Meet the bar smoothly into the rack position</string>
+    <string name="clean_forward_jump">Forward jump during pull</string>
+    <string name="clean_forward_jump_suggestion">Pull straight up, keep feet under hips</string>
+    <string name="clean_elbow_drop">Elbows dropping in rack position</string>
+    <string name="clean_elbow_drop_suggestion">Drive elbows up and forward in the rack</string>
+
+    <!-- Snatch Form Issues -->
+    <string name="snatch_overhead_instability">Overhead bar instability</string>
+    <string name="snatch_overhead_instability_suggestion">Engage shoulders and stabilize bar overhead</string>
+    <string name="snatch_insufficient_catch_depth">Insufficient catch depth</string>
+    <string name="snatch_insufficient_catch_depth_suggestion">Pull under the bar deeper into overhead squat</string>
+    <string name="snatch_bar_behind_head">Bar too far behind head</string>
+    <string name="snatch_bar_behind_head_suggestion">Keep the bar directly over the base of support</string>
+    <string name="snatch_press_out">Press out after catch</string>
+    <string name="snatch_press_out_suggestion">Lock out arms during the catch, not after</string>
+
     <!-- Set Summary -->
     <string name="set_summary_title">Set Summary</string>
     <string name="set_summary_overall_score">Overall Score</string>
@@ -152,7 +193,66 @@
     <string name="analytics_tonnage_format">%.0f kg</string>
     <string name="analytics_week_change">%+.0f%% vs last week</string>
 
+    <!-- Bar Path -->
+    <string name="bar_path_title">Bar Path</string>
+    <string name="bar_path_max_drift">Max Drift</string>
+    <string name="bar_path_linearity">Linearity</string>
+    <string name="bar_path_drift_direction">Drift</string>
+    <string name="bar_path_rep_format">Rep %d of %d</string>
+    <string name="bar_path_drift_forward">Forward</string>
+    <string name="bar_path_drift_backward">Backward</string>
+    <string name="bar_path_drift_centered">Centered</string>
+    <string name="bar_path_view">View Bar Path</string>
+
     <!-- PR Celebration -->
     <string name="pr_celebration_title">NEW PR!</string>
     <string name="pr_celebration_dismiss">Continue</string>
+
+    <!-- Workout Mode Toggle -->
+    <string name="mode_camera">Track with Camera</string>
+    <string name="mode_manual">Manual Entry</string>
+
+    <!-- Manual Entry -->
+    <string name="manual_entry_title">Manual Entry</string>
+    <string name="manual_entry_exercise_name">Exercise Name</string>
+    <string name="manual_entry_reps">Reps</string>
+    <string name="manual_entry_notes">Notes (optional)</string>
+    <string name="manual_entry_log_set">Log Set</string>
+
+    <!-- Rest Timer -->
+    <string name="rest_timer_title">REST</string>
+    <string name="rest_timer_skip">Skip Rest</string>
+    <string name="rest_timer_extend">+30s</string>
+
+    <!-- Tempo Training -->
+    <string name="tempo_settings_title">Tempo Training</string>
+    <string name="tempo_mode_enabled">Tempo Mode</string>
+    <string name="tempo_mode_enabled_description">Enable tempo prescriptions with real-time countdowns during sets</string>
+    <string name="tempo_input_label">Tempo (E-P1-C-P2)</string>
+    <string name="tempo_eccentric_label">Ecc</string>
+    <string name="tempo_pause_bottom_label">Pause</string>
+    <string name="tempo_concentric_label">Con</string>
+    <string name="tempo_pause_top_label">Top</string>
+    <string name="tempo_preset_hypertrophy">Hypertrophy</string>
+    <string name="tempo_preset_strength">Strength</string>
+    <string name="tempo_preset_slow">Slow/Rehab</string>
+    <string name="tempo_preset_explosive">Explosive</string>
+    <string name="tempo_preset_isometric">Isometric</string>
+    <string name="tempo_cue_slower">Slower</string>
+    <string name="tempo_cue_faster">Faster</string>
+    <string name="tempo_cue_hold">Hold</string>
+    <string name="tempo_cue_go">Go!</string>
+    <string name="tempo_cue_explosive">Explosive!</string>
+    <string name="tempo_phase_eccentric">Down</string>
+    <string name="tempo_phase_bottom">Hold</string>
+    <string name="tempo_phase_concentric">Up</string>
+    <string name="tempo_phase_top">Top</string>
+
+    <!-- Rest Timer Settings -->
+    <string name="rest_timer_settings_title">Rest Timer</string>
+    <string name="rest_timer_enabled">Auto Rest Timer</string>
+    <string name="rest_timer_enabled_description">Automatically start a rest timer after each set</string>
+    <string name="rest_timer_default_duration">Default Rest Duration</string>
+    <string name="rest_timer_default_duration_description">Default rest period between sets (exercise-specific defaults apply when available)</string>
+    <string name="rest_timer_duration_label">Duration</string>
 </resources>
