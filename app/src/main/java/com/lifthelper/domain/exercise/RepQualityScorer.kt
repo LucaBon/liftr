@@ -40,11 +40,16 @@ object RepQualityScorer {
         eccentricDuration: Float,
         concentricDuration: Float,
         previousConcentricDurations: List<Float>,
-        formIssues: List<FormIssue>
+        formIssues: List<FormIssue>,
+        tempoAdherence: TempoAdherence? = null
     ): RepQualityScore {
         val depth = scoreDepth(depthValidation)
         val barPath = scoreBarPath(barXPositions)
-        val tempo = scoreTempo(eccentricDuration, concentricDuration, previousConcentricDurations)
+        val tempo = if (tempoAdherence != null) {
+            scoreTempoAdherence(tempoAdherence)
+        } else {
+            scoreTempo(eccentricDuration, concentricDuration, previousConcentricDurations)
+        }
         val form = scoreForm(formIssues)
 
         return RepQualityScore(
@@ -124,6 +129,14 @@ object RepQualityScorer {
         } else 10 // First rep gets full marks
 
         return eccentricScore + consistencyScore
+    }
+
+    /**
+     * Tempo scoring using explicit [TempoAdherence] from prescribed tempo mode (0-20 points).
+     * Uses the weighted overall adherence score directly.
+     */
+    internal fun scoreTempoAdherence(adherence: TempoAdherence): Int {
+        return (adherence.overallScore * 20).toInt()
     }
 
     /**
