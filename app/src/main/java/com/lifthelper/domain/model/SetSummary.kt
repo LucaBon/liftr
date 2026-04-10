@@ -4,6 +4,7 @@ import com.lifthelper.domain.exercise.FormIssue
 import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.RepCount
+import com.lifthelper.domain.model.BarPathData
 
 /**
  * Summary of a completed set, including per-rep quality scores and aggregate metrics.
@@ -37,7 +38,8 @@ data class SetSummary(
     val overallScore: Int,
     val bestRepIndex: Int,
     val worstRepIndex: Int,
-    val aggregateFormIssues: List<AggregateFormIssue>
+    val aggregateFormIssues: List<AggregateFormIssue>,
+    val repBarPaths: List<BarPathData> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 }
