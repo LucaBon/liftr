@@ -430,13 +430,10 @@ class FrontSquatStrategy @Inject constructor(
             return FormValidationResult(isValid = true, issues = issues)
         }
 
-        // 1. Check knee alignment (knee valgus/varus)
-        val kneeIssue = checkKneeAlignment(landmarks)
-        if (kneeIssue != null) {
-            issues.add(kneeIssue)
-        }
+        // Knee valgus/varus can only be measured from a frontal view; the app
+        // is framed laterally for squats, so that check is intentionally absent.
 
-        // 2. Check torso uprightness (critical for front squat)
+        // Check torso uprightness (critical for front squat)
         val torsoIssue = checkTorsoUprightness(landmarks, bodyPositions)
         if (torsoIssue != null) {
             issues.add(torsoIssue)
@@ -461,46 +458,6 @@ class FrontSquatStrategy @Inject constructor(
             isValid = isValid,
             issues = issues
         )
-    }
-
-    /**
-     * Check for knee valgus (knees caving inward) or varus (knees bowing outward).
-     * Same as back squat - knees should track over toes.
-     */
-    private fun checkKneeAlignment(landmarks: List<com.lifthelper.domain.model.PoseKeypoint>): FormIssue? {
-        val leftKnee = landmarks.getOrNull(25)
-        val rightKnee = landmarks.getOrNull(26)
-        val leftHip = landmarks.getOrNull(23)
-        val rightHip = landmarks.getOrNull(24)
-
-        if (leftKnee == null || rightKnee == null || leftHip == null || rightHip == null) {
-            return null
-        }
-
-        if (leftKnee.visibility < 0.5f || rightKnee.visibility < 0.5f ||
-            leftHip.visibility < 0.5f || rightHip.visibility < 0.5f) {
-            return null
-        }
-
-        val kneeWidth = kotlin.math.abs(rightKnee.x - leftKnee.x)
-        val hipWidth = kotlin.math.abs(rightHip.x - leftHip.x)
-
-        // Knees should be approximately as wide as hips (±20%)
-        val kneeToHipRatio = kneeWidth / hipWidth
-
-        return when {
-            kneeToHipRatio < 0.70f -> FormIssue(
-                severity = Severity.CRITICAL,
-                message = "Knees are caving inward (valgus)",
-                suggestion = "Push knees outward to align with feet"
-            )
-            kneeToHipRatio > 1.30f -> FormIssue(
-                severity = Severity.WARNING,
-                message = "Knees are bowing outward (varus)",
-                suggestion = "Bring knees slightly inward to align with hips"
-            )
-            else -> null
-        }
     }
 
     /**

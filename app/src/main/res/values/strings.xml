@@ -105,12 +105,8 @@
     <string name="haptic_feedback_description">Vibration pulses on rep completion, form alerts, and velocity loss</string>
 
     <!-- Bench Press Form Issues -->
-    <string name="bench_elbow_flare">Elbows flaring out</string>
-    <string name="bench_elbow_flare_suggestion">Tuck elbows closer to your torso (45° angle)</string>
     <string name="bench_bar_drift">Bar drifting horizontally</string>
     <string name="bench_bar_drift_suggestion">Keep the bar path more vertical</string>
-    <string name="bench_asymmetry">Uneven press</string>
-    <string name="bench_asymmetry_suggestion">Press the bar evenly with both arms</string>
     <string name="bench_incomplete_lockout">Incomplete lockout</string>
     <string name="bench_incomplete_lockout_suggestion">Fully extend your arms at the top</string>
 

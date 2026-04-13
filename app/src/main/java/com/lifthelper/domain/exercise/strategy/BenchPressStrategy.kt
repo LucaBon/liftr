@@ -373,48 +373,16 @@ class BenchPressStrategy @Inject constructor(
         val issues = mutableListOf<FormIssue>()
         val landmarks = poseResult.landmarks
 
-        checkElbowFlare(landmarks)?.let { issues.add(it) }
+        // Elbow flare and left/right press symmetry require a view along the bar
+        // (phone past the lifter's head). The app films bench laterally, so those
+        // checks are intentionally absent.
         checkBarDrift(landmarks, calibrationData, poseResult)?.let { issues.add(it) }
-        checkPressAsymmetry(landmarks, calibrationData, poseResult)?.let { issues.add(it) }
         checkIncompleteLockout(poseResult)?.let { issues.add(it) }
 
         return FormValidationResult(
             isValid = issues.none { it.severity == Severity.CRITICAL },
             issues = issues
         )
-    }
-
-    /**
-     * Check elbow flare angle — elbows should stay relatively tucked.
-     * Excessive flare (shoulder-elbow angle > 80°) risks shoulder injury.
-     */
-    private fun checkElbowFlare(landmarks: List<com.lifthelper.domain.model.PoseKeypoint>): FormIssue? {
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER) ?: return null
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER) ?: return null
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW) ?: return null
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW) ?: return null
-
-        val minVis = 0.5f
-        if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
-            leftElbow.visibility < minVis || rightElbow.visibility < minVis) return null
-
-        // Check how far elbows are from the torso line
-        // In side view, flare manifests as elbows being far from the body
-        val shoulderWidth = abs(rightShoulder.x - leftShoulder.x)
-        val elbowWidth = abs(rightElbow.x - leftElbow.x)
-
-        if (shoulderWidth < 0.01f) return null
-
-        // If elbows are significantly wider than shoulders, they're flaring
-        val flareRatio = elbowWidth / shoulderWidth
-
-        return if (flareRatio > 1.5f) {
-            FormIssue(
-                severity = Severity.WARNING,
-                message = "Elbows flaring out",
-                suggestion = "Tuck elbows closer to your torso (45° angle)"
-            )
-        } else null
     }
 
     /**
@@ -449,33 +417,6 @@ class BenchPressStrategy @Inject constructor(
                 severity = Severity.WARNING,
                 message = "Bar drifting horizontally (%.0f cm)".format(drift * 100),
                 suggestion = "Keep the bar path more vertical"
-            )
-        } else null
-    }
-
-    /**
-     * Check left-right wrist asymmetry — uneven press.
-     */
-    private fun checkPressAsymmetry(
-        landmarks: List<com.lifthelper.domain.model.PoseKeypoint>,
-        calibrationData: CalibrationData,
-        poseResult: PoseResult
-    ): FormIssue? {
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST) ?: return null
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST) ?: return null
-
-        if (leftWrist.visibility < 0.5f || rightWrist.visibility < 0.5f) return null
-
-        val leftY = positionCalculator.pixelsToMeters(leftWrist.y, poseResult, calibrationData)
-        val rightY = positionCalculator.pixelsToMeters(rightWrist.y, poseResult, calibrationData)
-
-        val asymmetry = abs(leftY - rightY)
-
-        return if (asymmetry > ExerciseThresholds.BenchPress.ASYMMETRY_MAX) {
-            FormIssue(
-                severity = Severity.WARNING,
-                message = "Uneven press (%.0f cm difference)".format(asymmetry * 100),
-                suggestion = "Press the bar evenly with both arms"
             )
         } else null
     }

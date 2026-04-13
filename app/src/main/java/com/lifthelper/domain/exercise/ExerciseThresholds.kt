@@ -85,14 +85,8 @@ object ExerciseThresholds {
         /** Stabilization threshold at top position (2cm) */
         const val TOP_STABILIZATION_THRESHOLD = 0.02f
 
-        /** Maximum elbow flare angle in degrees before warning */
-        const val ELBOW_FLARE_MAX_ANGLE = 80f
-
         /** Maximum horizontal bar drift in meters */
         const val BAR_DRIFT_MAX = 0.10f
-
-        /** Maximum left-right wrist asymmetry in meters */
-        const val ASYMMETRY_MAX = 0.03f
 
         /** Minimum elbow angle for lockout in degrees */
         const val LOCKOUT_MIN_ANGLE = 150f
