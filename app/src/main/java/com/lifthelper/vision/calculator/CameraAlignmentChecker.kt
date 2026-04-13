@@ -52,6 +52,7 @@ class CameraAlignmentChecker {
      * @param isPortrait Whether the image is in portrait orientation
      * @return Alignment check result with detected issues
      */
+    @Suppress("UNUSED_PARAMETER")
     fun checkAlignment(poseResult: PoseResult, aspectRatio: Float, isPortrait: Boolean): AlignmentCheckResult {
         val landmarks = poseResult.landmarks
 
@@ -78,20 +79,12 @@ class CameraAlignmentChecker {
         val avgTilt = (shoulderTilt + hipTilt) / 2f
         val isTilted = abs(avgTilt) > MAX_TILT_ANGLE_DEGREES
 
-        // 2. Check if viewing from side by comparing shoulder/hip widths
-        // Scale horizontal (X) distances to be comparable with vertical (Y) distances
-        // In portrait: X-axis is narrow, scale up by aspectRatio
-        // In landscape: X-axis is already proportional to Y, no scaling needed
-        val shoulderWidthNorm = if (isPortrait) {
-            abs(rightShoulder.x - leftShoulder.x) * aspectRatio
-        } else {
-            abs(rightShoulder.x - leftShoulder.x)  // No scaling in landscape
-        }
-        val hipWidthNorm = if (isPortrait) {
-            abs(rightHip.x - leftHip.x) * aspectRatio
-        } else {
-            abs(rightHip.x - leftHip.x)  // No scaling in landscape
-        }
+        // 2. Check if viewing from side by comparing shoulder/hip widths.
+        // MediaPipe Pose Landmarker returns landmarks in isotropic normalized
+        // coordinates (same unit on both axes), so dx and dy can be compared
+        // directly — no aspect-ratio scaling is applied here.
+        val shoulderWidthNorm = abs(rightShoulder.x - leftShoulder.x)
+        val hipWidthNorm = abs(rightHip.x - leftHip.x)
 
         // Calculate height for ratio
         val headY = landmarks.getOrNull(0)?.y ?: leftShoulder.y

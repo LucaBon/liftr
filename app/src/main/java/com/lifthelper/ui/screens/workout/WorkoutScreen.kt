@@ -69,6 +69,15 @@ fun WorkoutScreen(
     val barPathPoints by viewModel.currentBarPathPoints.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val orientation = rememberOrientation()
+    val view = androidx.compose.ui.platform.LocalView.current
+    // BUG-F fix: the Activity uses configChanges="orientation|screenSize" so
+    // CameraX is never re-bound with the new display rotation. Push the new
+    // rotation into CameraX whenever the orientation flips — otherwise frames
+    // (and therefore pose landmarks) stay locked to the original orientation
+    // and the skeleton appears rotated 90° in landscape.
+    LaunchedEffect(orientation) {
+        cameraManager.updateTargetRotation(view.display?.rotation ?: android.view.Surface.ROTATION_0)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
     var showSaveDialog by remember { mutableStateOf(false) }
 
@@ -181,13 +190,16 @@ fun WorkoutScreen(
                     )
                 }
 
-                // Real-time feedback overlay
+                // Real-time feedback overlay (top-center in portrait,
+                // top-start in landscape so it doesn't cover the preview center)
                 if (uiState.isRecording) {
                     RealTimeFeedbackOverlay(
                         velocityData = uiState.velocityData,
                         repCount = uiState.repCount,
                         targetVelocityRange = uiState.targetVelocityRange,
-                        modifier = Modifier.align(Alignment.TopCenter),
+                        modifier = Modifier.align(
+                            if (orientation.isPortrait()) Alignment.TopCenter else Alignment.TopStart
+                        ),
                         vbtZone = uiState.vbtZone,
                         velocityLossState = uiState.velocityLossState,
                         vbtZonesEnabled = uiState.vbtZonesEnabled
@@ -239,11 +251,18 @@ fun WorkoutScreen(
                     }
                 }
 
-                // Control panel at bottom
+                // Control panel at bottom — scrollable and width-capped so
+                // landscape doesn't push the start button off-screen
+                val isLandscape = !orientation.isPortrait()
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .then(
+                            if (isLandscape) Modifier.fillMaxHeight(0.8f).widthIn(max = 520.dp)
+                            else Modifier.fillMaxWidth()
+                        )
                         .padding(16.dp)
+                        .verticalScroll(rememberScrollState())
                         .zIndex(10f),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)

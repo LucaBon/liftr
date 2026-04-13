@@ -45,32 +45,14 @@ object PoseResultTestFixtures {
         // Knee spacing: ~10% of height
         val kneeSpacingRatio = 0.10f
 
-        // Calculate pixel dimensions for width calculations
-        // In normalized space, we need to account for aspect ratio
-        val aspectRatio = if (isPortrait) {
-            imageHeight.toFloat() / imageWidth.toFloat()
-        } else {
-            imageWidth.toFloat() / imageHeight.toFloat()
-        }
-
-        // Width in normalized X coordinates
-        // The width ratios are relative to body height, so we multiply by totalBodyHeightNorm
-        // Then divide by aspect ratio in portrait to account for narrower X-axis
-        val shoulderWidthX = if (isPortrait) {
-            (shoulderWidthRatio * totalBodyHeightNorm) / aspectRatio
-        } else {
-            shoulderWidthRatio * totalBodyHeightNorm
-        }
-        val hipWidthX = if (isPortrait) {
-            (hipWidthRatio * totalBodyHeightNorm) / aspectRatio
-        } else {
-            hipWidthRatio * totalBodyHeightNorm
-        }
-        val kneeSpacingX = if (isPortrait) {
-            (kneeSpacingRatio * totalBodyHeightNorm) / aspectRatio
-        } else {
-            kneeSpacingRatio * totalBodyHeightNorm
-        }
+        // Width in normalized X coordinates.
+        // MediaPipe Pose Landmarker returns landmarks in isotropic normalized
+        // coordinates (both axes share the same unit — the model letterboxes
+        // its input to a square), so x and y are directly comparable and no
+        // per-orientation aspect-ratio correction is applied here.
+        val shoulderWidthX = shoulderWidthRatio * totalBodyHeightNorm
+        val hipWidthX = hipWidthRatio * totalBodyHeightNorm
+        val kneeSpacingX = kneeSpacingRatio * totalBodyHeightNorm
 
         // Create landmarks with high visibility
         val landmarks = mutableListOf<PoseKeypoint>()

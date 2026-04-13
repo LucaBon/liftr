@@ -163,6 +163,10 @@ class CoordinateCalculatorTest {
     }
 
     // Distance Calculation Tests
+    // Note: MediaPipe Pose Landmarker returns landmarks in isotropic normalized
+    // coordinates, so calculateDistance is a plain Euclidean distance — the
+    // aspectRatio/isPortrait parameters are kept only for API compatibility and
+    // must NOT influence the result.
     @Test
     fun `should calculate distance correctly in portrait mode`() {
         // Given
@@ -175,7 +179,7 @@ class CoordinateCalculatorTest {
         val distance = calculator.calculateDistance(p1, p2, aspectRatio, isPortrait)
 
         // Then
-        val dx = (0.4f - 0.2f) * aspectRatio
+        val dx = 0.4f - 0.2f
         val dy = 0.5f - 0.2f
         val expected = sqrt(dx * dx + dy * dy)
         assertEquals(expected, distance, 0.001f)
@@ -194,7 +198,7 @@ class CoordinateCalculatorTest {
 
         // Then
         val dx = 0.4f - 0.2f
-        val dy = (0.5f - 0.2f) * aspectRatio
+        val dy = 0.5f - 0.2f
         val expected = sqrt(dx * dx + dy * dy)
         assertEquals(expected, distance, 0.001f)
     }
@@ -213,10 +217,24 @@ class CoordinateCalculatorTest {
         val distance = calculator.calculateDistance(x1, y1, x2, y2, aspectRatio, isPortrait)
 
         // Then
-        val dx = (x2 - x1) * aspectRatio
+        val dx = x2 - x1
         val dy = y2 - y1
         val expected = sqrt(dx * dx + dy * dy)
         assertEquals(expected, distance, 0.001f)
+    }
+
+    @Test
+    fun `distance should be independent of aspectRatio and orientation`() {
+        // Given the same two points, result must match across orientations.
+        val p1 = PoseKeypoint(0.1f, 0.2f, 0f, 0.9f)
+        val p2 = PoseKeypoint(0.5f, 0.6f, 0f, 0.9f)
+
+        val d1 = calculator.calculateDistance(p1, p2, 16f / 9f, true)
+        val d2 = calculator.calculateDistance(p1, p2, 16f / 9f, false)
+        val d3 = calculator.calculateDistance(p1, p2, 1f, true)
+
+        assertEquals(d1, d2, 0.0001f)
+        assertEquals(d1, d3, 0.0001f)
     }
 
     @Test
@@ -235,63 +253,35 @@ class CoordinateCalculatorTest {
     }
 
     // Aspect Ratio Scaling Tests
+    // MediaPipe Pose Landmarker returns landmarks in isotropic normalized
+    // coordinates, so scaleForAspectRatio is a no-op regardless of orientation
+    // or whether the distance is horizontal or vertical. The parameters are
+    // kept purely for API compatibility.
     @Test
-    fun `should scale horizontal distance in portrait mode`() {
-        // Given
+    fun `should not scale horizontal distance in portrait mode`() {
         val distance = 0.2f
-        val aspectRatio = 16f / 9f
-        val isPortrait = true
-        val isHorizontal = true
-
-        // When
-        val scaled = calculator.scaleForAspectRatio(distance, aspectRatio, isPortrait, isHorizontal)
-
-        // Then
-        assertEquals(distance * aspectRatio, scaled, 0.001f)
-    }
-
-    @Test
-    fun `should not scale vertical distance in portrait mode`() {
-        // Given
-        val distance = 0.2f
-        val aspectRatio = 16f / 9f
-        val isPortrait = true
-        val isHorizontal = false
-
-        // When
-        val scaled = calculator.scaleForAspectRatio(distance, aspectRatio, isPortrait, isHorizontal)
-
-        // Then
+        val scaled = calculator.scaleForAspectRatio(distance, 16f / 9f, isPortrait = true, isHorizontal = true)
         assertEquals(distance, scaled, 0.001f)
     }
 
     @Test
-    fun `should scale vertical distance in landscape mode`() {
-        // Given
+    fun `should not scale vertical distance in portrait mode`() {
         val distance = 0.2f
-        val aspectRatio = 16f / 9f
-        val isPortrait = false
-        val isHorizontal = false
+        val scaled = calculator.scaleForAspectRatio(distance, 16f / 9f, isPortrait = true, isHorizontal = false)
+        assertEquals(distance, scaled, 0.001f)
+    }
 
-        // When
-        val scaled = calculator.scaleForAspectRatio(distance, aspectRatio, isPortrait, isHorizontal)
-
-        // Then
-        assertEquals(distance * aspectRatio, scaled, 0.001f)
+    @Test
+    fun `should not scale vertical distance in landscape mode`() {
+        val distance = 0.2f
+        val scaled = calculator.scaleForAspectRatio(distance, 16f / 9f, isPortrait = false, isHorizontal = false)
+        assertEquals(distance, scaled, 0.001f)
     }
 
     @Test
     fun `should not scale horizontal distance in landscape mode`() {
-        // Given
         val distance = 0.2f
-        val aspectRatio = 16f / 9f
-        val isPortrait = false
-        val isHorizontal = true
-
-        // When
-        val scaled = calculator.scaleForAspectRatio(distance, aspectRatio, isPortrait, isHorizontal)
-
-        // Then
+        val scaled = calculator.scaleForAspectRatio(distance, 16f / 9f, isPortrait = false, isHorizontal = true)
         assertEquals(distance, scaled, 0.001f)
     }
 

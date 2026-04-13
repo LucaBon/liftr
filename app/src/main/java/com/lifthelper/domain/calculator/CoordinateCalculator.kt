@@ -116,18 +116,27 @@ class CoordinateCalculator {
     }
 
     /**
-     * Calculates Euclidean distance between two points with aspect ratio correction.
+     * Calculates Euclidean distance between two points.
      *
-     * Since normalized coordinates are in [0,1] range for both X and Y,
-     * but the actual pixel dimensions differ, we need to scale coordinates
-     * to get accurate real-world proportions.
+     * MediaPipe's Pose Landmarker returns landmark coordinates in an isotropic
+     * normalized space (empirically, both axes share the same unit — the model
+     * letterboxes its input to a square before inference and the returned x/y
+     * are effectively normalized by the longer edge, not per-axis). This means
+     * dx and dy can be combined directly with a plain Euclidean formula and NO
+     * aspect-ratio correction — applying one makes horizontal distances wrong
+     * by a factor of `aspectRatio` (either over- or underestimating widths
+     * depending on the direction of the scaling).
+     *
+     * The `aspectRatio` and `isPortrait` parameters are retained for API
+     * compatibility and are intentionally unused.
      *
      * @param p1 First point
      * @param p2 Second point
-     * @param aspectRatio Image aspect ratio (>= 1.0)
-     * @param isPortrait true if image is in portrait orientation
-     * @return Distance in normalized units with aspect correction
+     * @param aspectRatio Image aspect ratio (unused — landmarks are isotropic)
+     * @param isPortrait true if image is in portrait orientation (unused)
+     * @return Euclidean distance in normalized landmark units
      */
+    @Suppress("UNUSED_PARAMETER")
     fun calculateDistance(
         p1: PoseKeypoint,
         p2: PoseKeypoint,
@@ -136,17 +145,7 @@ class CoordinateCalculator {
     ): Float {
         val dx = p2.x - p1.x
         val dy = p2.y - p1.y
-
-        // Scale the coordinate along the shorter axis to make distances isotropic
-        return if (isPortrait) {
-            // Portrait: scale X (narrower axis) by aspect ratio
-            val dxScaled = dx * aspectRatio
-            sqrt(dxScaled * dxScaled + dy * dy)
-        } else {
-            // Landscape: scale Y (narrower axis) by aspect ratio
-            val dyScaled = dy * aspectRatio
-            sqrt(dx * dx + dyScaled * dyScaled)
-        }
+        return sqrt(dx * dx + dy * dy)
     }
 
     /**
@@ -160,6 +159,7 @@ class CoordinateCalculator {
      * @param isPortrait true if image is in portrait orientation
      * @return Distance in normalized units with aspect correction
      */
+    @Suppress("UNUSED_PARAMETER")
     fun calculateDistance(
         x1: Float,
         y1: Float,
@@ -170,45 +170,35 @@ class CoordinateCalculator {
     ): Float {
         val dx = x2 - x1
         val dy = y2 - y1
-
-        return if (isPortrait) {
-            val dxScaled = dx * aspectRatio
-            sqrt(dxScaled * dxScaled + dy * dy)
-        } else {
-            val dyScaled = dy * aspectRatio
-            sqrt(dx * dx + dyScaled * dyScaled)
-        }
+        return sqrt(dx * dx + dy * dy)
     }
 
     /**
-     * Scales a distance measurement to account for aspect ratio.
+     * Returns the distance unchanged.
      *
-     * Used for horizontal distances (widths) that need to be made
-     * comparable with vertical distances (heights).
+     * MediaPipe's Pose Landmarker returns landmark coordinates in an isotropic
+     * normalized space: both x and y share the same unit regardless of image
+     * orientation (empirically the model letterboxes its input to a square and
+     * the exposed NormalizedLandmark.x/y are effectively normalized by the
+     * longer edge). Horizontal distances therefore do NOT need aspect-ratio
+     * correction — applying any scaling (either multiplying or dividing by
+     * aspectRatio) results in widths being off by that factor.
      *
-     * @param distance Raw distance in normalized units
-     * @param aspectRatio Image aspect ratio (>= 1.0)
-     * @param isPortrait true if image is in portrait orientation
-     * @param isHorizontal true if this is a horizontal distance (X-axis)
-     * @return Scaled distance
+     * The parameters are kept for API compatibility and are unused.
+     *
+     * @param distance Raw distance in normalized landmark units
+     * @param aspectRatio Image aspect ratio (unused)
+     * @param isPortrait true if image is in portrait orientation (unused)
+     * @param isHorizontal true if this is a horizontal distance (unused)
+     * @return The distance unchanged
      */
+    @Suppress("UNUSED_PARAMETER")
     fun scaleForAspectRatio(
         distance: Float,
         aspectRatio: Float,
         isPortrait: Boolean,
         isHorizontal: Boolean
-    ): Float {
-        // In portrait: X-axis (horizontal) distances need scaling
-        // In landscape: Y-axis (vertical) distances need scaling
-        // But we typically measure widths (horizontal), so:
-        return if (isPortrait && isHorizontal) {
-            distance * aspectRatio
-        } else if (!isPortrait && !isHorizontal) {
-            distance * aspectRatio
-        } else {
-            distance  // No scaling needed
-        }
-    }
+    ): Float = distance
 
     /**
      * Calculates average Y position from multiple landmark indices.

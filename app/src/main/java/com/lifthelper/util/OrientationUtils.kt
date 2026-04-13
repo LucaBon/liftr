@@ -25,16 +25,15 @@ fun rememberOrientation(): OrientationMode {
 }
 
 /**
- * Get the rotation degrees needed for pose overlay based on orientation
- * - Portrait mode: 90 degrees (camera sensor is rotated 90 degrees)
- * - Landscape mode: 0 degrees (no rotation needed)
+ * Rotation degrees to apply when mapping pose landmarks to overlay canvas.
+ *
+ * Returns 0 because [com.lifthelper.vision.pose.PoseDetector] already rotates
+ * the camera bitmap to upright orientation before running MediaPipe inference,
+ * so the returned landmarks are already in upright (post-rotation) space and
+ * match the PreviewView's upright rendering. Applying another rotation here
+ * would double-rotate the skeleton.
  */
-fun OrientationMode.getRotationDegrees(): Int {
-    return when (this) {
-        OrientationMode.PORTRAIT -> 90
-        OrientationMode.LANDSCAPE -> 0
-    }
-}
+fun OrientationMode.getRotationDegrees(): Int = 0
 
 /**
  * Check if the device is in portrait mode

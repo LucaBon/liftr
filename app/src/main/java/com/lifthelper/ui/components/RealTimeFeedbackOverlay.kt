@@ -36,11 +36,14 @@ fun RealTimeFeedbackOverlay(
 ) {
     val orientation = rememberOrientation()
     val isPortrait = orientation == OrientationMode.PORTRAIT
+    // Always use the compact variant: landscape has very little vertical space,
+    // and the large variant covered the center of the preview.
+    val isCompact = true
 
     Column(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = if (isPortrait) 8.dp else 16.dp, vertical = if (isPortrait) 8.dp else 16.dp),
+            .then(if (isPortrait) Modifier.fillMaxWidth() else Modifier.widthIn(max = 260.dp))
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Velocity display with VBT zone coloring
@@ -49,49 +52,49 @@ fun RealTimeFeedbackOverlay(
                 VbtZoneVelocityDisplay(
                     velocity = data.average.value,
                     vbtZone = vbtZone,
-                    isCompact = isPortrait
+                    isCompact = isCompact
                 )
             } else {
                 VelocityDisplay(
                     velocity = data.average.value,
                     zone = VelocityZone.fromVelocity(data.average),
-                    isCompact = isPortrait
+                    isCompact = isCompact
                 )
             }
 
-            Spacer(modifier = Modifier.height(if (isPortrait) 8.dp else 16.dp))
+            Spacer(modifier = Modifier.height(6.dp))
         }
 
         // Rep counter
         Text(
             text = stringResource(R.string.reps_label, repCount.value),
-            style = if (isPortrait) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.titleMedium,
             color = Color.White,
             modifier = Modifier
                 .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                .padding(horizontal = if (isPortrait) 12.dp else 16.dp, vertical = if (isPortrait) 6.dp else 8.dp)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
         )
 
         // Velocity loss bar (shown from rep 2 onwards when tracking is enabled)
         if (velocityLossState.isEnabled && velocityLossState.repCount >= 2) {
-            Spacer(modifier = Modifier.height(if (isPortrait) 8.dp else 16.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             VelocityLossBar(
                 lossPercent = velocityLossState.currentLossPercent,
                 threshold = velocityLossState.threshold,
-                isCompact = isPortrait
+                isCompact = isCompact
             )
         }
 
         // Target velocity range indicator
         targetVelocityRange?.let { range ->
             velocityData?.let { data ->
-                Spacer(modifier = Modifier.height(if (isPortrait) 8.dp else 16.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Column(
                     modifier = Modifier
                         .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(if (isPortrait) 8.dp else 16.dp)
+                        .padding(8.dp)
                 ) {
                     val progress = ((data.average.value - range.start) /
                             (range.endInclusive - range.start)).coerceIn(0f, 1f)

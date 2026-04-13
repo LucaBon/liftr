@@ -27,6 +27,7 @@ class CameraManager @Inject constructor(
 ) {
     private var camera: Camera? = null
     private var imageAnalysis: ImageAnalysis? = null
+    private var preview: Preview? = null
     private var cameraProvider: ProcessCameraProvider? = null
 
     @Volatile
@@ -105,13 +106,14 @@ class CameraManager @Inject constructor(
 
                 // Preview use case - use 16:9 aspect ratio to match ImageAnalysis
                 // This ensures both use the same crop and what user sees matches what's analyzed
-                val preview = Preview.Builder()
+                val previewUseCase = Preview.Builder()
                     .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
                     .setTargetRotation(displayRotation)
                     .build()
                     .also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
+                preview = previewUseCase
                 Log.d(TAG_CAMERA, "Preview use case configured with 16:9 aspect ratio, rotation: $displayRotation")
 
                 // ImageAnalysis use case - use 16:9 to match preview
@@ -149,7 +151,7 @@ class CameraManager @Inject constructor(
                 camera = cameraProvider?.bindToLifecycle(
                     lifecycleOwner,
                     currentCameraSelector,
-                    preview,
+                    previewUseCase,
                     imageAnalysis
                 )
 
@@ -181,6 +183,28 @@ class CameraManager @Inject constructor(
                 Timber.e(e, "Camera initialization failed")
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    /**
+     * Updates the target rotation of the Preview and ImageAnalysis use cases.
+     *
+     * The Activity declares `configChanges="orientation|screenSize"`, so it is
+     * not recreated on rotation and CameraX won't pick up the new display
+     * rotation automatically. Call this from Compose whenever the device
+     * orientation changes so that:
+     *  - PreviewView renders the camera feed upright, and
+     *  - `ImageProxy.imageInfo.rotationDegrees` matches the new upright frame
+     *    (the PoseDetector rotates the bitmap using that value, so landmarks
+     *    end up in the same coordinate space as the preview).
+     *
+     * @param displayRotation One of [android.view.Surface.ROTATION_0],
+     *   [android.view.Surface.ROTATION_90], [android.view.Surface.ROTATION_180],
+     *   [android.view.Surface.ROTATION_270].
+     */
+    fun updateTargetRotation(displayRotation: Int) {
+        Log.d(TAG_CAMERA, "updateTargetRotation($displayRotation)")
+        preview?.targetRotation = displayRotation
+        imageAnalysis?.targetRotation = displayRotation
     }
 
     fun switchCamera() {
@@ -296,6 +320,7 @@ class CameraManager @Inject constructor(
 
             camera = null
             imageAnalysis = null
+            preview = null
 
             // Clear lens distortion intrinsics cache
             lensDistortionCorrector.clearCache()
