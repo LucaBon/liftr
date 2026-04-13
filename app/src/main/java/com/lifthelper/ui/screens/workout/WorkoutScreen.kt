@@ -227,12 +227,21 @@ fun WorkoutScreen(
                     }
                 }
 
-                // Calibration warning overlay (shown below feedback)
+                // Calibration warning overlay.
+                // Portrait: top-center (below the feedback HUD).
+                // Landscape: top-end, so it doesn't overlap the rep/velocity
+                // HUD that now sits at top-start.
                 CalibrationWarningOverlay(
                     calibrationQuality = uiState.calibrationQuality,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = if (uiState.isRecording) 120.dp else 16.dp)
+                    modifier = if (orientation.isPortrait()) {
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = if (uiState.isRecording) 120.dp else 16.dp)
+                    } else {
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 16.dp, end = 16.dp)
+                    }
                 )
 
                 // Camera switch button (top right) - only show when not recording
@@ -251,15 +260,23 @@ fun WorkoutScreen(
                     }
                 }
 
-                // Control panel at bottom — scrollable and width-capped so
-                // landscape doesn't push the start button off-screen
+                // Control panel at bottom. Landscape caps width + height and
+                // becomes scrollable when the setup panel exceeds the cap,
+                // while still wrapping content so the recording stop button
+                // sits at the true bottom of the screen (via align BottomCenter).
                 val isLandscape = !orientation.isPortrait()
+                val screenHeightDp = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .then(
-                            if (isLandscape) Modifier.fillMaxHeight(0.8f).widthIn(max = 520.dp)
-                            else Modifier.fillMaxWidth()
+                            if (isLandscape) {
+                                Modifier
+                                    .widthIn(max = 520.dp)
+                                    .heightIn(max = screenHeightDp * 0.85f)
+                            } else {
+                                Modifier.fillMaxWidth()
+                            }
                         )
                         .padding(16.dp)
                         .verticalScroll(rememberScrollState())
