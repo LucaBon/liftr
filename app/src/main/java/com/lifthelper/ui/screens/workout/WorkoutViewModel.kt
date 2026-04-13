@@ -202,6 +202,34 @@ class WorkoutViewModel @Inject constructor(
                 feedbackEmitter.setHapticEnabled(enabled)
             }
         }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_LANGUAGE,
+                com.lifthelper.domain.feedback.FeedbackLanguage.DEFAULT.name
+            ).collect { name ->
+                feedbackEmitter.setLanguage(
+                    com.lifthelper.domain.feedback.FeedbackLanguage.fromString(name)
+                )
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_VERBOSITY,
+                com.lifthelper.domain.feedback.FeedbackVerbosity.DEFAULT.name
+            ).collect { name ->
+                feedbackEmitter.setVerbosity(
+                    com.lifthelper.domain.feedback.FeedbackVerbosity.fromString(name)
+                )
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_TTS_ENGINE,
+                ""
+            ).collect { pkg ->
+                feedbackEmitter.setTtsEngine(pkg.takeIf { it.isNotBlank() })
+            }
+        }
     }
 
     /**

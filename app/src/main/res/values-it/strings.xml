@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Feedback settings (Settings screen rows) -->
+    <string name="feedback_language">Lingua voce</string>
+    <string name="feedback_language_description">Lingua dei messaggi vocali durante l\'allenamento</string>
+    <string name="feedback_language_system">Come il sistema</string>
+    <string name="feedback_language_english">Inglese</string>
+    <string name="feedback_language_italian">Italiano</string>
+
+    <string name="feedback_verbosity">Verbosità</string>
+    <string name="feedback_verbosity_description">Quanto parla l\'app durante l\'allenamento</string>
+    <string name="feedback_verbosity_minimal">Minima</string>
+    <string name="feedback_verbosity_minimal_desc">Conteggio ripetizioni, fine serie, errori gravi di tecnica</string>
+    <string name="feedback_verbosity_normal">Normale</string>
+    <string name="feedback_verbosity_normal_desc">Minima + avvisi tecnica e perdita di velocità</string>
+    <string name="feedback_verbosity_verbose">Dettagliata</string>
+    <string name="feedback_verbosity_verbose_desc">Tutti gli avvisi, con pause brevi</string>
+
+    <string name="feedback_tts_engine">Motore TTS</string>
+    <string name="feedback_tts_engine_description">Motore text-to-speech di Android. Installa Google TTS per voci migliori.</string>
+    <string name="feedback_tts_engine_system">Predefinito di sistema</string>
+
+    <!-- Spoken TTS cues — these are what the voice actually pronounces -->
+    <string name="tts_set_complete">Serie completata</string>
+    <string name="tts_velocity_drop">Velocità in calo</string>
+    <string name="tts_personal_record">Nuovo record</string>
+    <string name="tts_rest_complete">Riposo finito</string>
+    <string name="tts_form_warning">Controlla la tecnica</string>
+    <string name="tts_form_critical">Ferma. Controlla la tecnica.</string>
+    <string name="tts_tempo_hold">Tieni %1$d</string>
+    <string name="tts_tempo_slower">Più lento</string>
+    <string name="tts_tempo_faster">Più veloce</string>
+</resources>

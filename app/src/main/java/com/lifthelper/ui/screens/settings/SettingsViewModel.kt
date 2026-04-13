@@ -3,6 +3,10 @@ package com.lifthelper.ui.screens.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lifthelper.domain.exercise.VelocityLossState
+import com.lifthelper.domain.feedback.FeedbackLanguage
+import com.lifthelper.domain.feedback.FeedbackVerbosity
+import com.lifthelper.domain.feedback.IFeedbackEmitter
+import com.lifthelper.domain.feedback.TtsEngineInfo
 import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.repository.SettingsKeys
 import com.lifthelper.domain.repository.SettingsRepository
@@ -19,7 +23,8 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val feedbackEmitter: IFeedbackEmitter
 ) : ViewModel() {
 
     private val _backSquatDepthType = MutableStateFlow(SquatDepthType.DEFAULT)
@@ -39,6 +44,18 @@ class SettingsViewModel @Inject constructor(
 
     private val _hapticFeedbackEnabled = MutableStateFlow(true)
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
+
+    private val _feedbackLanguage = MutableStateFlow(FeedbackLanguage.DEFAULT)
+    val feedbackLanguage: StateFlow<FeedbackLanguage> = _feedbackLanguage.asStateFlow()
+
+    private val _feedbackVerbosity = MutableStateFlow(FeedbackVerbosity.DEFAULT)
+    val feedbackVerbosity: StateFlow<FeedbackVerbosity> = _feedbackVerbosity.asStateFlow()
+
+    private val _ttsEngine = MutableStateFlow<String?>(null)
+    val ttsEngine: StateFlow<String?> = _ttsEngine.asStateFlow()
+
+    val availableTtsEngines: List<TtsEngineInfo>
+        get() = feedbackEmitter.getAvailableEngines()
 
     private val _restTimerEnabled = MutableStateFlow(true)
     val restTimerEnabled: StateFlow<Boolean> = _restTimerEnabled.asStateFlow()
@@ -157,6 +174,30 @@ class SettingsViewModel @Inject constructor(
                 _hapticFeedbackEnabled.value = enabled
             }
         }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_LANGUAGE,
+                FeedbackLanguage.DEFAULT.name
+            ).collect { name ->
+                _feedbackLanguage.value = FeedbackLanguage.fromString(name)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_VERBOSITY,
+                FeedbackVerbosity.DEFAULT.name
+            ).collect { name ->
+                _feedbackVerbosity.value = FeedbackVerbosity.fromString(name)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.FEEDBACK_TTS_ENGINE,
+                ""
+            ).collect { pkg ->
+                _ttsEngine.value = pkg.takeIf { it.isNotBlank() }
+            }
+        }
     }
 
     fun updateAudioFeedbackEnabled(enabled: Boolean) {
@@ -177,6 +218,39 @@ class SettingsViewModel @Inject constructor(
                 enabled
             ).onSuccess {
                 _hapticFeedbackEnabled.value = enabled
+            }
+        }
+    }
+
+    fun updateFeedbackLanguage(language: FeedbackLanguage) {
+        viewModelScope.launch {
+            settingsRepository.saveStringSetting(
+                SettingsKeys.FEEDBACK_LANGUAGE,
+                language.name
+            ).onSuccess {
+                _feedbackLanguage.value = language
+            }
+        }
+    }
+
+    fun updateFeedbackVerbosity(verbosity: FeedbackVerbosity) {
+        viewModelScope.launch {
+            settingsRepository.saveStringSetting(
+                SettingsKeys.FEEDBACK_VERBOSITY,
+                verbosity.name
+            ).onSuccess {
+                _feedbackVerbosity.value = verbosity
+            }
+        }
+    }
+
+    fun updateTtsEngine(packageName: String?) {
+        viewModelScope.launch {
+            settingsRepository.saveStringSetting(
+                SettingsKeys.FEEDBACK_TTS_ENGINE,
+                packageName.orEmpty()
+            ).onSuccess {
+                _ttsEngine.value = packageName
             }
         }
     }

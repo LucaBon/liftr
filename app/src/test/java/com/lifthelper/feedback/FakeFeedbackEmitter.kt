@@ -1,6 +1,9 @@
 package com.lifthelper.feedback
 
+import com.lifthelper.domain.feedback.FeedbackLanguage
+import com.lifthelper.domain.feedback.FeedbackVerbosity
 import com.lifthelper.domain.feedback.IFeedbackEmitter
+import com.lifthelper.domain.feedback.TtsEngineInfo
 import com.lifthelper.domain.model.FeedbackEvent
 
 /**
@@ -13,6 +16,12 @@ class FakeFeedbackEmitter : IFeedbackEmitter {
     var audioEnabled = true
         private set
     var hapticEnabled = true
+        private set
+    var language: FeedbackLanguage = FeedbackLanguage.DEFAULT
+        private set
+    var verbosity: FeedbackVerbosity = FeedbackVerbosity.DEFAULT
+        private set
+    var ttsEngine: String? = null
         private set
     var speechStopped = false
         private set
@@ -30,6 +39,20 @@ class FakeFeedbackEmitter : IFeedbackEmitter {
     override fun setHapticEnabled(enabled: Boolean) {
         hapticEnabled = enabled
     }
+
+    override fun setLanguage(language: FeedbackLanguage) {
+        this.language = language
+    }
+
+    override fun setVerbosity(verbosity: FeedbackVerbosity) {
+        this.verbosity = verbosity
+    }
+
+    override fun setTtsEngine(packageName: String?) {
+        this.ttsEngine = packageName
+    }
+
+    override fun getAvailableEngines(): List<TtsEngineInfo> = emptyList()
 
     override fun stopCurrentSpeech() {
         speechStopped = true

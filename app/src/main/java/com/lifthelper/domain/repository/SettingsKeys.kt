@@ -42,6 +42,24 @@ object SettingsKeys {
      */
     const val HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
 
+    /**
+     * Spoken feedback language. Stored as a [com.lifthelper.domain.feedback.FeedbackLanguage] name.
+     * Default: `SYSTEM` (follow device locale, falling back to English).
+     */
+    const val FEEDBACK_LANGUAGE = "feedback_language"
+
+    /**
+     * Verbosity level for spoken feedback. Stored as a
+     * [com.lifthelper.domain.feedback.FeedbackVerbosity] name. Default: `MINIMAL`.
+     */
+    const val FEEDBACK_VERBOSITY = "feedback_verbosity"
+
+    /**
+     * Preferred Android TTS engine package name (e.g. `com.google.android.tts`).
+     * Empty string means "use the system default engine".
+     */
+    const val FEEDBACK_TTS_ENGINE = "feedback_tts_engine"
+
     // Rest Timer
     const val REST_TIMER_ENABLED = "rest_timer_enabled"
     const val REST_DURATION_SQUAT = "rest_duration_squat"

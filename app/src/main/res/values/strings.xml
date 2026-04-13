@@ -104,6 +104,36 @@
     <string name="haptic_feedback_enabled">Haptic Feedback</string>
     <string name="haptic_feedback_description">Vibration pulses on rep completion, form alerts, and velocity loss</string>
 
+    <string name="feedback_language">Voice Language</string>
+    <string name="feedback_language_description">Language used for spoken cues during a workout</string>
+    <string name="feedback_language_system">Follow system</string>
+    <string name="feedback_language_english">English</string>
+    <string name="feedback_language_italian">Italiano</string>
+
+    <string name="feedback_verbosity">Verbosity</string>
+    <string name="feedback_verbosity_description">How much the app talks during a workout</string>
+    <string name="feedback_verbosity_minimal">Minimal</string>
+    <string name="feedback_verbosity_minimal_desc">Rep counts, set complete, critical form alerts</string>
+    <string name="feedback_verbosity_normal">Normal</string>
+    <string name="feedback_verbosity_normal_desc">Minimal + form warnings and velocity loss</string>
+    <string name="feedback_verbosity_verbose">Verbose</string>
+    <string name="feedback_verbosity_verbose_desc">All cues, short cooldowns</string>
+
+    <string name="feedback_tts_engine">TTS Engine</string>
+    <string name="feedback_tts_engine_description">Android text-to-speech engine. Install Google TTS for the best voices.</string>
+    <string name="feedback_tts_engine_system">System default</string>
+
+    <!-- Spoken TTS cues (short, so TTS pronunciation stays clean) -->
+    <string name="tts_set_complete">Set complete</string>
+    <string name="tts_velocity_drop">Velocity dropping</string>
+    <string name="tts_personal_record">Personal record</string>
+    <string name="tts_rest_complete">Rest complete</string>
+    <string name="tts_form_warning">Check your form</string>
+    <string name="tts_form_critical">Stop. Check your form.</string>
+    <string name="tts_tempo_hold">Hold %1$d</string>
+    <string name="tts_tempo_slower">Slower</string>
+    <string name="tts_tempo_faster">Faster</string>
+
     <!-- Bench Press Form Issues -->
     <string name="bench_bar_drift">Bar drifting horizontally</string>
     <string name="bench_bar_drift_suggestion">Keep the bar path more vertical</string>

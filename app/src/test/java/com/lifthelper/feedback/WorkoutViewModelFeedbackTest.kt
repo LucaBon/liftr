@@ -98,6 +98,9 @@ class WorkoutViewModelFeedbackTest {
         every { settingsRepository.getBooleanSetting("rest_timer_enabled", true) } returns flowOf(true)
         every { settingsRepository.getBooleanSetting("tempo_mode_enabled", false) } returns flowOf(false)
         every { settingsRepository.getStringSetting("last_tempo_prescription", "") } returns flowOf("")
+        every { settingsRepository.getStringSetting("feedback_language", any()) } returns flowOf("SYSTEM")
+        every { settingsRepository.getStringSetting("feedback_verbosity", any()) } returns flowOf("MINIMAL")
+        every { settingsRepository.getStringSetting("feedback_tts_engine", "") } returns flowOf("")
         every { customExerciseRepository.getExerciseNames() } returns flowOf(emptyList())
 
         viewModel = WorkoutViewModel(

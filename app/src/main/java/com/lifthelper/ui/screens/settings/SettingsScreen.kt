@@ -19,6 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lifthelper.R
 import com.lifthelper.domain.exercise.VelocityLossState
+import com.lifthelper.domain.feedback.FeedbackLanguage
+import com.lifthelper.domain.feedback.FeedbackVerbosity
+import com.lifthelper.domain.feedback.TtsEngineInfo
 import com.lifthelper.domain.model.SquatDepthType
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,6 +39,10 @@ fun SettingsScreen(
     val velocityLossThreshold by viewModel.velocityLossThreshold.collectAsState()
     val audioFeedbackEnabled by viewModel.audioFeedbackEnabled.collectAsState()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
+    val feedbackLanguage by viewModel.feedbackLanguage.collectAsState()
+    val feedbackVerbosity by viewModel.feedbackVerbosity.collectAsState()
+    val ttsEngine by viewModel.ttsEngine.collectAsState()
+    val availableTtsEngines = remember { viewModel.availableTtsEngines }
     val tempoModeEnabled by viewModel.tempoModeEnabled.collectAsState()
     val restTimerEnabled by viewModel.restTimerEnabled.collectAsState()
     val restDurationDefault by viewModel.restDurationDefault.collectAsState()
@@ -294,6 +301,28 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            FeedbackLanguageSelector(
+                current = feedbackLanguage,
+                onSelected = { viewModel.updateFeedbackLanguage(it) }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            FeedbackVerbositySelector(
+                current = feedbackVerbosity,
+                onSelected = { viewModel.updateFeedbackVerbosity(it) }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            TtsEngineSelector(
+                current = ttsEngine,
+                engines = availableTtsEngines,
+                onSelected = { viewModel.updateTtsEngine(it) }
+            )
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // ── Tempo Training Settings Section ──
@@ -547,6 +576,216 @@ fun VelocityLossThresholdSelector(
                             text = { Text(label, style = MaterialTheme.typography.bodyLarge) },
                             onClick = {
                                 onThresholdSelected(value)
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackLanguageSelector(
+    current: FeedbackLanguage,
+    onSelected: (FeedbackLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(
+        FeedbackLanguage.SYSTEM to stringResource(R.string.feedback_language_system),
+        FeedbackLanguage.ENGLISH to stringResource(R.string.feedback_language_english),
+        FeedbackLanguage.ITALIAN to stringResource(R.string.feedback_language_italian)
+    )
+    val currentLabel = options.firstOrNull { it.first == current }?.second.orEmpty()
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.feedback_language),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = stringResource(R.string.feedback_language_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    options.forEach { (value, label) ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            onClick = {
+                                onSelected(value)
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackVerbositySelector(
+    current: FeedbackVerbosity,
+    onSelected: (FeedbackVerbosity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val options = listOf(
+        Triple(FeedbackVerbosity.MINIMAL,
+            stringResource(R.string.feedback_verbosity_minimal),
+            stringResource(R.string.feedback_verbosity_minimal_desc)),
+        Triple(FeedbackVerbosity.NORMAL,
+            stringResource(R.string.feedback_verbosity_normal),
+            stringResource(R.string.feedback_verbosity_normal_desc)),
+        Triple(FeedbackVerbosity.VERBOSE,
+            stringResource(R.string.feedback_verbosity_verbose),
+            stringResource(R.string.feedback_verbosity_verbose_desc))
+    )
+    val currentOption = options.firstOrNull { it.first == current }
+    val currentLabel = currentOption?.second.orEmpty()
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.feedback_verbosity),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = stringResource(R.string.feedback_verbosity_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    options.forEach { (value, label, desc) ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        desc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onSelected(value)
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                }
+            }
+            currentOption?.let {
+                Text(
+                    text = it.third,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TtsEngineSelector(
+    current: String?,
+    engines: List<TtsEngineInfo>,
+    onSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val systemLabel = stringResource(R.string.feedback_tts_engine_system)
+    val currentLabel = current?.let { pkg -> engines.firstOrNull { it.packageName == pkg }?.label ?: pkg }
+        ?: systemLabel
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.feedback_tts_engine),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 4.dp)
+            )
+            Text(
+                text = stringResource(R.string.feedback_tts_engine_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(systemLabel) },
+                        onClick = {
+                            onSelected(null)
+                            expanded = false
+                        },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                    )
+                    engines.forEach { engine ->
+                        DropdownMenuItem(
+                            text = { Text(engine.label) },
+                            onClick = {
+                                onSelected(engine.packageName)
                                 expanded = false
                             },
                             contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
