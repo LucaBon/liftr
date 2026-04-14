@@ -4,16 +4,27 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.lifthelper.R
 import com.lifthelper.domain.model.CalibrationQuality
 
 @Composable
@@ -21,57 +32,85 @@ fun CalibrationWarningOverlay(
     calibrationQuality: CalibrationQuality,
     modifier: Modifier = Modifier
 ) {
-    // Only show warning if not optimal
+    var showDialog by remember { mutableStateOf(false) }
+    val announcement = stringResource(R.string.content_desc_calibration_warning)
+
     AnimatedVisibility(
         visible = calibrationQuality.shouldShowWarning(),
         enter = fadeIn(),
         exit = fadeOut(),
         modifier = modifier
     ) {
-        // Color based on severity
         val backgroundColor = when (calibrationQuality) {
-            CalibrationQuality.ESTIMATED -> Color(0xFFFF9800).copy(alpha = 0.9f) // Orange
-            CalibrationQuality.FALLBACK, CalibrationQuality.NONE -> Color(0xFFD32F2F).copy(alpha = 0.9f) // Red
+            CalibrationQuality.ESTIMATED -> Color(0xFFFF9800).copy(alpha = 0.92f)
+            CalibrationQuality.FALLBACK, CalibrationQuality.NONE -> Color(0xFFD32F2F).copy(alpha = 0.92f)
             else -> Color.Transparent
         }
 
-        val icon = when (calibrationQuality) {
-            CalibrationQuality.ESTIMATED -> Icons.Default.Warning
-            CalibrationQuality.FALLBACK, CalibrationQuality.NONE -> Icons.Default.Warning
-            else -> null
-        }
+        val shortLabel = calibrationQuality.getShortLabel()
 
-        Surface(
+        Row(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = MaterialTheme.shapes.medium,
-            color = backgroundColor,
-            shadowElevation = 4.dp
+                .wrapContentWidth()
+                .heightIn(min = 32.dp)
+                .background(backgroundColor, RoundedCornerShape(16.dp))
+                .clickable { showDialog = true }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "$announcement: $shortLabel"
+                },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                icon?.let {
-                    Icon(
-                        imageVector = it,
-                        contentDescription = "Warning",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Text(
-                    text = calibrationQuality.getWarningMessage() ?: "",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = shortLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White
+            )
         }
     }
+
+    if (showDialog) {
+        CalibrationDetailDialog(
+            calibrationQuality = calibrationQuality,
+            onDismiss = { showDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun CalibrationDetailDialog(
+    calibrationQuality: CalibrationQuality,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.calibration_quality_dialog_title)) },
+        text = {
+            Text(
+                text = calibrationQuality.getWarningMessage()
+                    ?: calibrationQuality.getShortLabel()
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.calibration_quality_dialog_ok))
+            }
+        }
+    )
+}
+
+@Composable
+private fun CalibrationQuality.getShortLabel(): String = when (this) {
+    CalibrationQuality.OPTIMAL -> ""
+    CalibrationQuality.ESTIMATED -> stringResource(R.string.calibration_quality_short_estimated)
+    CalibrationQuality.FALLBACK -> stringResource(R.string.calibration_quality_short_fallback)
+    CalibrationQuality.NONE -> stringResource(R.string.calibration_quality_short_none)
 }

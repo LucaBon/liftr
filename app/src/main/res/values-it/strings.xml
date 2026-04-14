@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Workout HUD -->
+    <string name="reps_badge_label">RIP</string>
+    <string name="rep_count_announcement">Ripetizione %1$d di %2$d</string>
+
+    <!-- Workout content descriptions (accessibility) -->
+    <string name="content_desc_back">Indietro</string>
+    <string name="content_desc_switch_camera">Cambia fotocamera</string>
+    <string name="content_desc_calibration_warning">Avviso calibrazione</string>
+    <string name="content_desc_dismiss">Chiudi</string>
+
+    <!-- Calibration quality short labels (shown in HUD pill) -->
+    <string name="calibration_quality_short_estimated">Stimata</string>
+    <string name="calibration_quality_short_fallback">Fallback</string>
+    <string name="calibration_quality_short_none">Nessuna calibrazione</string>
+    <string name="calibration_quality_dialog_title">Qualità calibrazione</string>
+    <string name="calibration_quality_dialog_ok">OK</string>
+
     <!-- Feedback settings (Settings screen rows) -->
     <string name="feedback_language">Lingua voce</string>
     <string name="feedback_language_description">Lingua dei messaggi vocali durante l\'allenamento</string>
@@ -30,4 +47,11 @@
     <string name="tts_tempo_hold">Tieni %1$d</string>
     <string name="tts_tempo_slower">Più lento</string>
     <string name="tts_tempo_faster">Più veloce</string>
+    <string name="tts_depth_insufficient">Profondità insufficiente</string>
+
+    <!-- Set control -->
+    <string name="set_control_settings_title">Controllo serie</string>
+    <string name="auto_stop_on_target_reps">Stop automatico alle ripetizioni target</string>
+    <string name="auto_stop_on_target_reps_description">Termina la serie quando viene raggiunto il numero di ripetizioni previste</string>
+    <string name="depth_insufficient_cue">Profondità non raggiunta</string>
 </resources>

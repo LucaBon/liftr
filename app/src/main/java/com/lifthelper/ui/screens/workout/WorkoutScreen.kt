@@ -3,6 +3,11 @@ package com.lifthelper.ui.screens.workout
 import android.Manifest
 import android.util.Log
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -14,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +52,7 @@ import com.lifthelper.ui.components.PrCelebrationOverlay
 import com.lifthelper.ui.components.PoseOverlay
 import com.lifthelper.ui.components.RealTimeFeedbackOverlay
 import com.lifthelper.ui.components.RestTimerOverlay
+import com.lifthelper.ui.components.VelocityLossStrip
 import com.lifthelper.ui.components.TempoInputWidget
 import com.lifthelper.ui.components.TempoProgressBar
 import com.lifthelper.ui.theme.VbtStopAlert
@@ -145,7 +152,10 @@ fun WorkoutScreen(
                             onNavigateBack()
                         }
                     }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.content_desc_back)
+                        )
                     }
                 }
             )
@@ -190,19 +200,20 @@ fun WorkoutScreen(
                     )
                 }
 
-                // Real-time feedback overlay (top-center in portrait,
-                // top-start in landscape so it doesn't cover the preview center)
+                // Primary HUD strip (rep count + velocity). Portrait: top-center.
+                // Landscape: top-start so it doesn't cover the preview center.
                 if (uiState.isRecording) {
                     RealTimeFeedbackOverlay(
                         velocityData = uiState.velocityData,
                         repCount = uiState.repCount,
+                        targetReps = uiState.targetReps,
                         targetVelocityRange = uiState.targetVelocityRange,
                         modifier = Modifier.align(
                             if (orientation.isPortrait()) Alignment.TopCenter else Alignment.TopStart
                         ),
                         vbtZone = uiState.vbtZone,
-                        velocityLossState = uiState.velocityLossState,
-                        vbtZonesEnabled = uiState.vbtZonesEnabled
+                        vbtZonesEnabled = uiState.vbtZonesEnabled,
+                        lastRepDepthOk = uiState.lastRepDepthOk
                     )
 
                     // Tempo progress bar overlay
@@ -217,31 +228,20 @@ fun WorkoutScreen(
                                 .padding(bottom = 100.dp)
                         )
                     }
-
-                    // Velocity loss stop alert banner
-                    if (uiState.velocityLossState.shouldStop) {
-                        VelocityLossStopAlert(
-                            thresholdPercent = (uiState.velocityLossState.threshold * 100).toInt(),
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
                 }
 
-                // Calibration warning overlay.
-                // Portrait: top-center (below the feedback HUD).
-                // Landscape: top-end, so it doesn't overlap the rep/velocity
-                // HUD that now sits at top-start.
+                // Calibration warning — compact pill at top-end in both orientations.
+                // Tapping it opens a dialog with the full explanation. When not
+                // recording, the camera-switch FAB sits at top-end with a 48dp
+                // size + 16dp padding, so we push the pill below it.
                 CalibrationWarningOverlay(
                     calibrationQuality = uiState.calibrationQuality,
-                    modifier = if (orientation.isPortrait()) {
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = if (uiState.isRecording) 120.dp else 16.dp)
-                    } else {
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 16.dp, end = 16.dp)
-                    }
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(
+                            top = if (uiState.isRecording) 16.dp else 80.dp,
+                            end = 16.dp
+                        )
                 )
 
                 // Camera switch button (top right) - only show when not recording
@@ -251,11 +251,11 @@ fun WorkoutScreen(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(16.dp),
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Cameraswitch,
-                            contentDescription = "Switch Camera"
+                            contentDescription = stringResource(R.string.content_desc_switch_camera)
                         )
                     }
                 }
@@ -367,6 +367,29 @@ fun WorkoutScreen(
                             }
                         }
                     } else {
+                        // Velocity-loss strip (peripheral, above controls).
+                        // Only visible from rep 2 onwards when VBT tracking is on.
+                        VelocityLossStrip(
+                            velocityLossState = uiState.velocityLossState,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Velocity-loss stop alert: non-modal toast above the
+                        // Stop button. Slides in when the threshold is crossed
+                        // and can be dismissed so it stops covering the preview.
+                        AnimatedVisibility(
+                            visible = uiState.velocityLossState.shouldStop &&
+                                !uiState.velocityLossAlertDismissed,
+                            enter = slideInVertically { it } + fadeIn(),
+                            exit = slideOutVertically { it } + fadeOut()
+                        ) {
+                            VelocityLossStopAlert(
+                                thresholdPercent = (uiState.velocityLossState.threshold * 100).toInt(),
+                                onDismiss = { viewModel.dismissVelocityLossAlert() },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
                         // Compact info chip during recording
                         WorkoutInfoChip(
                             exerciseName = uiState.selectedExercise.getDisplayName(),
@@ -376,7 +399,9 @@ fun WorkoutScreen(
 
                         Button(
                             onClick = { viewModel.stopRecording() },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error
                             )
@@ -855,27 +880,38 @@ fun WorkoutInfoChip(
 @Composable
 fun VelocityLossStopAlert(
     thresholdPercent: Int,
+    onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Row(
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
             .background(VbtStopAlert.copy(alpha = 0.95f), RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = stringResource(R.string.vbt_stop_alert_title, thresholdPercent),
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = stringResource(R.string.vbt_stop_alert_message),
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.vbt_stop_alert_title, thresholdPercent),
+                style = MaterialTheme.typography.titleSmall,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.vbt_stop_alert_message),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.9f)
+            )
+        }
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = stringResource(R.string.content_desc_dismiss),
+                tint = Color.White
+            )
+        }
     }
 }
 

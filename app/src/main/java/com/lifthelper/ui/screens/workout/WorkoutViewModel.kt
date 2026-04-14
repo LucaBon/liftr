@@ -8,7 +8,6 @@ import com.lifthelper.domain.exercise.BarPathAnalyzer
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.FormIssue
 import com.lifthelper.domain.exercise.RepQualityScorer
-import com.lifthelper.domain.exercise.Severity
 import com.lifthelper.domain.exercise.TempoAdherence
 import com.lifthelper.domain.exercise.TempoCue
 import com.lifthelper.domain.exercise.TempoState
@@ -36,6 +35,7 @@ import com.lifthelper.domain.model.Workout
 import com.lifthelper.domain.repository.CalibrationRepository
 import com.lifthelper.domain.repository.SettingsKeys
 import com.lifthelper.domain.repository.SettingsRepository
+import com.lifthelper.domain.usecase.AnalyzeRepUseCase
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
 import com.lifthelper.domain.usecase.FrameProcessingResult
 import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
@@ -61,6 +61,7 @@ import javax.inject.Inject
 @HiltViewModel
 class WorkoutViewModel @Inject constructor(
     private val processFrameUseCase: ProcessWorkoutFrameUseCase,
+    private val analyzeRepUseCase: AnalyzeRepUseCase,
     private val saveWorkoutUseCase: SaveWorkoutUseCase,
     private val checkPersonalRecordsUseCase: CheckPersonalRecordsUseCase,
     private val logManualSetUseCase: LogManualSetUseCase,
@@ -115,10 +116,17 @@ class WorkoutViewModel @Inject constructor(
     // --- Rep Quality Scoring: per-rep accumulators ---
     private var currentRepBarPathPoints = mutableListOf<BarPathPoint>()
     private var currentRepFormIssues = mutableListOf<FormIssue>()
+    // Buffered frames for the in-progress rep. Drained into AnalyzeRepUseCase
+    // on rep completion so the heavy form/metric work never runs per-frame.
+    private var currentRepPoses = mutableListOf<PoseResult>()
     private var currentRepEccentricStartTime: Long = 0L
     private var currentRepBottomTime: Long = 0L
     private var currentRepDepthValidation: DepthValidationResult? = null
     private var previousPhase: MovementPhase = MovementPhase.IDLE
+
+    // --- Auto-stop on target reps ---
+    @Volatile private var autoStopOnTargetReps = true
+    private var autoStopFiredForCurrentSet = false
 
     // --- Rep Quality Scoring: per-set accumulators ---
     private var setRepScores = mutableListOf<RepQualityScore>()
@@ -156,7 +164,19 @@ class WorkoutViewModel @Inject constructor(
         loadFeedbackSettings()
         loadRestTimerSettings()
         loadTempoSettings()
+        loadAutoStopSettings()
         loadCustomExerciseNames()
+    }
+
+    private fun loadAutoStopSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.AUTO_STOP_ON_TARGET_REPS,
+                true
+            ).collect { enabled ->
+                autoStopOnTargetReps = enabled
+            }
+        }
     }
 
     private fun loadVbtSettings() {
@@ -381,9 +401,15 @@ class WorkoutViewModel @Inject constructor(
                     currentRepBarPathPoints.clear()
                     _currentBarPathPoints.value = emptyList()
                     currentRepFormIssues.clear()
+                    currentRepPoses.clear()
                     currentRepDepthValidation = null
                     currentRepEccentricStartTime = now
                     currentRepBottomTime = 0L
+                    // Clear the depth-not-reached flash once the lifter is
+                    // descending into the next rep.
+                    if (_uiState.value.lastRepDepthOk != null) {
+                        _uiState.update { it.copy(lastRepDepthOk = null) }
+                    }
                     // Reset tempo state for new rep
                     tempoState?.let { ts ->
                         tempoState = TempoTracker.reset(ts.prescription)
@@ -417,18 +443,15 @@ class WorkoutViewModel @Inject constructor(
             emitTempoCueFeedback(cue, ts, now)
         }
 
-        // Collect bar path position during active rep phases
+        // Collect bar path position + buffer pose frames during active rep phases.
+        // Form validation used to run per-frame here; it's now deferred to
+        // AnalyzeRepUseCase at rep-completion time so the hot path stays light.
         if (newPhase in listOf(MovementPhase.ECCENTRIC, MovementPhase.BOTTOM, MovementPhase.CONCENTRIC)) {
             extractBarPathPoint(result.poseResult, result.velocityData, _uiState.value.selectedExercise)?.let {
                 currentRepBarPathPoints.add(it)
                 _currentBarPathPoints.value = currentRepBarPathPoints.toList()
             }
-            // Collect unique form issues during the rep
-            result.formValidation.issues.forEach { issue ->
-                if (currentRepFormIssues.none { it.message == issue.message }) {
-                    currentRepFormIssues.add(issue)
-                }
-            }
+            currentRepPoses.add(result.poseResult)
         }
 
         // Score the rep when it completes
@@ -440,6 +463,10 @@ class WorkoutViewModel @Inject constructor(
     /**
      * Scores the just-completed rep and adds it to the set accumulators.
      * Also builds a Rep domain object for persistence.
+     *
+     * This is where the deferred form validation + metric calculation runs:
+     * we replay the buffered poses through [AnalyzeRepUseCase] once per rep
+     * instead of doing it every frame on the camera hot path.
      */
     private fun scoreCurrentRep(result: FrameProcessingResult.Success, now: Long) {
         val eccentricDuration = if (currentRepBottomTime > 0 && currentRepEccentricStartTime > 0) {
@@ -458,6 +485,27 @@ class WorkoutViewModel @Inject constructor(
             TempoTracker.calculateAdherence(finalizedState)
         }
 
+        // Deferred heavy analysis over buffered rep frames.
+        val calib = calibrationData
+        val analysis: AnalyzeRepUseCase.Result? = if (calib != null && currentRepPoses.isNotEmpty()) {
+            runCatching {
+                analyzeRepUseCase(
+                    AnalyzeRepUseCase.Params(
+                        exerciseType = _uiState.value.selectedExercise,
+                        calibrationData = calib,
+                        weight = _uiState.value.weight,
+                        bufferedPoses = currentRepPoses.toList(),
+                        finalVelocityData = result.velocityData
+                    )
+                )
+            }.onFailure { logger.w(TAG, "AnalyzeRepUseCase failed: ${it.message}") }
+                .getOrNull()
+        } else null
+
+        val analyzedFormIssues = analysis?.formValidation?.issues ?: emptyList()
+        currentRepFormIssues.clear()
+        currentRepFormIssues.addAll(analyzedFormIssues)
+
         val score = RepQualityScorer.scoreRep(
             exerciseType = _uiState.value.selectedExercise,
             depthValidation = currentRepDepthValidation,
@@ -465,7 +513,7 @@ class WorkoutViewModel @Inject constructor(
             eccentricDuration = eccentricDuration,
             concentricDuration = concentricDuration,
             previousConcentricDurations = previousConcentricDurations.toList(),
-            formIssues = currentRepFormIssues.toList(),
+            formIssues = analyzedFormIssues,
             tempoAdherence = tempoAdherence
         )
 
@@ -508,8 +556,10 @@ class WorkoutViewModel @Inject constructor(
             "tempo=${score.tempoScore}, form=${score.formScore}) " +
             "grade=${score.grade.label}")
 
-        // Update UI with latest rep score
-        _uiState.update { it.copy(currentRepScore = score) }
+        // Update UI with latest rep score and depth cue (null when depth
+        // validation wasn't applicable — e.g. non-squat lifts).
+        val depthOk = currentRepDepthValidation?.isValid
+        _uiState.update { it.copy(currentRepScore = score, lastRepDepthOk = depthOk) }
     }
 
     /**
@@ -579,6 +629,7 @@ class WorkoutViewModel @Inject constructor(
         currentRepBarPathPoints.clear()
         _currentBarPathPoints.value = emptyList()
         currentRepFormIssues.clear()
+        currentRepPoses.clear()
         currentRepDepthValidation = null
         currentRepEccentricStartTime = 0L
         currentRepBottomTime = 0L
@@ -588,6 +639,7 @@ class WorkoutViewModel @Inject constructor(
         setBarPaths.clear()
         setReps.clear()
         previousPhase = MovementPhase.IDLE
+        autoStopFiredForCurrentSet = false
 
         // Initialize tempo tracking if enabled
         val prescription = _uiState.value.tempoPrescription
@@ -605,6 +657,7 @@ class WorkoutViewModel @Inject constructor(
                 error = null,
                 vbtZone = null,
                 velocityLossState = VelocityLossTracker.reset(velocityLossThreshold),
+                velocityLossAlertDismissed = false,
                 currentRepScore = null,
                 lastSetSummary = null,
                 tempoState = tempoState,
@@ -623,9 +676,23 @@ class WorkoutViewModel @Inject constructor(
         if (repJustCounted) {
             feedbackEmitter.emit(FeedbackEvent.RepCounted(newRepCount))
 
-            // Check if target reps reached
-            if (newRepCount >= _uiState.value.targetReps.value && _uiState.value.targetReps.value > 0) {
+            // Depth-not-reached cue (only real-time form cue that survived the
+            // per-frame strip — it's robust and critical to rep validity).
+            val depth = currentRepDepthValidation
+            if (depth != null && !depth.isValid) {
+                feedbackEmitter.emit(FeedbackEvent.DepthInsufficient)
+            }
+
+            // Check if target reps reached → emit SetComplete and, if enabled,
+            // auto-stop the set exactly once.
+            val targetReps = _uiState.value.targetReps.value
+            if (targetReps > 0 && newRepCount >= targetReps) {
                 feedbackEmitter.emit(FeedbackEvent.SetComplete)
+                if (autoStopOnTargetReps && !autoStopFiredForCurrentSet) {
+                    autoStopFiredForCurrentSet = true
+                    logger.i(TAG, "Auto-stop: target reps ($targetReps) reached, ending set")
+                    stopRecording()
+                }
             }
         }
 
@@ -635,14 +702,9 @@ class WorkoutViewModel @Inject constructor(
             feedbackEmitter.emit(FeedbackEvent.VelocityLossAlert(lossState.currentLossPercent))
         }
 
-        // Form issue alerts
-        result.formValidation.issues.forEach { issue ->
-            when (issue.severity) {
-                Severity.WARNING -> feedbackEmitter.emit(FeedbackEvent.FormWarning(issue))
-                Severity.CRITICAL -> feedbackEmitter.emit(FeedbackEvent.FormCritical(issue))
-                Severity.INFO -> { /* no audio/haptic for informational messages */ }
-            }
-        }
+        // Per-frame form warnings/critical alerts were removed from the hot
+        // path: they're prone to false positives (noisy angle thresholds) and
+        // now come from the deferred analysis summary shown during rest.
     }
 
     /**
@@ -706,7 +768,8 @@ class WorkoutViewModel @Inject constructor(
             it.copy(
                 isRecording = false,
                 lastSetSummary = summary,
-                completedSetCount = completedSets.size
+                completedSetCount = completedSets.size,
+                velocityLossAlertDismissed = false
             )
         }
 
@@ -719,6 +782,15 @@ class WorkoutViewModel @Inject constructor(
         if (restTimerEnabled && summary != null) {
             startRestTimer()
         }
+    }
+
+    /**
+     * Dismisses the velocity-loss stop alert for the remainder of the current set.
+     * Feedback events (haptic/audio) still fire on threshold breach — this only
+     * hides the visual banner so the lifter can complete the set unobstructed.
+     */
+    fun dismissVelocityLossAlert() {
+        _uiState.update { it.copy(velocityLossAlertDismissed = true) }
     }
 
     /**

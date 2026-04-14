@@ -70,4 +70,10 @@ object SettingsKeys {
     // Tempo Training
     const val TEMPO_MODE_ENABLED = "tempo_mode_enabled"
     const val LAST_TEMPO_PRESCRIPTION = "last_tempo_prescription"
+
+    /**
+     * Whether the app should auto-stop recording when the configured
+     * target reps for the set are reached. Boolean, default true.
+     */
+    const val AUTO_STOP_ON_TARGET_REPS = "auto_stop_on_target_reps"
 }

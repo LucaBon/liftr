@@ -66,12 +66,16 @@ class SettingsViewModel @Inject constructor(
     private val _tempoModeEnabled = MutableStateFlow(false)
     val tempoModeEnabled: StateFlow<Boolean> = _tempoModeEnabled.asStateFlow()
 
+    private val _autoStopOnTargetReps = MutableStateFlow(true)
+    val autoStopOnTargetReps: StateFlow<Boolean> = _autoStopOnTargetReps.asStateFlow()
+
     init {
         loadSquatDepthSettings()
         loadVbtSettings()
         loadFeedbackSettings()
         loadRestTimerSettings()
         loadTempoSettings()
+        loadAutoStopSettings()
     }
 
     private fun loadSquatDepthSettings() {
@@ -314,6 +318,28 @@ class SettingsViewModel @Inject constructor(
                 enabled
             ).onSuccess {
                 _tempoModeEnabled.value = enabled
+            }
+        }
+    }
+
+    private fun loadAutoStopSettings() {
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.AUTO_STOP_ON_TARGET_REPS,
+                true
+            ).collect { enabled ->
+                _autoStopOnTargetReps.value = enabled
+            }
+        }
+    }
+
+    fun updateAutoStopOnTargetReps(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(
+                SettingsKeys.AUTO_STOP_ON_TARGET_REPS,
+                enabled
+            ).onSuccess {
+                _autoStopOnTargetReps.value = enabled
             }
         }
     }

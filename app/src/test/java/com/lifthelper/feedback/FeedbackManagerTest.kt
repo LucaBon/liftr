@@ -51,6 +51,7 @@ class FeedbackEventTest {
             FeedbackEvent.FormWarning(FormIssue(Severity.WARNING, "test", "test")),
             FeedbackEvent.FormCritical(FormIssue(Severity.CRITICAL, "test", "test")),
             FeedbackEvent.DepthAchieved,
+            FeedbackEvent.DepthInsufficient,
             FeedbackEvent.PersonalRecord,
             FeedbackEvent.RestComplete
         )
@@ -64,6 +65,7 @@ class FeedbackEventTest {
                 is FeedbackEvent.FormWarning -> "warning"
                 is FeedbackEvent.FormCritical -> "critical"
                 is FeedbackEvent.DepthAchieved -> "depth"
+                is FeedbackEvent.DepthInsufficient -> "depth_insufficient"
                 is FeedbackEvent.PersonalRecord -> "pr"
                 is FeedbackEvent.RestComplete -> "rest"
                 is FeedbackEvent.TempoCountdown -> "tempo_countdown"
@@ -73,7 +75,7 @@ class FeedbackEventTest {
             assertTrue(label.isNotEmpty())
         }
 
-        assertEquals(8, events.size)
+        assertEquals(9, events.size)
     }
 
     @Test

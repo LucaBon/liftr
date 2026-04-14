@@ -32,9 +32,14 @@ data class WorkoutState(
     val calibrationQuality: CalibrationQuality = CalibrationQuality.NONE,
     val vbtZone: VbtZone? = null,
     val velocityLossState: VelocityLossState = VelocityLossState(),
+    val velocityLossAlertDismissed: Boolean = false,
     val estimatedOneRM: Kilograms? = null,
     val vbtZonesEnabled: Boolean = true,
     val currentRepScore: RepQualityScore? = null,
+    // Real-time cue: `false` when the most recent completed rep failed depth
+    // validation (squats only). Drives the red flash on the rep counter badge
+    // and is cleared to `null` when the next rep starts or after a short delay.
+    val lastRepDepthOk: Boolean? = null,
     val lastSetSummary: SetSummary? = null,
     val completedSetCount: Int = 0,
     val newPersonalRecords: List<PersonalRecord> = emptyList(),

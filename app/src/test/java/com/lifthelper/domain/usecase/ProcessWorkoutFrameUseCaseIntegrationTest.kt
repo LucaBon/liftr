@@ -150,8 +150,6 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         assertNotNull(successResult.phaseResult)
         assertEquals(MovementPhase.ECCENTRIC, successResult.phaseResult?.phase)
         assertEquals(0, successResult.phaseResult?.repCount)
-        assertNotNull(successResult.exerciseMetrics)
-        assertTrue(successResult.formValidation.isValid)
         assertEquals(CalibrationQuality.OPTIMAL, successResult.calibrationQuality)
     }
 
@@ -409,6 +407,5 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         assertTrue(result is FrameProcessingResult.Success)
         val successResult = result as FrameProcessingResult.Success
         assertNull(successResult.velocityData)
-        assertNull(successResult.exerciseMetrics) // Metrics can't be calculated without velocity
     }
 }

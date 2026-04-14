@@ -125,6 +125,11 @@ class FeedbackManager @Inject constructor(
                 playTone()
                 if (level != FeedbackVerbosity.MINIMAL) vibrateShort()
             }
+            is FeedbackEvent.DepthInsufficient -> {
+                if (!throttleCategory("depth_insufficient")) return
+                speakRes(R.string.tts_depth_insufficient, TextToSpeech.QUEUE_ADD)
+                vibrateDouble()
+            }
             is FeedbackEvent.PersonalRecord -> {
                 if (!throttleCategory("pr")) return
                 speakRes(R.string.tts_personal_record, TextToSpeech.QUEUE_FLUSH)

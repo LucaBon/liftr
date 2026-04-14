@@ -46,6 +46,7 @@ fun SettingsScreen(
     val tempoModeEnabled by viewModel.tempoModeEnabled.collectAsState()
     val restTimerEnabled by viewModel.restTimerEnabled.collectAsState()
     val restDurationDefault by viewModel.restDurationDefault.collectAsState()
+    val autoStopOnTargetReps by viewModel.autoStopOnTargetReps.collectAsState()
 
     Scaffold(
         topBar = {
@@ -351,6 +352,38 @@ fun SettingsScreen(
                     Switch(
                         checked = tempoModeEnabled,
                         onCheckedChange = { viewModel.updateTempoModeEnabled(it) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Set Control Settings Section ──
+            SectionHeader(stringResource(R.string.set_control_settings_title))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.auto_stop_on_target_reps),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.auto_stop_on_target_reps_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = autoStopOnTargetReps,
+                        onCheckedChange = { viewModel.updateAutoStopOnTargetReps(it) }
                     )
                 }
             }

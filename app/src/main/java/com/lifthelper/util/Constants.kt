@@ -34,6 +34,15 @@ object Constants {
     const val KALMAN_PROCESS_NOISE = 0.01f
     const val KALMAN_MEASUREMENT_NOISE = 0.1f
 
+    // OneEuro landmark smoothing — tames jitter, especially during self-occlusion
+    // (e.g. bottom of a squat where knees/hips overlap). Operates on normalized
+    // MediaPipe coordinates (0..1). Tuning: lower minCutoff = smoother but laggier;
+    // higher beta = more responsive during fast motion. High beta is important so
+    // the filter does not clip the true descent peak and break rep counting.
+    const val ONE_EURO_MIN_CUTOFF = 1.5f
+    const val ONE_EURO_BETA = 0.4f
+    const val ONE_EURO_DCUTOFF = 1.0f
+
     // Movement Detection
     const val MOVEMENT_VELOCITY_THRESHOLD = 0.1f // m/s
     const val TRANSITION_VELOCITY_THRESHOLD = 0.05f // m/s
@@ -59,6 +68,6 @@ object Constants {
     const val POSE_MODEL_HEAVY = "pose_landmarker_heavy.task"  // Most accurate, for calibration
 
     // Model selection for different use cases
-    const val POSE_MODEL_WORKOUT = POSE_MODEL_LITE    // Real-time performance
+    const val POSE_MODEL_WORKOUT = POSE_MODEL_FULL    // Balanced accuracy/speed; robust under self-occlusion
     const val POSE_MODEL_CALIBRATION = POSE_MODEL_HEAVY // Precision for measurements
 }

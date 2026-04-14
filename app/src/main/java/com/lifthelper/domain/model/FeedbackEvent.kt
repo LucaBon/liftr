@@ -28,6 +28,13 @@ sealed class FeedbackEvent {
     /** The lifter has reached sufficient squat depth. */
     data object DepthAchieved : FeedbackEvent()
 
+    /**
+     * The most recent rep failed depth validation (squats only). Emitted once
+     * at rep-completion time and used to drive both audio and the visual
+     * red-flash cue on the rep counter.
+     */
+    data object DepthInsufficient : FeedbackEvent()
+
     /** A personal record was just broken. */
     data object PersonalRecord : FeedbackEvent()
 

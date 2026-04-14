@@ -18,6 +18,7 @@ import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
 import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.util.Constants
+import com.lifthelper.vision.calculator.LandmarkOneEuroFilter
 import com.lifthelper.vision.camera.LensDistortionCorrector
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.atomic.AtomicReference
@@ -28,16 +29,19 @@ import javax.inject.Singleton
 class PoseDetector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val logger: Logger,
-    private val lensDistortionCorrector: LensDistortionCorrector
+    private val lensDistortionCorrector: LensDistortionCorrector,
+    private val landmarkFilter: LandmarkOneEuroFilter
 ) : IPoseDetector {
     companion object {
         private const val TAG = "PoseDetector"
     }
     /**
-     * Cached result with its associated dimensions to avoid stale dimension mismatch (BUG-E fix).
+     * Cached already-filtered PoseResult with its associated dimensions.
+     * Filtering happens once per MediaPipe callback so the OneEuro filter never
+     * re-smooths stale landmarks when we return the cached value on skipped frames.
      */
     private data class CachedResult(
-        val result: PoseLandmarkerResult,
+        val poseResult: PoseResult?,
         val width: Int,
         val height: Int
     )
@@ -72,6 +76,9 @@ class PoseDetector @Inject constructor(
             if (currentModelPath != modelPath) {
                 poseLandmarker?.close()
                 currentModelPath = modelPath
+                // Reset smoothing: old filter state would have stale dt after the gap.
+                landmarkFilter.reset()
+                cachedResult.set(null)
             }
 
             logger.i(TAG, "Initializing PoseLandmarker with model: $modelPath")
@@ -90,14 +97,14 @@ class PoseDetector @Inject constructor(
                 .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
                 .setResultListener { result, _ ->
                     detectionCount++
-                    // Note: dimensions are set when processImageProxy sends the frame.
-                    // The callback only updates the result; dimensions come from the cached value.
+                    // Dimensions are pre-set by processImageProxy before detectAsync.
                     val current = cachedResult.get()
-                    cachedResult.set(CachedResult(
-                        result = result,
-                        width = current?.width ?: 0,
-                        height = current?.height ?: 0
-                    ))
+                    val w = current?.width ?: 0
+                    val h = current?.height ?: 0
+                    val filtered = if (w > 0 && h > 0) {
+                        buildFilteredPoseResult(result, lastProcessedTimestamp, w, h)
+                    } else null
+                    cachedResult.set(CachedResult(filtered, w, h))
                     isProcessing = false
                     if (detectionCount % 30 == 0) {
                         logger.d(TAG, "Pose detections: $detectionCount, skipped frames: $skippedFrames")
@@ -131,11 +138,12 @@ class PoseDetector @Inject constructor(
                     .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
                     .setResultListener { result, _ ->
                         val current = cachedResult.get()
-                        cachedResult.set(CachedResult(
-                            result = result,
-                            width = current?.width ?: 0,
-                            height = current?.height ?: 0
-                        ))
+                        val w = current?.width ?: 0
+                        val h = current?.height ?: 0
+                        val filtered = if (w > 0 && h > 0) {
+                            buildFilteredPoseResult(result, lastProcessedTimestamp, w, h)
+                        } else null
+                        cachedResult.set(CachedResult(filtered, w, h))
                         isProcessing = false
                     }
                     .setErrorListener { error ->
@@ -189,10 +197,9 @@ class PoseDetector @Inject constructor(
             val timeSinceLastFrame = timestamp - lastProcessedTimestamp
             if (isProcessing || timeSinceLastFrame < minFrameIntervalMs) {
                 skippedFrames++
-                // Return latest cached result with its ORIGINAL dimensions (BUG-E fix:
-                // never mix cached landmarks with current frame's dimensions)
+                // Return latest cached (already-filtered) result, stamped with current frame time.
                 val cached = cachedResult.get()
-                return cached?.let { convertToPoseResult(it.result, timestamp, it.width, it.height) }
+                return cached?.poseResult?.copy(timestamp = timestamp)
             }
 
             // Mark as processing and update timestamp
@@ -227,19 +234,17 @@ class PoseDetector @Inject constructor(
 
             val mpImage = BitmapImageBuilder(finalBitmap).build()
 
-            // Pre-set dimensions so the async callback can use them (BUG-A/E fix)
+            // Pre-set dimensions so the async callback can use them (BUG-A/E fix).
+            // Always overwrite dimensions, even on the very first detect when no cache exists.
             val current = cachedResult.get()
-            if (current != null) {
-                cachedResult.set(CachedResult(current.result, finalWidth, finalHeight))
-            }
+            cachedResult.set(CachedResult(current?.poseResult, finalWidth, finalHeight))
 
             // Detect pose (async, result comes via callback)
             poseLandmarker?.detectAsync(mpImage, timestamp)
 
-            // Return latest result (may be from previous frame)
-            // Use cached dimensions that match the cached landmarks
+            // Return latest cached (already-filtered) result, stamped with current frame time.
             val cached = cachedResult.get()
-            return cached?.let { convertToPoseResult(it.result, timestamp, it.width, it.height) }
+            return cached?.poseResult?.copy(timestamp = timestamp)
         } catch (e: Exception) {
             logger.e(TAG, "Pose detection failed", e)
             isProcessing = false
@@ -332,7 +337,12 @@ class PoseDetector @Inject constructor(
         return bitmap
     }
 
-    private fun convertToPoseResult(
+    /**
+     * Convert raw MediaPipe landmarks to a PoseResult, applying lens distortion
+     * correction followed by a OneEuro filter to reduce jitter (especially under
+     * self-occlusion like the bottom of a squat). Called once per fresh detection.
+     */
+    private fun buildFilteredPoseResult(
         landmarkerResult: PoseLandmarkerResult,
         timestamp: Long,
         imageWidth: Int,
@@ -349,23 +359,21 @@ class PoseDetector @Inject constructor(
             )
         }
 
-        // Apply lens distortion correction to all landmarks
         val correctedLandmarks = lensDistortionCorrector.correctLandmarks(
             landmarks,
             imageWidth,
             imageHeight
         )
+        val smoothedLandmarks = landmarkFilter.apply(correctedLandmarks, timestamp)
 
-        // Determine orientation based on image dimensions
         val isPortrait = imageHeight > imageWidth
 
-        // Log image dimensions and correction status for debugging
         logger.d(TAG,
             "PoseResult created: ${imageWidth}x${imageHeight}, " +
             "orientation: ${if (isPortrait) "portrait" else "landscape"}, " +
             "lens correction: ${lensDistortionCorrector.getCorrectionMode()}")
 
-        return PoseResult(correctedLandmarks, timestamp, imageWidth, imageHeight, isPortrait)
+        return PoseResult(smoothedLandmarks, timestamp, imageWidth, imageHeight, isPortrait)
     }
 
     /**

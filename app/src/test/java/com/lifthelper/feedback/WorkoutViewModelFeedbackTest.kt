@@ -18,6 +18,7 @@ import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.usecase.FrameProcessingResult
 import com.lifthelper.domain.usecase.PhaseResult
 import com.lifthelper.domain.repository.CustomExerciseRepository
+import com.lifthelper.domain.usecase.AnalyzeRepUseCase
 import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
 import com.lifthelper.domain.usecase.LogManualSetUseCase
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
@@ -58,6 +59,7 @@ class WorkoutViewModelFeedbackTest {
 
     private lateinit var feedbackEmitter: FakeFeedbackEmitter
     private lateinit var processFrameUseCase: ProcessWorkoutFrameUseCase
+    private lateinit var analyzeRepUseCase: AnalyzeRepUseCase
     private lateinit var saveWorkoutUseCase: SaveWorkoutUseCase
     private lateinit var checkPersonalRecordsUseCase: CheckPersonalRecordsUseCase
     private lateinit var logManualSetUseCase: LogManualSetUseCase
@@ -81,6 +83,7 @@ class WorkoutViewModelFeedbackTest {
 
         feedbackEmitter = FakeFeedbackEmitter()
         processFrameUseCase = mockk(relaxed = true)
+        analyzeRepUseCase = mockk(relaxed = true)
         saveWorkoutUseCase = mockk(relaxed = true)
         checkPersonalRecordsUseCase = mockk(relaxed = true)
         logManualSetUseCase = mockk(relaxed = true)
@@ -97,6 +100,7 @@ class WorkoutViewModelFeedbackTest {
         every { settingsRepository.getBooleanSetting("haptic_feedback_enabled", true) } returns flowOf(true)
         every { settingsRepository.getBooleanSetting("rest_timer_enabled", true) } returns flowOf(true)
         every { settingsRepository.getBooleanSetting("tempo_mode_enabled", false) } returns flowOf(false)
+        every { settingsRepository.getBooleanSetting("auto_stop_on_target_reps", true) } returns flowOf(true)
         every { settingsRepository.getStringSetting("last_tempo_prescription", "") } returns flowOf("")
         every { settingsRepository.getStringSetting("feedback_language", any()) } returns flowOf("SYSTEM")
         every { settingsRepository.getStringSetting("feedback_verbosity", any()) } returns flowOf("MINIMAL")
@@ -105,6 +109,7 @@ class WorkoutViewModelFeedbackTest {
 
         viewModel = WorkoutViewModel(
             processFrameUseCase = processFrameUseCase,
+            analyzeRepUseCase = analyzeRepUseCase,
             saveWorkoutUseCase = saveWorkoutUseCase,
             checkPersonalRecordsUseCase = checkPersonalRecordsUseCase,
             logManualSetUseCase = logManualSetUseCase,
@@ -140,6 +145,7 @@ class WorkoutViewModelFeedbackTest {
         @Suppress("UNUSED_VARIABLE")
         val vm = WorkoutViewModel(
             processFrameUseCase = processFrameUseCase,
+            analyzeRepUseCase = analyzeRepUseCase,
             saveWorkoutUseCase = saveWorkoutUseCase,
             checkPersonalRecordsUseCase = checkPersonalRecordsUseCase,
             logManualSetUseCase = logManualSetUseCase,

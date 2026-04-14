@@ -13,7 +13,6 @@ import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
-import com.lifthelper.domain.exercise.FormValidationResult
 import com.lifthelper.domain.exercise.strategy.BackSquatStrategy
 import com.lifthelper.domain.exercise.strategy.FrontSquatStrategy
 import com.lifthelper.domain.repository.SettingsKeys
@@ -27,10 +26,14 @@ import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 
 /**
- * Use case for processing workout camera frames.
+ * Use case for processing workout camera frames on the hot path.
  *
- * Orchestrates pose detection, velocity calculation, phase detection,
- * form validation, and rep counting for workout sessions using exercise-specific strategies.
+ * Runs only the work that must happen every frame to count reps and drive the
+ * real-time HUD: pose detection, velocity tracking, phase detection, and the
+ * cheap depth validation that comes from the phase transition. Heavier form
+ * validation and per-rep metric calculation are deferred to
+ * [AnalyzeRepUseCase], which runs once per rep over a buffer of captured
+ * frames so the per-frame budget is spent on motion tracking instead.
  */
 class ProcessWorkoutFrameUseCase @Inject constructor(
     private val poseDetector: IPoseDetector,
@@ -88,17 +91,11 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
                 null
             }
 
-            // 5. Validate form
-            val formValidation = strategy.validateForm(poseResult, params.calibrationData)
-
-            // 6. Calculate exercise metrics
-            val exerciseMetrics = if (velocityData != null) {
-                strategy.calculateMetrics(poseResult, velocityData, params.weight)
-            } else {
-                null
-            }
-
-            // 7. Check calibration quality
+            // 5. Check calibration quality
+            //    Note: strategy.validateForm and strategy.calculateMetrics are
+            //    intentionally NOT called here — they are the heavy per-frame
+            //    work that's now deferred to [AnalyzeRepUseCase], which runs
+            //    once per rep over a buffered sequence of poses.
             val calibrationQuality = positionCalculator.getCalibrationQuality(
                 poseResult,
                 params.calibrationData
@@ -108,8 +105,6 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
                 poseResult = poseResult,
                 velocityData = velocityData,
                 phaseResult = phaseResult,
-                formValidation = formValidation,
-                exerciseMetrics = exerciseMetrics,
                 calibrationQuality = calibrationQuality
             )
 
@@ -236,14 +231,13 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
  */
 sealed class FrameProcessingResult {
     /**
-     * Frame processed successfully.
+     * Frame processed successfully. Carries only hot-path data; heavier
+     * per-rep form validation and metrics come from [AnalyzeRepUseCase].
      */
     data class Success(
         val poseResult: PoseResult,
         val velocityData: VelocityData?,
         val phaseResult: PhaseResult?,
-        val formValidation: FormValidationResult,
-        val exerciseMetrics: com.lifthelper.domain.exercise.ExerciseMetrics?,
         val calibrationQuality: CalibrationQuality
     ) : FrameProcessingResult()
 

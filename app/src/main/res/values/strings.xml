@@ -60,6 +60,21 @@
     <string name="velocity_label">Velocity</string>
     <string name="reps_label">Reps: %d</string>
     <string name="target_range">Target: %.2f-%.2f m/s</string>
+    <string name="reps_badge_label">REPS</string>
+    <string name="rep_count_announcement">Rep %1$d of %2$d</string>
+
+    <!-- Workout content descriptions (accessibility) -->
+    <string name="content_desc_back">Back</string>
+    <string name="content_desc_switch_camera">Switch camera</string>
+    <string name="content_desc_calibration_warning">Calibration warning</string>
+    <string name="content_desc_dismiss">Dismiss</string>
+
+    <!-- Calibration quality short labels (shown in HUD pill) -->
+    <string name="calibration_quality_short_estimated">Estimated</string>
+    <string name="calibration_quality_short_fallback">Fallback</string>
+    <string name="calibration_quality_short_none">No calibration</string>
+    <string name="calibration_quality_dialog_title">Calibration quality</string>
+    <string name="calibration_quality_dialog_ok">OK</string>
 
     <!-- Permissions -->
     <string name="camera_permission_required">Camera permission is required to track your movements</string>
@@ -133,6 +148,7 @@
     <string name="tts_tempo_hold">Hold %1$d</string>
     <string name="tts_tempo_slower">Slower</string>
     <string name="tts_tempo_faster">Faster</string>
+    <string name="tts_depth_insufficient">Depth not reached</string>
 
     <!-- Bench Press Form Issues -->
     <string name="bench_bar_drift">Bar drifting horizontally</string>
@@ -275,6 +291,11 @@
     <string name="tempo_phase_top">Top</string>
 
     <!-- Rest Timer Settings -->
+    <string name="set_control_settings_title">Set Control</string>
+    <string name="auto_stop_on_target_reps">Auto-stop at target reps</string>
+    <string name="auto_stop_on_target_reps_description">Automatically end the set when the configured rep target is reached</string>
+    <string name="depth_insufficient_cue">Depth not reached</string>
+
     <string name="rest_timer_settings_title">Rest Timer</string>
     <string name="rest_timer_enabled">Auto Rest Timer</string>
     <string name="rest_timer_enabled_description">Automatically start a rest timer after each set</string>
