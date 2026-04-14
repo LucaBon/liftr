@@ -1,6 +1,7 @@
 package com.lifthelper.ui.navigation
 
 sealed class Screen(val route: String) {
+    object Onboarding : Screen("onboarding")
     object Calibration : Screen("calibration")
     object AnthropometricCalibration : Screen("anthropometric_calibration")
     object AnthropometricDetails : Screen("anthropometric_details")

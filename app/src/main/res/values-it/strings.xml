@@ -54,4 +54,45 @@
     <string name="auto_stop_on_target_reps">Stop automatico alle ripetizioni target</string>
     <string name="auto_stop_on_target_reps_description">Termina la serie quando viene raggiunto il numero di ripetizioni previste</string>
     <string name="depth_insufficient_cue">Profondità non raggiunta</string>
+
+    <!-- Data Export -->
+    <string name="export_settings_title">Esportazione dati</string>
+    <string name="settings_export_data">Esporta dati</string>
+    <string name="settings_export_data_desc">Salva lo storico degli allenamenti in CSV o JSON per condividerlo o farne un backup</string>
+    <string name="export_dialog_title">Esporta dati allenamenti</string>
+    <string name="export_format_label">Formato</string>
+    <string name="export_format_csv_sets">CSV — una riga per serie</string>
+    <string name="export_format_csv_reps">CSV — una riga per ripetizione</string>
+    <string name="export_format_json">JSON — gerarchia completa</string>
+    <string name="export_range_label">Intervallo di date</string>
+    <string name="export_range_all">Tutti</string>
+    <string name="export_range_last_month">Ultimo mese</string>
+    <string name="export_range_last_3_months">Ultimi 3 mesi</string>
+    <string name="export_range_last_year">Ultimo anno</string>
+    <string name="export_exercise_label">Esercizio</string>
+    <string name="export_exercise_all">Tutti gli esercizi</string>
+    <string name="export_button">Esporta</string>
+    <string name="export_cancel">Annulla</string>
+    <string name="export_chooser_title">Esporta dati allenamenti</string>
+    <string name="export_empty_message">Nessun allenamento corrisponde ai filtri</string>
+    <string name="export_success_message">Esportati %1$d allenamenti (%2$d serie)</string>
+    <string name="export_failure_message">Esportazione fallita: %1$s</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">Salta</string>
+    <string name="onboarding_back">Indietro</string>
+    <string name="onboarding_next">Avanti</string>
+    <string name="onboarding_start_training">Inizia ad allenarti</string>
+    <string name="onboarding_welcome_title">Benvenuto in Lift Helper</string>
+    <string name="onboarding_welcome_body">Analizza la velocità dei tuoi esercizi con l\'AI. Ricevi feedback sulla tecnica in tempo reale e il punteggio di qualità delle ripetizioni — tutto dalla fotocamera del telefono.</string>
+    <string name="onboarding_camera_title">Posiziona la fotocamera</string>
+    <string name="onboarding_camera_body">Metti il telefono a 2–3 metri dal rack, all\'altezza dell\'anca, con vista laterale sull\'atleta. Usa una superficie stabile o un treppiede ed evita la controluce.</string>
+    <string name="onboarding_calibration_title">Calibrazione veloce</string>
+    <string name="onboarding_calibration_body">Convertiamo i pixel in misure reali usando la tua altezza. Entra nel campo visivo, inserisci l\'altezza e rimani fermo per qualche secondo.</string>
+    <string name="onboarding_first_set_title">La tua prima serie</string>
+    <string name="onboarding_first_set_body">Scegli l\'esercizio, inserisci il carico e premi Start. L\'app conta le ripetizioni, misura la velocità e valuta la tecnica in automatico. Premi Stop quando hai finito.</string>
+
+    <string name="settings_section_help">Aiuto e tutorial</string>
+    <string name="settings_replay_tutorial">Rivedi il tutorial</string>
+    <string name="settings_replay_tutorial_desc">Ripeti la guida iniziale di configurazione</string>
 </resources>

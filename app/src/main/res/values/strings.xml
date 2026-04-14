@@ -302,4 +302,45 @@
     <string name="rest_timer_default_duration">Default Rest Duration</string>
     <string name="rest_timer_default_duration_description">Default rest period between sets (exercise-specific defaults apply when available)</string>
     <string name="rest_timer_duration_label">Duration</string>
+
+    <!-- Data Export -->
+    <string name="export_settings_title">Data Export</string>
+    <string name="settings_export_data">Export Data</string>
+    <string name="settings_export_data_desc">Save workout history as CSV or JSON to share or back up</string>
+    <string name="export_dialog_title">Export Workout Data</string>
+    <string name="export_format_label">Format</string>
+    <string name="export_format_csv_sets">CSV — one row per set</string>
+    <string name="export_format_csv_reps">CSV — one row per rep</string>
+    <string name="export_format_json">JSON — full hierarchy</string>
+    <string name="export_range_label">Date range</string>
+    <string name="export_range_all">All time</string>
+    <string name="export_range_last_month">Last month</string>
+    <string name="export_range_last_3_months">Last 3 months</string>
+    <string name="export_range_last_year">Last year</string>
+    <string name="export_exercise_label">Exercise</string>
+    <string name="export_exercise_all">All exercises</string>
+    <string name="export_button">Export</string>
+    <string name="export_cancel">Cancel</string>
+    <string name="export_chooser_title">Export workout data</string>
+    <string name="export_empty_message">No workouts match the selected filters</string>
+    <string name="export_success_message">Exported %1$d workouts (%2$d sets)</string>
+    <string name="export_failure_message">Export failed: %1$s</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start_training">Start Training</string>
+    <string name="onboarding_welcome_title">Welcome to Lift Helper</string>
+    <string name="onboarding_welcome_body">Track your lifts with AI-powered velocity analysis. Get real-time form feedback and rep quality scores — all from your phone\'s camera.</string>
+    <string name="onboarding_camera_title">Set Up Your Camera</string>
+    <string name="onboarding_camera_body">Place your phone 2–3 meters from the rack, at hip height, with a clear side view of the lifter. Use a stable surface or tripod and avoid strong backlighting.</string>
+    <string name="onboarding_calibration_title">Quick Calibration</string>
+    <string name="onboarding_calibration_body">We\'ll convert pixels to real-world measurements using your height. Stand in the camera view, enter your height, and hold still for a few seconds.</string>
+    <string name="onboarding_first_set_title">Your First Set</string>
+    <string name="onboarding_first_set_body">Pick your exercise, enter the weight, and tap Start Recording. The app counts reps, measures velocity, and scores your form automatically. Tap Stop when you\'re done.</string>
+
+    <string name="settings_section_help">Help &amp; Tutorial</string>
+    <string name="settings_replay_tutorial">Replay Tutorial</string>
+    <string name="settings_replay_tutorial_desc">Walk through the setup guide again</string>
 </resources>

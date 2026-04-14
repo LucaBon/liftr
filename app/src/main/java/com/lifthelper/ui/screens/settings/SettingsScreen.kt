@@ -8,8 +8,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +25,8 @@ import com.lifthelper.domain.feedback.FeedbackLanguage
 import com.lifthelper.domain.feedback.FeedbackVerbosity
 import com.lifthelper.domain.feedback.TtsEngineInfo
 import com.lifthelper.domain.model.SquatDepthType
+import com.lifthelper.ui.components.ExportDialog
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,6 +35,7 @@ fun SettingsScreen(
     onRecalibrate: () -> Unit = {},
     onAnthropometricCalibration: () -> Unit = {},
     onAnthropometricDetails: () -> Unit = {},
+    onReplayTutorial: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val backSquatDepthType by viewModel.backSquatDepthType.collectAsState()
@@ -48,6 +53,24 @@ fun SettingsScreen(
     val restDurationDefault by viewModel.restDurationDefault.collectAsState()
     val autoStopOnTargetReps by viewModel.autoStopOnTargetReps.collectAsState()
 
+    var showExportDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exportChooserTitle = stringResource(R.string.export_chooser_title)
+    val exportEmptyMessage = stringResource(R.string.export_empty_message)
+    val exportSuccessTemplate = stringResource(R.string.export_success_message)
+    val exportFailureTemplate = stringResource(R.string.export_failure_message)
+
+    LaunchedEffect(viewModel) {
+        viewModel.exportEvents.collectLatest { event ->
+            val message = when (event) {
+                is ExportEvent.Success -> exportSuccessTemplate.format(event.workoutCount, event.setCount)
+                ExportEvent.Empty -> exportEmptyMessage
+                is ExportEvent.Failure -> exportFailureTemplate.format(event.reason)
+            }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -58,7 +81,8 @@ fun SettingsScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -437,9 +461,96 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Data Export Section ──
+            SectionHeader(stringResource(R.string.export_settings_title))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { showExportDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FileDownload,
+                        contentDescription = stringResource(R.string.settings_export_data),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = stringResource(R.string.settings_export_data),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_export_data_desc),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // ── Help & Tutorial Section ──
+            SectionHeader(stringResource(R.string.settings_section_help))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    viewModel.resetOnboardingFlag()
+                    onReplayTutorial()
+                }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.School,
+                        contentDescription = stringResource(R.string.settings_replay_tutorial),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = stringResource(R.string.settings_replay_tutorial),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_replay_tutorial_desc),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // Bottom spacing for edge-to-edge
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showExportDialog) {
+        ExportDialog(
+            onDismiss = { showExportDialog = false },
+            onExport = { config ->
+                showExportDialog = false
+                viewModel.exportWorkoutData(config, exportChooserTitle)
+            }
+        )
     }
 }
 

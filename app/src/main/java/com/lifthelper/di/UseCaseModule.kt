@@ -7,6 +7,7 @@ import com.lifthelper.domain.repository.CalibrationRepository
 import com.lifthelper.domain.repository.SettingsRepository
 import com.lifthelper.domain.repository.WorkoutRepository
 import com.lifthelper.domain.usecase.CheckPersonalRecordsUseCase
+import com.lifthelper.domain.usecase.GenerateExportUseCase
 import com.lifthelper.domain.usecase.GetAnalyticsSummaryUseCase
 import com.lifthelper.domain.usecase.LoadCalibrationUseCase
 import com.lifthelper.domain.usecase.ProcessWorkoutFrameUseCase
@@ -90,5 +91,13 @@ object UseCaseModule {
         analyticsRepository: AnalyticsRepository
     ): CheckPersonalRecordsUseCase {
         return CheckPersonalRecordsUseCase(analyticsRepository)
+    }
+
+    @Provides
+    @ViewModelScoped
+    fun provideGenerateExportUseCase(
+        workoutRepository: WorkoutRepository
+    ): GenerateExportUseCase {
+        return GenerateExportUseCase(workoutRepository)
     }
 }

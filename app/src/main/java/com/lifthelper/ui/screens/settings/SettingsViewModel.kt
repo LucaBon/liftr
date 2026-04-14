@@ -2,17 +2,23 @@ package com.lifthelper.ui.screens.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifthelper.data.export.FileExporter
 import com.lifthelper.domain.exercise.VelocityLossState
 import com.lifthelper.domain.feedback.FeedbackLanguage
 import com.lifthelper.domain.feedback.FeedbackVerbosity
 import com.lifthelper.domain.feedback.IFeedbackEmitter
 import com.lifthelper.domain.feedback.TtsEngineInfo
+import com.lifthelper.domain.model.ExportConfig
 import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.domain.repository.SettingsKeys
 import com.lifthelper.domain.repository.SettingsRepository
+import com.lifthelper.domain.usecase.GenerateExportUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,8 +30,13 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val feedbackEmitter: IFeedbackEmitter
+    private val feedbackEmitter: IFeedbackEmitter,
+    private val generateExportUseCase: GenerateExportUseCase,
+    private val fileExporter: FileExporter
 ) : ViewModel() {
+
+    private val _exportEvents = MutableSharedFlow<ExportEvent>(extraBufferCapacity = 4)
+    val exportEvents: SharedFlow<ExportEvent> = _exportEvents.asSharedFlow()
 
     private val _backSquatDepthType = MutableStateFlow(SquatDepthType.DEFAULT)
     val backSquatDepthType: StateFlow<SquatDepthType> = _backSquatDepthType.asStateFlow()
@@ -343,4 +354,34 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    fun resetOnboardingFlag() {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(SettingsKeys.ONBOARDING_COMPLETED, false)
+        }
+    }
+
+    fun exportWorkoutData(config: ExportConfig, chooserTitle: String) {
+        viewModelScope.launch {
+            val event = runCatching { generateExportUseCase(config) }
+                .fold(
+                    onSuccess = { result ->
+                        if (result.setCount == 0) {
+                            ExportEvent.Empty
+                        } else {
+                            fileExporter.exportAndShare(result, chooserTitle)
+                            ExportEvent.Success(result.workoutCount, result.setCount)
+                        }
+                    },
+                    onFailure = { ExportEvent.Failure(it.message ?: it::class.simpleName.orEmpty()) }
+                )
+            _exportEvents.emit(event)
+        }
+    }
+}
+
+sealed class ExportEvent {
+    data class Success(val workoutCount: Int, val setCount: Int) : ExportEvent()
+    data object Empty : ExportEvent()
+    data class Failure(val reason: String) : ExportEvent()
 }

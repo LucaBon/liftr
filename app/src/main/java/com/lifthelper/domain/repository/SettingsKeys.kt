@@ -76,4 +76,11 @@ object SettingsKeys {
      * target reps for the set are reached. Boolean, default true.
      */
     const val AUTO_STOP_ON_TARGET_REPS = "auto_stop_on_target_reps"
+
+    /**
+     * Whether the first-launch onboarding tutorial has been completed.
+     * Boolean, default false — drives NavGraph's initial destination and
+     * the "Replay Tutorial" entry in Settings.
+     */
+    const val ONBOARDING_COMPLETED = "onboarding_completed"
 }
