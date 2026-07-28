@@ -1,0 +1,304 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "0ac6ee6c4a88054ebdd9309f9f6d0f43",
+    "entities": [
+      {
+        "tableName": "workouts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `date` INTEGER NOT NULL, `duration` INTEGER NOT NULL, `notes` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "duration",
+            "columnName": "duration",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "sets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `workoutId` INTEGER NOT NULL, `exerciseType` TEXT NOT NULL, `weight` REAL NOT NULL, `targetReps` INTEGER NOT NULL, `completedReps` INTEGER NOT NULL, `avgVelocity` REAL NOT NULL, `peakVelocity` REAL NOT NULL, `avgPower` REAL, `jumpHeight` REAL, `timestamp` INTEGER NOT NULL, `notes` TEXT NOT NULL, `isManual` INTEGER NOT NULL, `exerciseName` TEXT, FOREIGN KEY(`workoutId`) REFERENCES `workouts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "workoutId",
+            "columnName": "workoutId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exerciseType",
+            "columnName": "exerciseType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "weight",
+            "columnName": "weight",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetReps",
+            "columnName": "targetReps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedReps",
+            "columnName": "completedReps",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgVelocity",
+            "columnName": "avgVelocity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakVelocity",
+            "columnName": "peakVelocity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgPower",
+            "columnName": "avgPower",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "jumpHeight",
+            "columnName": "jumpHeight",
+            "affinity": "REAL",
+            "notNull": false
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isManual",
+            "columnName": "isManual",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exerciseName",
+            "columnName": "exerciseName",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sets_workoutId",
+            "unique": false,
+            "columnNames": [
+              "workoutId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sets_workoutId` ON `${TABLE_NAME}` (`workoutId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "workouts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "workoutId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reps",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `setId` INTEGER NOT NULL, `repNumber` INTEGER NOT NULL, `peakVelocity` REAL NOT NULL, `avgVelocity` REAL NOT NULL, `timeUnderTension` REAL NOT NULL, `rangeOfMotion` REAL NOT NULL, `startPosition` REAL NOT NULL, `endPosition` REAL NOT NULL, `eccentricDuration` REAL NOT NULL, `concentricDuration` REAL NOT NULL, `velocityProfile` TEXT NOT NULL, `positionProfile` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `qualityScore` INTEGER NOT NULL, FOREIGN KEY(`setId`) REFERENCES `sets`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "setId",
+            "columnName": "setId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "repNumber",
+            "columnName": "repNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peakVelocity",
+            "columnName": "peakVelocity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "avgVelocity",
+            "columnName": "avgVelocity",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeUnderTension",
+            "columnName": "timeUnderTension",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rangeOfMotion",
+            "columnName": "rangeOfMotion",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startPosition",
+            "columnName": "startPosition",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endPosition",
+            "columnName": "endPosition",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eccentricDuration",
+            "columnName": "eccentricDuration",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "concentricDuration",
+            "columnName": "concentricDuration",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "velocityProfile",
+            "columnName": "velocityProfile",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "positionProfile",
+            "columnName": "positionProfile",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "qualityScore",
+            "columnName": "qualityScore",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reps_setId",
+            "unique": false,
+            "columnNames": [
+              "setId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reps_setId` ON `${TABLE_NAME}` (`setId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "sets",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "setId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0ac6ee6c4a88054ebdd9309f9f6d0f43')"
+    ]
+  }
+}

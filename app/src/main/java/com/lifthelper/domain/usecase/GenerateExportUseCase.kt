@@ -184,13 +184,26 @@ class GenerateExportUseCase @Inject constructor(
 
     private fun csvField(raw: String): String {
         if (raw.isEmpty()) return ""
-        val needsQuoting = raw.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
-        if (!needsQuoting) return raw
-        val escaped = raw.replace("\"", "\"\"")
+
+        // Spreadsheets evaluate a cell starting with =, +, -, @ (or a leading
+        // tab/CR) as a formula. Exercise names and notes are free text the user
+        // types, and exports are made to be shared, so prefix such values with a
+        // single quote to force them to be read as literal text.
+        val isFormula = raw.first() in FORMULA_TRIGGERS
+        val body = if (isFormula) "'$raw" else raw
+
+        val needsQuoting = isFormula ||
+            body.any { it == ',' || it == '"' || it == '\n' || it == '\r' }
+        if (!needsQuoting) return body
+
+        val escaped = body.replace("\"", "\"\"")
         return "\"$escaped\""
     }
 
     companion object {
+        /** Leading characters that make a spreadsheet treat a cell as a formula. */
+        private val FORMULA_TRIGGERS = charArrayOf('=', '+', '-', '@', '\t', '\r')
+
         private val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }

@@ -54,7 +54,15 @@ data class ExercisePhaseState(
     val catchTime: Long? = null,
     val previousWristsY: Float? = null,
     val previousHipsY: Float? = null,
-    val previousTimestamp: Long? = null
+    val previousTimestamp: Long? = null,
+    /**
+     * True once the configured squat depth window has been satisfied at some
+     * point during the current descent. Latched because the depth window and
+     * the minimum-descent gate need not be true on the same sampled frame —
+     * for the shallow depth types the window is a *maximum* depth that can be
+     * passed straight through between two frames of a fast descent.
+     */
+    val depthWindowSatisfied: Boolean = false
 ) {
     /**
      * Create a new state with updated current phase.
@@ -101,6 +109,13 @@ data class ExercisePhaseState(
      */
     fun withLowestBarPosition(position: Float?): ExercisePhaseState =
         copy(lowestBarPosition = position)
+
+    /**
+     * Create a new state recording whether the configured squat depth window
+     * has been satisfied at any point during the current descent.
+     */
+    fun withDepthWindowSatisfied(satisfied: Boolean): ExercisePhaseState =
+        copy(depthWindowSatisfied = satisfied)
 
     /**
      * Create a new state with updated wrist positions (bench press).

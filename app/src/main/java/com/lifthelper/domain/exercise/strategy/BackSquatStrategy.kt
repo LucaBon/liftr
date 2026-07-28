@@ -189,6 +189,7 @@ class BackSquatStrategy @Inject constructor(
             val newState = state
                 .withCurrentPhase(MovementPhase.ECCENTRIC)
                 .withLowestBarPosition(barPosition)
+                .withDepthWindowSatisfied(false)
             return PhaseTransitionResult(
                 newState = newState,
                 repCompleted = false,
@@ -220,22 +221,34 @@ class BackSquatStrategy @Inject constructor(
 
         // Track lowest position
         val lowestBar = state.lowestBarPosition
-        val updatedState = if (lowestBar == null || barPosition > lowestBar) {
+        val updatedState = (if (lowestBar == null || barPosition > lowestBar) {
             state.withLowestBarPosition(barPosition)
         } else {
             state
-        }
+        })
 
-        val sufficientDepth = descent >= criteriaRef.get().minDescentDepth.value
+        // Descent required scales with the configured depth: a quarter squat
+        // cannot travel as far as a parallel one.
+        val criteria = criteriaRef.get()
+        val requiredDescent = criteria.squatDepthType.minBarDescent.value
+        val sufficientDepth = descent >= requiredDescent
+
         val depthResult = validateSquatDepth(state)
-        val hipsAtDepth = depthResult?.isValid ?: false
+        // Latch the depth window: for the shallow depth types it is an upper
+        // bound that a fast descent can cross entirely between two frames, so
+        // requiring it on the same frame as the descent gate would drop reps.
+        val windowSatisfiedNow = depthResult?.isValid ?: false
+        val hipsAtDepth = windowSatisfiedNow || state.depthWindowSatisfied
+        val latchedState = if (windowSatisfiedNow && !state.depthWindowSatisfied) {
+            updatedState.withDepthWindowSatisfied(true)
+        } else updatedState
 
         logger.d(TAG, "ECCENTRIC: descent=%.2f m, sufficientDepth=$sufficientDepth, hipsAtDepth=$hipsAtDepth".format(descent))
 
         if (sufficientDepth && hipsAtDepth) {
             logger.d(TAG, "Phase: ECCENTRIC -> BOTTOM")
             return PhaseTransitionResult(
-                newState = updatedState.withCurrentPhase(MovementPhase.BOTTOM),
+                newState = latchedState.withCurrentPhase(MovementPhase.BOTTOM),
                 repCompleted = false,
                 debugInfo = "Reached bottom: %.2f m descent".format(descent),
                 depthValidation = depthResult
@@ -243,7 +256,7 @@ class BackSquatStrategy @Inject constructor(
         }
 
         return PhaseTransitionResult(
-            newState = updatedState,
+            newState = latchedState,
             repCompleted = false,
             debugInfo = "Descending: %.2f m".format(descent)
         )
@@ -336,7 +349,8 @@ class BackSquatStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = state
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
-                    .withLowestBarPosition(barPosition),
+                    .withLowestBarPosition(barPosition)
+                    .withDepthWindowSatisfied(false),
                 repCompleted = false,
                 debugInfo = "New rep started"
             )
@@ -419,7 +433,8 @@ class BackSquatStrategy @Inject constructor(
 
     override fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
         val landmarks = poseResult.landmarks
@@ -472,7 +487,7 @@ class BackSquatStrategy @Inject constructor(
     ): FormIssue? {
         val shoulders = bodyPositions.shouldersY ?: return null
         val hips = bodyPositions.hipsY ?: return null
-        val shouldersX = bodyPositions.hipsX ?: return null  // Use average X
+        val shouldersX = bodyPositions.shouldersX ?: return null
         val hipsX = bodyPositions.hipsX ?: return null
 
         // Calculate torso angle from vertical

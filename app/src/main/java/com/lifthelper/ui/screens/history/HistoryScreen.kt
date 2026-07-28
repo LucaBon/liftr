@@ -1,5 +1,8 @@
 package com.lifthelper.ui.screens.history
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,15 +14,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.lifthelper.R
 import com.lifthelper.domain.model.Workout
 import com.lifthelper.ui.components.common.StatItem
+import com.lifthelper.ui.theme.Spacing
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HistoryScreen(
     onNavigateBack: () -> Unit,
@@ -30,71 +36,83 @@ fun HistoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Workout History") },
+                title = { Text(stringResource(R.string.history_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.content_desc_back)
+                        )
                     }
                 }
             )
         }
     ) { paddingValues ->
-        when (val state = uiState) {
-            is HistoryState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+        Crossfade(
+            targetState = uiState,
+            animationSpec = tween(durationMillis = 250),
+            label = "history_state"
+        ) { state ->
+            when (state) {
+                is HistoryState.Loading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
-            }
 
-            is HistoryState.Empty -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.History,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Workout History",
-                        style = MaterialTheme.typography.headlineMedium,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "No workouts recorded yet. Complete a workout session to see your history here!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            is HistoryState.Loaded -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(state.workouts, key = { it.id }) { workout ->
-                        WorkoutCard(
-                            workout = workout,
-                            onDelete = { viewModel.deleteWorkout(workout.id) }
+                is HistoryState.Empty -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues)
+                            .padding(Spacing.lg),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text(
+                            text = stringResource(R.string.history_empty_title),
+                            style = MaterialTheme.typography.headlineMedium,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.sm))
+                        Text(
+                            text = stringResource(R.string.history_empty_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                is HistoryState.Loaded -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(paddingValues),
+                        contentPadding = PaddingValues(Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.sm + Spacing.xs)
+                    ) {
+                        items(state.workouts, key = { it.id }) { workout ->
+                            WorkoutCard(
+                                workout = workout,
+                                onDelete = { viewModel.deleteWorkout(workout.id) },
+                                modifier = Modifier.animateItemPlacement(
+                                    animationSpec = tween(durationMillis = 300)
+                                )
+                            )
+                        }
                     }
                 }
             }
@@ -105,15 +123,16 @@ fun HistoryScreen(
 @Composable
 private fun WorkoutCard(
     workout: Workout,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault()) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(Spacing.md)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -126,28 +145,36 @@ private fun WorkoutCard(
                 IconButton(onClick = { showDeleteConfirm = true }) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = "Delete workout",
+                        contentDescription = stringResource(R.string.content_desc_delete_workout),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                StatItem(label = "Sets", value = "${workout.sets.size}")
-                StatItem(label = "Reps", value = "${workout.getTotalReps()}")
-                StatItem(label = "Avg Vel", value = "%.2f m/s".format(workout.getAverageVelocity().value))
-                StatItem(label = "Peak Vel", value = "%.2f m/s".format(workout.getPeakVelocity().value))
+                StatItem(label = stringResource(R.string.home_stat_sets), value = "${workout.sets.size}")
+                StatItem(label = stringResource(R.string.home_stat_reps), value = "${workout.getTotalReps()}")
+                StatItem(
+                    label = stringResource(R.string.home_stat_avg_vel),
+                    value = "%.2f".format(workout.getAverageVelocity().value),
+                    valueColor = MaterialTheme.colorScheme.primary
+                )
+                StatItem(
+                    label = stringResource(R.string.history_stat_peak_vel),
+                    value = "%.2f".format(workout.getPeakVelocity().value),
+                    valueColor = MaterialTheme.colorScheme.secondary
+                )
             }
 
             if (workout.sets.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Spacing.sm))
                 HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Spacing.sm))
 
                 workout.sets.forEachIndexed { index, set ->
                     if (set.isManual) {
@@ -184,19 +211,22 @@ private fun WorkoutCard(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Workout") },
-            text = { Text("Are you sure you want to delete this workout?") },
+            title = { Text(stringResource(R.string.history_delete_title)) },
+            text = { Text(stringResource(R.string.history_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     onDelete()
                     showDeleteConfirm = false
                 }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(
+                        stringResource(R.string.action_delete),
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

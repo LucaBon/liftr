@@ -92,4 +92,32 @@ class VbtZoneTest {
         assertEquals(0.00f, VbtZone.entries.first().minVelocity, 0.001f)
         assertEquals(Float.MAX_VALUE, VbtZone.entries.last().maxVelocity, 0.001f)
     }
+
+    // --- Non-finite / out-of-range inputs -------------------------------
+    // The lookup previously used entries.first { ... }, which throws
+    // NoSuchElementException for any value matching no range. NaN fails every
+    // comparison, and the top zone's upper bound is exclusive so MAX_VALUE and
+    // infinity fall through it. All three are reachable from upstream velocity
+    // math (division by a zero time delta or a degenerate calibration).
+
+    @Test
+    fun `should not throw on NaN velocity`() {
+        assertEquals(VbtZone.GRINDING, VbtZone.fromVelocity(MetersPerSecond(Float.NaN)))
+    }
+
+    @Test
+    fun `should not throw on infinite velocity`() {
+        // Infinity comes from dividing by a zero time delta — an unusable
+        // reading, not a genuinely fast rep. Classified with NaN as the slowest
+        // zone so it can never fabricate an explosive-power personal record.
+        assertEquals(
+            VbtZone.GRINDING,
+            VbtZone.fromVelocity(MetersPerSecond(Float.POSITIVE_INFINITY))
+        )
+    }
+
+    @Test
+    fun `should not throw on max float velocity`() {
+        assertEquals(VbtZone.SPEED_POWER, VbtZone.fromVelocity(MetersPerSecond(Float.MAX_VALUE)))
+    }
 }

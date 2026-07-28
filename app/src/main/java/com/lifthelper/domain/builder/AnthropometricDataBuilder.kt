@@ -53,6 +53,17 @@ class AnthropometricDataBuilder @Inject constructor(
         manualShoulderWidth: Float? = null,
         isFrontCamera: Boolean = false
     ): Result<AnthropometricData> = runCatching {
+        // Both values are divisors below. A zero or negative height yields an
+        // infinite/NaN shoulder-width ratio that is then persisted as
+        // calibration and silently corrupts every later pixel→meter conversion.
+        require(userHeight > 0f && userHeight.isFinite()) {
+            "User height must be positive (was $userHeight)"
+        }
+        require(manualShoulderWidth == null ||
+            (manualShoulderWidth > 0f && manualShoulderWidth.isFinite())) {
+            "Manual shoulder width must be positive (was $manualShoulderWidth)"
+        }
+
         val landmarks = poseResult.landmarks
         val imageWidth = poseResult.imageWidth
         val imageHeight = poseResult.imageHeight
@@ -298,9 +309,12 @@ class AnthropometricDataBuilder @Inject constructor(
         val shoulderWidthRatio = finalShoulderWidth / bodyHeights.totalHeight
         val torsoHeightRatio = segmentHeights.torso / bodyHeights.totalHeight
 
-        // Sanity check: shoulder width should be reasonable (10-40% of height)
-        // Skip this check if using manual shoulder width (user input is trusted)
-        if (manualShoulderWidth == null && !measurementValidator.validateShoulderWidthRange(
+        // Sanity check: shoulder width should be reasonable (10-40% of height).
+        // This applies to manual input too — a typo there is exactly as capable
+        // of poisoning the calibration as a bad pose estimate, and the value is
+        // rescaled by the detected height before use, so "trusting the user"
+        // does not make the derived ratio trustworthy.
+        if (!measurementValidator.validateShoulderWidthRange(
                 finalShoulderWidth,
                 bodyHeights.totalHeight
             )) {

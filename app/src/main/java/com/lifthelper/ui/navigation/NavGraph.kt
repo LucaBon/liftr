@@ -1,5 +1,11 @@
 package com.lifthelper.ui.navigation
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -7,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -35,32 +42,45 @@ fun NavGraph(
     calibrationRepository: CalibrationRepository,
     settingsRepository: SettingsRepository
 ) {
-    val isCalibrated by calibrationRepository.isCalibrated().collectAsState(initial = false)
+    // Both flags must resolve before the graph is built. They come from
+    // independent stores with independent first-emission timing, so gating on
+    // only one of them lets NavHost capture the other's placeholder: a
+    // calibrated returning user whose onboarding flag arrives first would be
+    // sent to Calibration, and the later emission cannot move an already-created
+    // NavHost off its start destination.
+    val calibrated: Boolean? by produceState<Boolean?>(initialValue = null) {
+        calibrationRepository.isCalibrated().collect { value = it }
+    }
     val onboardingCompleted: Boolean? by produceState<Boolean?>(initialValue = null) {
         settingsRepository
             .getBooleanSetting(SettingsKeys.ONBOARDING_COMPLETED, defaultValue = false)
             .collect { value = it }
     }
 
-    // Gate NavHost creation until the onboarding flag resolves, otherwise
-    // NavHost captures a stale startDestination and the first-launch or
-    // returning user lands on the wrong screen.
-    val resolvedOnboarding = onboardingCompleted ?: run {
+    val resolvedOnboarding = onboardingCompleted
+    val resolvedCalibrated = calibrated
+    if (resolvedOnboarding == null || resolvedCalibrated == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         return
     }
 
-    val startDestination = when {
-        !resolvedOnboarding -> Screen.Onboarding.route
-        isCalibrated -> Screen.Home.route
-        else -> Screen.Calibration.route
+    val startDestination = remember(resolvedOnboarding, resolvedCalibrated) {
+        when {
+            !resolvedOnboarding -> Screen.Onboarding.route
+            resolvedCalibrated -> Screen.Home.route
+            else -> Screen.Calibration.route
+        }
     }
 
     NavHost(
         navController = navController,
-        startDestination = startDestination
+        startDestination = startDestination,
+        enterTransition = { NavTransitions.enter() },
+        exitTransition = { NavTransitions.exit() },
+        popEnterTransition = { NavTransitions.popEnter() },
+        popExitTransition = { NavTransitions.popExit() }
     ) {
         composable(Screen.Onboarding.route) {
             OnboardingScreen(
@@ -70,7 +90,7 @@ fun NavGraph(
                     if (replayFlow) {
                         navController.popBackStack()
                     } else {
-                        val nextRoute = if (isCalibrated) Screen.Home.route else Screen.Calibration.route
+                        val nextRoute = if (resolvedCalibrated) Screen.Home.route else Screen.Calibration.route
                         navController.navigate(nextRoute) {
                             popUpTo(Screen.Onboarding.route) { inclusive = true }
                         }
@@ -120,7 +140,8 @@ fun NavGraph(
         composable(Screen.Home.route) {
             HomeScreen(
                 onStartWorkout = { navController.navigate(Screen.Workout.route) },
-                onViewHistory = { navController.navigate(Screen.Analytics.route) },
+                onViewHistory = { navController.navigate(Screen.History.route) },
+                onViewAnalytics = { navController.navigate(Screen.Analytics.route) },
                 onSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
@@ -170,4 +191,32 @@ fun NavGraph(
             )
         }
     }
+}
+
+/**
+ * Shared screen-transition spec. Forward navigation slides the new screen in
+ * from the right while the previous one parallax-slides out and fades; back
+ * navigation mirrors it. Keeps motion directional and consistent so users
+ * retain a sense of place in the navigation hierarchy.
+ */
+private object NavTransitions {
+    private const val DURATION = 300
+    private const val PARALLAX = 4 // outgoing screen moves at 1/4 the distance
+    private val easing = FastOutSlowInEasing
+
+    fun enter() =
+        slideInHorizontally(tween(DURATION, easing = easing)) { it } +
+            fadeIn(tween(DURATION, easing = easing))
+
+    fun exit() =
+        slideOutHorizontally(tween(DURATION, easing = easing)) { -it / PARALLAX } +
+            fadeOut(tween(DURATION, easing = easing))
+
+    fun popEnter() =
+        slideInHorizontally(tween(DURATION, easing = easing)) { -it / PARALLAX } +
+            fadeIn(tween(DURATION, easing = easing))
+
+    fun popExit() =
+        slideOutHorizontally(tween(DURATION, easing = easing)) { it } +
+            fadeOut(tween(DURATION, easing = easing))
 }

@@ -281,13 +281,59 @@ class DeadliftStrategyIntegrationTest {
         )
         every { positionCalculator.pixelsToMeters(any(), any(), any()) } returns 0.5f
 
-        val validation = strategy.validateForm(poseResult, calibrationData)
+        // Back rounding is a *change* from the setup posture, so the check needs
+        // the angle recorded when the lift was armed. Here the torso is at
+        // ~51° from vertical against a 20° setup — a 31° increase under load.
+        val state = ExercisePhaseState.initial().withStartingTorsoAngle(20f)
+
+        val validation = strategy.validateForm(poseResult, calibrationData, state)
         // Should have a critical or warning issue for back rounding
         val backIssues = validation.issues.filter {
             it.message.contains("rounding", ignoreCase = true) ||
-                it.message.contains("lean", ignoreCase = true)
+                it.message.contains("lean", ignoreCase = true) ||
+                it.message.contains("tipping", ignoreCase = true)
         }
         assertTrue(backIssues.isNotEmpty())
+    }
+
+    @Test
+    fun `correct deadlift setup lean is not reported as back rounding`() {
+        // A conventional deadlift sets up 45-70° from vertical. That is correct
+        // form, not rounding: only an increase relative to the setup counts.
+        // Regression guard for the absolute-threshold check that fired on every
+        // properly executed rep.
+        val landmarks = createLandmarksWithDeadliftForm(
+            shoulderY = 0.30f,
+            hipY = 0.50f,
+            shoulderX = 0.25f,
+            hipX = 0.50f,
+            kneeAngle = 175f,
+            hipAngle = 175f
+        )
+
+        val poseResult = PoseResult(
+            landmarks = landmarks,
+            timestamp = System.currentTimeMillis(),
+            imageWidth = 1920,
+            imageHeight = 1080,
+            isPortrait = false
+        )
+
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 400f, kneesY = 500f,
+            hipsX = 250f, anklesX = 252f
+        )
+        every { positionCalculator.pixelsToMeters(any(), any(), any()) } returns 0.5f
+
+        // Setup was already at this same steep angle — nothing has changed.
+        val state = ExercisePhaseState.initial().withStartingTorsoAngle(51f)
+
+        val validation = strategy.validateForm(poseResult, calibrationData, state)
+        val backIssues = validation.issues.filter {
+            it.message.contains("rounding", ignoreCase = true) ||
+                it.message.contains("tipping", ignoreCase = true)
+        }
+        assertTrue("Correct setup lean must not be flagged: $backIssues", backIssues.isEmpty())
     }
 
     @Test

@@ -40,8 +40,25 @@ class PositionCalculator @Inject constructor(
     private val logger: Logger
 ) : IPositionCalculator {
 
+    /**
+     * Last pixels-per-meter value that passed validation, used when a frame
+     * produces a degenerate one. Seeded with the same default the no-calibration
+     * path returns.
+     */
+    @Volatile
+    private var lastGoodPixelsPerMeter = DEFAULT_PIXELS_PER_METER
+
     companion object {
         private const val TAG = "PositionCalculator"
+
+        /** Fallback scale when nothing can be measured (1000 px/m). */
+        private const val DEFAULT_PIXELS_PER_METER = 1000f
+
+        /**
+         * Below this the value cannot describe a person in frame; treating it as
+         * real would blow up every pixel→meter conversion that divides by it.
+         */
+        private const val MIN_PIXELS_PER_METER = 1f
     }
 
     /**
@@ -364,6 +381,31 @@ class PositionCalculator @Inject constructor(
      * 4. Stored calibration value - last resort
      */
     private fun calculatePixelsPerMeter(
+        poseResult: PoseResult,
+        calibrationData: CalibrationData?
+    ): CalibrationResult {
+        val result = calculatePixelsPerMeterUnchecked(poseResult, calibrationData)
+        val ppm = result.pixelsPerMeter
+
+        // Every strategy below divides a detected pixel height by the user's
+        // height, and both can legitimately be zero: degenerate landmarks put
+        // head and ankle at the same Y, and stored calibration may carry a bad
+        // height. The resulting 0 / Infinity / NaN would then propagate through
+        // pixelsToMeters into the smoothing filters, where a single NaN sticks
+        // permanently and silently kills rep counting for the rest of the set.
+        if (!ppm.isFinite() || ppm < MIN_PIXELS_PER_METER) {
+            logger.w(TAG, "Rejecting implausible pixelsPerMeter=$ppm, using last known good")
+            return CalibrationResult(
+                pixelsPerMeter = lastGoodPixelsPerMeter,
+                quality = com.lifthelper.domain.model.CalibrationQuality.FALLBACK
+            )
+        }
+
+        lastGoodPixelsPerMeter = ppm
+        return result
+    }
+
+    private fun calculatePixelsPerMeterUnchecked(
         poseResult: PoseResult,
         calibrationData: CalibrationData?
     ): CalibrationResult {

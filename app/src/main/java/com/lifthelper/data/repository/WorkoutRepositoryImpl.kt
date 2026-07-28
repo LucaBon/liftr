@@ -15,8 +15,10 @@ import com.lifthelper.domain.model.Workout
 import com.lifthelper.domain.repository.WorkoutRepository
 import com.lifthelper.domain.util.mapError
 import com.lifthelper.domain.util.onError
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.sql.SQLException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,26 +39,36 @@ class WorkoutRepositoryImpl @Inject constructor(
         private const val TAG = "WorkoutRepository"
     }
 
+    /**
+     * Persists a workout with its sets and reps in a single transaction.
+     *
+     * Runs under [NonCancellable]: callers save from `viewModelScope` and then
+     * navigate away immediately, which cancels that scope. Without this the
+     * in-flight transaction is aborted and rolled back mid-write, silently
+     * discarding the user's entire session after they confirmed "Save".
+     */
     override suspend fun saveWorkout(workout: Workout): Result<Long> = runCatching {
-        database.withTransaction {
-            val workoutEntity = mapper.toEntity(workout)
-            val workoutId = workoutDao.insertWorkout(workoutEntity)
+        withContext(NonCancellable) {
+            database.withTransaction {
+                val workoutEntity = mapper.toEntity(workout)
+                val workoutId = workoutDao.insertWorkout(workoutEntity)
 
-            workout.sets.forEach { set ->
-                val setEntity = setMapper.toEntity(set).copy(workoutId = workoutId)
-                val setId = setDao.insertSet(setEntity)
+                workout.sets.forEach { set ->
+                    val setEntity = setMapper.toEntity(set).copy(workoutId = workoutId)
+                    val setId = setDao.insertSet(setEntity)
 
-                val repEntities = set.reps.map { rep ->
-                    repMapper.toEntity(rep).copy(setId = setId)
+                    val repEntities = set.reps.map { rep ->
+                        repMapper.toEntity(rep).copy(setId = setId)
+                    }
+                    if (repEntities.isNotEmpty()) {
+                        repDao.insertReps(repEntities)
+                    }
                 }
-                if (repEntities.isNotEmpty()) {
-                    repDao.insertReps(repEntities)
-                }
+
+                logger.d(TAG, "Workout saved: id=$workoutId, sets=${workout.sets.size}, " +
+                    "totalReps=${workout.sets.sumOf { it.reps.size }}")
+                workoutId
             }
-
-            logger.d(TAG, "Workout saved: id=$workoutId, sets=${workout.sets.size}, " +
-                "totalReps=${workout.sets.sumOf { it.reps.size }}")
-            workoutId
         }
     }.mapError { error ->
         when (error) {

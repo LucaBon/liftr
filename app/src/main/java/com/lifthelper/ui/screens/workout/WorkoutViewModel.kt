@@ -1,9 +1,19 @@
 package com.lifthelper.ui.screens.workout
 
+import android.content.Context
 import androidx.camera.core.ImageProxy
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lifthelper.R
+import com.lifthelper.data.export.VideoShareManager
+import com.lifthelper.service.VideoAnalysisService
+import com.lifthelper.vision.camera.CameraManager
+import com.lifthelper.vision.camera.VideoRecordingManager
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.lifthelper.domain.exercise.BarPathAnalyzer
 import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.FormIssue
@@ -46,6 +56,7 @@ import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.RepCount
+import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.ui.common.UiError
 import com.lifthelper.ui.common.toUiError
 import com.lifthelper.vision.tracking.MovementPhase
@@ -69,6 +80,11 @@ class WorkoutViewModel @Inject constructor(
     private val calibrationRepository: CalibrationRepository,
     private val settingsRepository: SettingsRepository,
     private val feedbackEmitter: IFeedbackEmitter,
+    private val videoRecordingManager: VideoRecordingManager,
+    private val videoShareManager: VideoShareManager,
+    private val cameraManager: CameraManager,
+    private val poseDetector: IPoseDetector,
+    @ApplicationContext private val context: Context,
     private val logger: Logger,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
@@ -78,6 +94,10 @@ class WorkoutViewModel @Inject constructor(
         private const val KEY_EXERCISE = "exercise_type"
         private const val KEY_WEIGHT = "weight"
         private const val KEY_TARGET_REPS = "target_reps"
+        // Self-heal: how long to wait for an async camera rebind to produce a
+        // VideoCapture before giving up, and how often to poll for it.
+        private const val REBIND_TIMEOUT_MS = 2500L
+        private const val REBIND_POLL_MS = 100L
     }
 
     // IMPROVE-7: Restore user selections after process death
@@ -105,6 +125,16 @@ class WorkoutViewModel @Inject constructor(
     // when replaced, preventing memory buildup on slow devices.
     private val latestFrame = java.util.concurrent.atomic.AtomicReference<ImageProxy?>(null)
     @Volatile private var isProcessingFrame = false
+
+    /**
+     * Bumped whenever a set starts or stops. Frames captured under one
+     * generation must not apply their results under another — frame processing
+     * is asynchronous, so a result can land after the set it belongs to is over.
+     */
+    @Volatile private var setGeneration = 0
+
+    /** Guards against a second save being started while one is in flight. */
+    private var isSaving = false
 
     // Track previous rep count to detect new reps
     private var previousRepCount = 0
@@ -152,8 +182,23 @@ class WorkoutViewModel @Inject constructor(
     private var restTimerJob: Job? = null
     @Volatile private var restTimerEnabled = true
 
+    // --- Post-exercise analysis (Feature 17) ---
+    @Volatile private var repCounterEnabled = false
+    private var recordingTimerJob: Job? = null
+
     init {
         logger.d(TAG, "WorkoutViewModel initialized")
+        // Surface a friendly message (instead of crashing) when on-device pose
+        // detection couldn't load. Camera tracking is disabled; manual entry works.
+        if (!poseDetector.isAvailable()) {
+            logger.w(TAG, "Pose detection unavailable on this device")
+            _uiState.update {
+                it.copy(
+                    poseDetectionAvailable = false,
+                    error = UiError.Message(context.getString(R.string.pose_detection_unavailable))
+                )
+            }
+        }
         viewModelScope.launch {
             calibrationRepository.getCalibrationData().collect { calibration ->
                 calibrationData = calibration
@@ -166,6 +211,194 @@ class WorkoutViewModel @Inject constructor(
         loadTempoSettings()
         loadAutoStopSettings()
         loadCustomExerciseNames()
+        loadAnalysisModeSettings()
+        observeAnalysisService()
+    }
+
+    // ── Post-exercise analysis (Feature 17) ──────────────────────────
+
+    private fun loadAnalysisModeSettings() {
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.ANALYSIS_MODE,
+                SettingsKeys.ANALYSIS_MODE_POST_EXERCISE
+            ).collect { mode ->
+                val parsed = when (mode) {
+                    SettingsKeys.ANALYSIS_MODE_REAL_TIME -> AnalysisMode.REAL_TIME
+                    else -> AnalysisMode.POST_EXERCISE
+                }
+                _uiState.update { it.copy(analysisMode = parsed) }
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.LIGHTWEIGHT_REP_COUNTER,
+                false
+            ).collect { enabled ->
+                repCounterEnabled = enabled
+                _uiState.update { it.copy(repCounterEnabled = enabled) }
+            }
+        }
+    }
+
+    /**
+     * Observes the global analysis service state and folds it into UI state.
+     * On completion the analyzed set is persisted exactly like a real-time set.
+     */
+    private fun observeAnalysisService() {
+        viewModelScope.launch {
+            VideoAnalysisService.analysisState.collect { state ->
+                when (state) {
+                    is VideoAnalysisService.AnalysisState.Analyzing -> {
+                        _uiState.update {
+                            it.copy(
+                                analysisProgress = AnalysisProgress(
+                                    currentFrame = state.progress.currentFrame,
+                                    totalFrames = state.progress.totalFrames,
+                                    percentComplete = state.progress.percentComplete,
+                                    currentRep = state.progress.currentRep
+                                ),
+                                analysisError = null
+                            )
+                        }
+                    }
+                    is VideoAnalysisService.AnalysisState.Complete -> {
+                        val playbackFile = java.io.File(state.recordedVideoPath)
+                            .takeIf { it.exists() && it.length() > 0 }
+                        val playbackInfo = playbackFile?.let {
+                            AnnotatedVideoInfo(it.absolutePath, it.length())
+                        }
+                        val isAnnotated = state.annotatedVideoPath != null &&
+                            playbackFile?.absolutePath == state.annotatedVideoPath
+                        _uiState.update { current ->
+                            val dismissed = current.analysisProgressDismissed
+                            current.copy(
+                                analysisProgress = null,
+                                analysisProgressDismissed = false,
+                                isVideoRecording = false,
+                                lastSetSummary = state.summary,
+                                isSetSummaryVisible = !dismissed,
+                                annotatedVideo = playbackInfo,
+                                playbackIsAnnotated = isAnnotated,
+                                analysisCompleteMessage = if (dismissed) {
+                                    context.getString(R.string.analysis_complete_snackbar)
+                                } else {
+                                    null
+                                }
+                            )
+                        }
+                        saveAnalyzedSet(state.summary)
+                        VideoAnalysisService.acknowledgeState()
+                    }
+                    is VideoAnalysisService.AnalysisState.Error -> {
+                        logger.e(TAG, "Analysis error: ${state.message}")
+                        _uiState.update {
+                            it.copy(
+                                analysisProgress = null,
+                                isVideoRecording = false,
+                                analysisError = state.message
+                            )
+                        }
+                        VideoAnalysisService.acknowledgeState()
+                    }
+                    is VideoAnalysisService.AnalysisState.Idle -> Unit
+                }
+            }
+        }
+    }
+
+    /**
+     * Persists a set produced by post-exercise analysis. Mirrors the tail of the
+     * real-time [stopRecording] (accumulate set, PR check, rest timer).
+     */
+    private fun saveAnalyzedSet(summary: SetSummary) {
+        if (completedSets.isEmpty() && workoutStartTime == 0L) {
+            workoutStartTime = System.currentTimeMillis()
+        }
+        val now = System.currentTimeMillis()
+        val reps = summary.repScores.mapIndexed { index, score ->
+            val v = summary.repVelocities.getOrNull(index) ?: MetersPerSecond(0f)
+            Rep(
+                setId = 0,
+                repNumber = index + 1,
+                peakVelocity = v,
+                avgVelocity = v,
+                timeUnderTension = 0f,
+                rangeOfMotion = Meters(0f),
+                startPosition = Meters(0f),
+                endPosition = Meters(0f),
+                eccentricDuration = 0f,
+                concentricDuration = 0f,
+                velocityProfile = emptyList(),
+                positionProfile = emptyList(),
+                timestamp = now,
+                qualityScore = score.totalScore
+            )
+        }
+        val completedSet = Set(
+            workoutId = 0,
+            exerciseType = summary.exerciseType,
+            weight = summary.weight,
+            targetReps = summary.targetReps,
+            completedReps = summary.completedReps,
+            avgVelocity = summary.avgVelocity,
+            peakVelocity = summary.peakVelocity,
+            timestamp = now,
+            reps = reps
+        )
+        completedSets.add(completedSet)
+        _uiState.update { it.copy(completedSetCount = completedSets.size) }
+        logger.i(TAG, "Analyzed set persisted (${completedSets.size} sets in session)")
+
+        checkForPersonalRecords(completedSet)
+
+        // Analysis runs in the background precisely so the lifter can start the
+        // next set while it finishes. Starting the rest timer on completion
+        // would then drop a full-screen scrim over a set already in progress.
+        val state = _uiState.value
+        if (restTimerEnabled && !state.isRecording && !state.isVideoRecording) {
+            startRestTimer()
+        }
+    }
+
+    /** Dismiss the post-analysis error banner. */
+    fun clearAnalysisError() {
+        _uiState.update { it.copy(analysisError = null) }
+    }
+
+    /** Hide the analysis progress banner; analysis keeps running in background. */
+    fun dismissAnalysisProgress() {
+        _uiState.update { it.copy(analysisProgressDismissed = true) }
+    }
+
+    /** Open the summary sheet after a background analysis completes. */
+    fun showPendingAnalysisResults() {
+        _uiState.update {
+            it.copy(
+                analysisCompleteMessage = null,
+                isSetSummaryVisible = it.lastSetSummary != null
+            )
+        }
+    }
+
+    fun clearAnalysisCompleteMessage() {
+        _uiState.update { it.copy(analysisCompleteMessage = null) }
+    }
+
+    private fun startRecordingTimer() {
+        recordingTimerJob?.cancel()
+        _uiState.update { it.copy(recordingElapsedSeconds = 0) }
+        recordingTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                _uiState.update { it.copy(recordingElapsedSeconds = it.recordingElapsedSeconds + 1) }
+            }
+        }
+    }
+
+    private fun stopRecordingTimer() {
+        recordingTimerJob?.cancel()
+        recordingTimerJob = null
     }
 
     private fun loadAutoStopSettings() {
@@ -269,6 +502,9 @@ class WorkoutViewModel @Inject constructor(
                 try {
                     // Drain: take the latest frame for processing
                     val frame = latestFrame.getAndSet(null) ?: return@launch
+                    // Tie this frame to the set it was captured in, so a result
+                    // that lands after the set boundary can be discarded.
+                    val generation = setGeneration
                     val result = processFrameUseCase(
                         ProcessWorkoutFrameUseCase.Params(
                             imageProxy = frame,
@@ -281,6 +517,15 @@ class WorkoutViewModel @Inject constructor(
                             weight = _uiState.value.weight
                         )
                     )
+                    if (generation != setGeneration) {
+                        // The set was stopped (and possibly a new one started)
+                        // while this frame was in flight. Applying it now would
+                        // overwrite the fresh state with the previous set's
+                        // mid-rep phase and rep count — which can immediately
+                        // re-trigger auto-stop and bank a garbage set.
+                        logger.d(TAG, "Dropping frame result from previous set")
+                        return@launch
+                    }
                     handleFrameProcessingResult(result)
                 } finally {
                     isProcessingFrame = false
@@ -289,7 +534,7 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
-    private fun handleFrameProcessingResult(result: FrameProcessingResult) {
+    private suspend fun handleFrameProcessingResult(result: FrameProcessingResult) {
         when (result) {
             is FrameProcessingResult.Success -> {
                 // Update exercise state with new immutable state from phase detection
@@ -386,7 +631,7 @@ class WorkoutViewModel @Inject constructor(
      * Collects per-rep quality data during recording.
      * Detects phase transitions and accumulates bar X positions and form issues.
      */
-    private fun collectRepQualityData(
+    private suspend fun collectRepQualityData(
         result: FrameProcessingResult.Success,
         newPhase: MovementPhase,
         repJustCounted: Boolean
@@ -468,7 +713,7 @@ class WorkoutViewModel @Inject constructor(
      * we replay the buffered poses through [AnalyzeRepUseCase] once per rep
      * instead of doing it every frame on the camera hot path.
      */
-    private fun scoreCurrentRep(result: FrameProcessingResult.Success, now: Long) {
+    private suspend fun scoreCurrentRep(result: FrameProcessingResult.Success, now: Long) {
         val eccentricDuration = if (currentRepBottomTime > 0 && currentRepEccentricStartTime > 0) {
             (currentRepBottomTime - currentRepEccentricStartTime) / 1000f
         } else 0f
@@ -495,11 +740,15 @@ class WorkoutViewModel @Inject constructor(
                         calibrationData = calib,
                         weight = _uiState.value.weight,
                         bufferedPoses = currentRepPoses.toList(),
-                        finalVelocityData = result.velocityData
+                        finalVelocityData = result.velocityData,
+                        phaseState = exerciseState
                     )
                 )
-            }.onFailure { logger.w(TAG, "AnalyzeRepUseCase failed: ${it.message}") }
-                .getOrNull()
+            }.onFailure {
+                // Never swallow cancellation: the caller's scope is dying.
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                logger.w(TAG, "AnalyzeRepUseCase failed: ${it.message}")
+            }.getOrNull()
         } else null
 
         val analyzedFormIssues = analysis?.formValidation?.issues ?: emptyList()
@@ -613,7 +862,125 @@ class WorkoutViewModel @Inject constructor(
         _uiState.update { it.copy(error = null) }
     }
 
+    /**
+     * Start a tracked set. Dispatches to the real-time or post-exercise pipeline
+     * based on the configured [AnalysisMode].
+     */
     fun startRecording() {
+        if (!_uiState.value.poseDetectionAvailable) {
+            logger.w(TAG, "startRecording ignored: pose detection unavailable")
+            _uiState.update {
+                it.copy(error = UiError.Message(context.getString(R.string.pose_detection_unavailable)))
+            }
+            return
+        }
+        if (_uiState.value.weight.value <= 0f) {
+            logger.w(TAG, "startRecording ignored: weight not set")
+            return
+        }
+        when (_uiState.value.analysisMode) {
+            AnalysisMode.POST_EXERCISE -> startPostExerciseRecording()
+            AnalysisMode.REAL_TIME -> startRealTimeRecording()
+        }
+    }
+
+    /**
+     * Begin recording video for post-exercise analysis. The camera was already
+     * bound in RECORDING mode by the screen, so we just start the [Recording].
+     */
+    private fun startPostExerciseRecording() {
+        setGeneration++
+        val videoCapture = cameraManager.getVideoCapture()
+        if (videoCapture != null) {
+            beginPostExerciseRecording(videoCapture)
+            return
+        }
+
+        // A navigation/timing race occasionally leaves the shared camera bound in
+        // analysis-only mode (no VideoCapture). Rather than failing outright,
+        // self-heal by rebinding into recording mode and retrying once ready.
+        logger.w(TAG, "No VideoCapture bound; attempting camera rebind for recording")
+        val rebindInitiated = cameraManager.ensureRecordingBinding(
+            videoRecordingManager = videoRecordingManager,
+            withRepCounter = repCounterEnabled
+        )
+        if (!rebindInitiated) {
+            logger.e(TAG, "No VideoCapture bound and rebind could not be attempted")
+            _uiState.update {
+                it.copy(analysisError = "Camera not ready for recording. Try again.")
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            val healed = awaitVideoCapture(REBIND_TIMEOUT_MS)
+            if (healed != null) {
+                logger.i(TAG, "Camera rebind succeeded; starting recording")
+                beginPostExerciseRecording(healed)
+            } else {
+                logger.e(TAG, "Camera rebind timed out; still no VideoCapture")
+                _uiState.update {
+                    it.copy(analysisError = "Camera not ready for recording. Try again.")
+                }
+            }
+        }
+    }
+
+    /**
+     * Poll for a bound [VideoCapture] for up to [timeoutMs], since rebinding the
+     * camera into recording mode is asynchronous (CameraX provider future).
+     */
+    private suspend fun awaitVideoCapture(timeoutMs: Long): VideoCapture<Recorder>? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            cameraManager.getVideoCapture()?.let { return it }
+            delay(REBIND_POLL_MS)
+        }
+        return cameraManager.getVideoCapture()
+    }
+
+    /** Start the actual recording once a [VideoCapture] is confirmed bound. */
+    private fun beginPostExerciseRecording(videoCapture: VideoCapture<Recorder>) {
+        if (completedSets.isEmpty() && workoutStartTime == 0L) {
+            workoutStartTime = System.currentTimeMillis()
+        }
+
+        logger.i(TAG, "START VIDEO RECORDING - Exercise: ${_uiState.value.selectedExercise}")
+        exerciseState = ExercisePhaseState.initial()
+        previousRepCount = 0
+        previousPhase = MovementPhase.IDLE
+
+        val started = videoRecordingManager.startRecording(
+            videoCapture = videoCapture,
+            exerciseType = _uiState.value.selectedExercise
+        ) { /* CameraX recording events handled internally / logged */ }
+        if (!started) {
+            logger.e(TAG, "VideoRecordingManager refused to start recording")
+            _uiState.update {
+                it.copy(analysisError = "Recording failed — nothing to analyze.")
+            }
+            return
+        }
+
+        // When the lite rep counter is enabled, isRecording drives the live
+        // counter via processFrame; otherwise the frame pipeline stays idle so
+        // the GPU is dedicated to video capture.
+        _uiState.update {
+            it.copy(
+                isVideoRecording = true,
+                isRecording = repCounterEnabled,
+                repCount = RepCount(0),
+                error = null,
+                analysisError = null,
+                lastSetSummary = null,
+                currentRepScore = null
+            )
+        }
+        startRecordingTimer()
+    }
+
+    private fun startRealTimeRecording() {
+        setGeneration++
         // Initialize workout start time on first set
         if (completedSets.isEmpty()) {
             workoutStartTime = System.currentTimeMillis()
@@ -735,7 +1102,98 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Stop a tracked set. Dispatches based on [AnalysisMode].
+     */
     fun stopRecording() {
+        when (_uiState.value.analysisMode) {
+            AnalysisMode.POST_EXERCISE -> stopPostExerciseRecording()
+            AnalysisMode.REAL_TIME -> stopRealTimeRecording()
+        }
+    }
+
+    /**
+     * Stop video recording and hand the file off to [VideoAnalysisService] for
+     * heavy-model analysis. The summary arrives later via [observeAnalysisService].
+     */
+    private fun stopPostExerciseRecording() {
+        // Idempotence guard: a second stop (double tap, or a user tap racing
+        // auto-stop) would find the recording already handed off, report a
+        // spurious "recording failed", and wipe the progress of the analysis
+        // the first call just started.
+        if (!_uiState.value.isVideoRecording) {
+            logger.d(TAG, "stopPostExerciseRecording ignored - not recording")
+            return
+        }
+        setGeneration++
+        stopRecordingTimer()
+        // Clear any live-counter overlay state.
+        _currentBarPathPoints.value = emptyList()
+
+        val calibration = calibrationData
+        if (calibration == null) {
+            logger.e(TAG, "Cannot analyze: calibration missing")
+            viewModelScope.launch {
+                videoRecordingManager.stopRecording()
+                _uiState.update {
+                    it.copy(
+                        isVideoRecording = false,
+                        isRecording = false,
+                        analysisError = "Calibration required before analysis."
+                    )
+                }
+            }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isRecording = false,
+                isVideoRecording = false,
+                analysisProgress = AnalysisProgress(0, 1, 0f, 0),
+                analysisProgressDismissed = false
+            )
+        }
+
+        viewModelScope.launch {
+            val videoFile = videoRecordingManager.stopRecording()
+            if (videoFile == null) {
+                logger.e(TAG, "Cannot analyze: recording file missing after finalize")
+                _uiState.update {
+                    it.copy(
+                        analysisProgress = null,
+                        analysisError = "Recording failed — nothing to analyze."
+                    )
+                }
+                return@launch
+            }
+
+            val state = _uiState.value
+            val intent = VideoAnalysisService.createIntent(
+                context = context,
+                videoFile = videoFile,
+                exerciseType = state.selectedExercise,
+                weight = state.weight,
+                targetReps = state.targetReps.value,
+                calibrationData = calibration,
+                tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null
+            )
+            ContextCompat.startForegroundService(context, intent)
+            logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
+        }
+    }
+
+    private fun stopRealTimeRecording() {
+        // Idempotence guard: generateSetSummary() stays non-null until the next
+        // set starts, so a second stop would build the same Set again and append
+        // a duplicate to completedSets (and re-run the PR check). Reachable by
+        // double-tapping Stop, or by a queued user tap arriving just after
+        // auto-stop already fired.
+        if (!_uiState.value.isRecording) {
+            logger.d(TAG, "stopRealTimeRecording ignored - not recording")
+            return
+        }
+        setGeneration++
         logger.i(TAG, "STOP RECORDING - Total reps: ${_uiState.value.repCount}")
 
         val summary = generateSetSummary()
@@ -768,6 +1226,7 @@ class WorkoutViewModel @Inject constructor(
             it.copy(
                 isRecording = false,
                 lastSetSummary = summary,
+                isSetSummaryVisible = summary != null,
                 completedSetCount = completedSets.size,
                 velocityLossAlertDismissed = false
             )
@@ -802,23 +1261,48 @@ class WorkoutViewModel @Inject constructor(
             logger.w(TAG, "No sets to save")
             return
         }
+        // Re-entrancy guard: without it, two taps before the first write
+        // finishes both pass the isEmpty() check and persist the workout twice.
+        if (isSaving) {
+            logger.w(TAG, "Save already in progress")
+            return
+        }
+        isSaving = true
+
+        // Take the sets out of the accumulator up front. Clearing after the
+        // suspended write instead would discard anything appended in the
+        // meantime — a background analysis finishing mid-save, or a manual set —
+        // without ever having persisted it.
+        val setsToSave = completedSets.toList()
+        val startedAt = workoutStartTime
+        completedSets.clear()
+        _uiState.update { it.copy(completedSetCount = 0) }
 
         viewModelScope.launch {
             val workout = Workout(
-                date = Date(workoutStartTime),
-                duration = System.currentTimeMillis() - workoutStartTime,
-                sets = completedSets.toList()
+                date = Date(startedAt),
+                duration = System.currentTimeMillis() - startedAt,
+                sets = setsToSave
             )
 
             val result = saveWorkoutUseCase(SaveWorkoutUseCase.Params(workout))
             result.onSuccess { id ->
-                logger.i(TAG, "Workout saved: id=$id, sets=${completedSets.size}")
-                completedSets.clear()
+                logger.i(TAG, "Workout saved: id=$id, sets=${setsToSave.size}")
                 workoutStartTime = 0L
-                _uiState.update { it.copy(workoutSaved = true, completedSetCount = 0) }
+                _uiState.update { it.copy(workoutSaved = true) }
             }.onFailure { error ->
                 logger.e(TAG, "Failed to save workout: ${error.message}", error)
+                // Put the sets back so the session isn't lost, keeping any that
+                // arrived while the write was in flight.
+                completedSets.addAll(0, setsToSave)
+                _uiState.update {
+                    it.copy(
+                        completedSetCount = completedSets.size,
+                        analysisError = "Could not save workout. Your sets are still here."
+                    )
+                }
             }
+            isSaving = false
         }
     }
 
@@ -910,10 +1394,67 @@ class WorkoutViewModel @Inject constructor(
     }
 
     /**
-     * Dismisses the post-set summary sheet.
+     * Dismisses the post-set summary sheet. Any annotated video that was neither
+     * shared nor saved is a transient app-private file; sharing/saving copies it
+     * out, so we delete the original on dismiss to avoid orphan accumulation.
      */
     fun dismissSummary() {
-        _uiState.update { it.copy(lastSetSummary = null) }
+        _uiState.value.annotatedVideo?.let { info ->
+            runCatching { java.io.File(info.path).delete() }
+        }
+        _uiState.update {
+            it.copy(
+                lastSetSummary = null,
+                isSetSummaryVisible = false,
+                annotatedVideo = null,
+                playbackIsAnnotated = false
+            )
+        }
+    }
+
+    // ── Annotated video (Feature 09) ─────────────────────────────────
+
+    /** Open the system share sheet for the annotated workout video. */
+    fun shareAnnotatedVideo() {
+        val info = _uiState.value.annotatedVideo ?: return
+        val file = java.io.File(info.path)
+        if (!file.exists()) {
+            logger.w(TAG, "shareAnnotatedVideo: file missing ${info.path}")
+            return
+        }
+        videoShareManager.share(
+            file = file,
+            chooserTitle = context.getString(R.string.video_share_chooser_title)
+        )
+    }
+
+    /** Copy the annotated workout video into the device gallery. */
+    fun saveAnnotatedVideoToGallery() {
+        val info = _uiState.value.annotatedVideo ?: return
+        viewModelScope.launch {
+            val saved = runCatching {
+                videoShareManager.saveToGallery(java.io.File(info.path))
+            }.getOrDefault(false)
+            val message = if (saved) {
+                context.getString(R.string.video_saved_to_gallery)
+            } else {
+                context.getString(R.string.video_save_failed)
+            }
+            _uiState.update { it.copy(videoMessage = message) }
+        }
+    }
+
+    /** Delete the annotated workout video and dismiss its preview. */
+    fun deleteAnnotatedVideo() {
+        _uiState.value.annotatedVideo?.let { info ->
+            runCatching { java.io.File(info.path).delete() }
+        }
+        _uiState.update { it.copy(annotatedVideo = null) }
+    }
+
+    /** Clears the transient video snackbar message. */
+    fun clearVideoMessage() {
+        _uiState.update { it.copy(videoMessage = null) }
     }
 
     fun dismissPRCelebration() {
@@ -1101,6 +1642,18 @@ class WorkoutViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         restTimerJob?.cancel()
+        recordingTimerJob?.cancel()
+        // Must not block here: CameraX delivers Finalize on the main executor,
+        // which is the thread onCleared runs on — awaiting it would deadlock
+        // until the finalize timeout expires.
+        videoRecordingManager.abandonRecording()
+        // Release the camera buffer that was latched for processing but never
+        // consumed, otherwise the frame leaks when the screen goes away.
+        latestFrame.getAndSet(null)?.close()
+        // Drop any annotated video that was never shared or saved.
+        _uiState.value.annotatedVideo?.let { info ->
+            runCatching { java.io.File(info.path).delete() }
+        }
         feedbackEmitter.stopCurrentSpeech()
     }
 }

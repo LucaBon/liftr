@@ -11,8 +11,6 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
-import com.lifthelper.domain.error.LiftHelperError
-import com.lifthelper.domain.error.PoseErrorCode
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.PoseKeypoint
 import com.lifthelper.domain.model.PoseResult
@@ -47,6 +45,11 @@ class PoseDetector @Inject constructor(
     )
 
     private var poseLandmarker: PoseLandmarker? = null
+    // False when the MediaPipe native library or model could not be loaded on
+    // this device/ABI (e.g. x86_64 emulators that lack the vision .so). When
+    // false, detection is a no-op and the UI surfaces a friendly message
+    // instead of the app hard-crashing.
+    @Volatile private var available = true
     // Thread-safe: accessed from MediaPipe callback thread and camera processing thread (BUG-A fix)
     private val cachedResult = AtomicReference<CachedResult?>(null)
     @Volatile private var lastProcessedTimestamp = 0L
@@ -59,7 +62,15 @@ class PoseDetector @Inject constructor(
 
     init {
         logger.d(TAG, "PoseDetector initializing...")
-        setupPoseLandmarker(Constants.POSE_MODEL_WORKOUT)
+        // Never let initialization failure crash the host (the ViewModel graph
+        // is built eagerly). Catch Throwable here too, since a missing native
+        // library surfaces as an UnsatisfiedLinkError (an Error, not Exception).
+        try {
+            setupPoseLandmarker(Constants.POSE_MODEL_WORKOUT)
+        } catch (t: Throwable) {
+            available = false
+            logger.e(TAG, "PoseDetector unavailable on this device: ${t.message}")
+        }
     }
 
     /**
@@ -95,14 +106,16 @@ class PoseDetector @Inject constructor(
                 .setMinPoseDetectionConfidence(Constants.POSE_MIN_DETECTION_CONFIDENCE)
                 .setMinPosePresenceConfidence(Constants.POSE_MIN_PRESENCE_CONFIDENCE)
                 .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
-                .setResultListener { result, _ ->
+                .setResultListener { result, input ->
                     detectionCount++
-                    // Dimensions are pre-set by processImageProxy before detectAsync.
-                    val current = cachedResult.get()
-                    val w = current?.width ?: 0
-                    val h = current?.height ?: 0
+                    // Dimensions come from the image this result was actually
+                    // produced from. Reading them from the shared cache instead
+                    // raced the camera thread, which could already have queued a
+                    // differently-rotated frame with width/height swapped.
+                    val w = input.width
+                    val h = input.height
                     val filtered = if (w > 0 && h > 0) {
-                        buildFilteredPoseResult(result, lastProcessedTimestamp, w, h)
+                        buildFilteredPoseResult(result, result.timestampMs(), w, h)
                     } else null
                     cachedResult.set(CachedResult(filtered, w, h))
                     isProcessing = false
@@ -117,9 +130,10 @@ class PoseDetector @Inject constructor(
                 .build()
 
             poseLandmarker = PoseLandmarker.createFromOptions(context, options)
+            available = true
             logger.i(TAG, "✅ PoseLandmarker initialized successfully with GPU delegate")
             logger.d(TAG, "✅ PoseLandmarker initialized successfully with GPU delegate")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             logger.e(TAG, "❌ Failed to initialize PoseLandmarker")
             // Try with CPU delegate as fallback
             try {
@@ -136,12 +150,13 @@ class PoseDetector @Inject constructor(
                     .setMinPoseDetectionConfidence(Constants.POSE_MIN_DETECTION_CONFIDENCE)
                     .setMinPosePresenceConfidence(Constants.POSE_MIN_PRESENCE_CONFIDENCE)
                     .setMinTrackingConfidence(Constants.POSE_MIN_TRACKING_CONFIDENCE)
-                    .setResultListener { result, _ ->
-                        val current = cachedResult.get()
-                        val w = current?.width ?: 0
-                        val h = current?.height ?: 0
+                    .setResultListener { result, input ->
+                        // See the GPU listener above: dimensions must come from
+                        // the processed image, not from the shared cache.
+                        val w = input.width
+                        val h = input.height
                         val filtered = if (w > 0 && h > 0) {
-                            buildFilteredPoseResult(result, lastProcessedTimestamp, w, h)
+                            buildFilteredPoseResult(result, result.timestampMs(), w, h)
                         } else null
                         cachedResult.set(CachedResult(filtered, w, h))
                         isProcessing = false
@@ -153,16 +168,20 @@ class PoseDetector @Inject constructor(
                     .build()
 
                 poseLandmarker = PoseLandmarker.createFromOptions(context, options)
+                available = true
                 logger.d(TAG, "✅ PoseLandmarker initialized with CPU delegate")
-            } catch (cpuError: Exception) {
-                logger.e(TAG, "Failed to initialize PoseLandmarker with CPU delegate", cpuError)
-                throw LiftHelperError.PoseDetectionError(
-                    "Failed to initialize pose detector",
-                    PoseErrorCode.MODEL_NOT_LOADED
-                )
+            } catch (cpuError: Throwable) {
+                // Both delegates failed (commonly a missing native library on
+                // unsupported ABIs). Degrade gracefully: detection becomes a
+                // no-op and isAvailable() reports false so the UI can explain.
+                available = false
+                poseLandmarker = null
+                logger.e(TAG, "Failed to initialize PoseLandmarker; pose detection disabled", cpuError)
             }
         }
     }
+
+    override fun isAvailable(): Boolean = available
 
     override fun detectPose(frame: com.lifthelper.domain.model.CameraFrame): PoseResult? {
         return frame.data.process(object : com.lifthelper.domain.model.FrameProcessor<PoseResult?> {
@@ -234,10 +253,11 @@ class PoseDetector @Inject constructor(
 
             val mpImage = BitmapImageBuilder(finalBitmap).build()
 
-            // Pre-set dimensions so the async callback can use them (BUG-A/E fix).
-            // Always overwrite dimensions, even on the very first detect when no cache exists.
-            val current = cachedResult.get()
-            cachedResult.set(CachedResult(current?.poseResult, finalWidth, finalHeight))
+            // The result listener is the sole writer of cachedResult; it reads
+            // the frame's dimensions from the MPImage it was handed. Writing the
+            // dimensions from here as well was a read-modify-write on the same
+            // AtomicReference from a second thread, which lost freshly filtered
+            // poses whenever a callback landed between this get() and set().
 
             // Detect pose (async, result comes via callback)
             poseLandmarker?.detectAsync(mpImage, timestamp)
@@ -385,6 +405,10 @@ class PoseDetector @Inject constructor(
      */
     @Synchronized
     override fun switchModel(modelPath: String) {
+        if (!available) {
+            logger.w(TAG, "Ignoring switchModel: pose detection is unavailable on this device")
+            return
+        }
         if (modelPath == currentModelPath) {
             logger.d(TAG, "Already using model: $modelPath")
             return

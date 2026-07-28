@@ -178,6 +178,55 @@ class GenerateExportUseCaseTest {
         assertTrue(result.content.contains("\"hard, grinding \"\"rep 5\"\"\""))
     }
 
+    @Test
+    fun `csv fields starting with formula characters are neutralized`() = runTest {
+        // Exercise names and notes are free text. Exported CSVs are meant to be
+        // shared, and a spreadsheet evaluates a cell beginning with = + - @ as a
+        // formula, so such values must be forced to literal text.
+        for (payload in listOf(
+            "=HYPERLINK(\"http://evil\",\"PR\")",
+            "+1234",
+            "-cmd",
+            "@SUM(A1:A9)"
+        )) {
+            repository.workouts = listOf(
+                workout(
+                    date = Date(1_700_000_000_000L),
+                    sets = listOf(squatSet(100f, 5, notes = payload))
+                )
+            )
+
+            val result = useCase(ExportConfig(format = ExportFormat.CSV_SETS))
+
+            // Inner quotes are doubled by normal CSV escaping, so build the
+            // expected cell the same way.
+            val expectedCell = "\"'" + payload.replace("\"", "\"\"") + "\""
+            assertTrue(
+                "Formula payload must be quoted and prefixed: $payload",
+                result.content.contains(expectedCell)
+            )
+            assertFalse(
+                "Raw formula must not appear unescaped: $payload",
+                result.content.contains(",$payload")
+            )
+        }
+    }
+
+    @Test
+    fun `ordinary csv fields are not altered`() = runTest {
+        repository.workouts = listOf(
+            workout(
+                date = Date(1_700_000_000_000L),
+                sets = listOf(squatSet(100f, 5, notes = "felt strong"))
+            )
+        )
+
+        val result = useCase(ExportConfig(format = ExportFormat.CSV_SETS))
+
+        assertTrue(result.content.contains("felt strong"))
+        assertFalse(result.content.contains("'felt strong"))
+    }
+
     private fun workout(date: Date, sets: List<Set>): Workout =
         Workout(id = 0, date = date, duration = 60_000L, sets = sets)
 

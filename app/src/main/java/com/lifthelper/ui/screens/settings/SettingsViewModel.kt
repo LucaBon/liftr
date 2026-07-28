@@ -80,6 +80,17 @@ class SettingsViewModel @Inject constructor(
     private val _autoStopOnTargetReps = MutableStateFlow(true)
     val autoStopOnTargetReps: StateFlow<Boolean> = _autoStopOnTargetReps.asStateFlow()
 
+    // Post-exercise analysis (Feature 17)
+    private val _postExerciseAnalysisEnabled = MutableStateFlow(true)
+    val postExerciseAnalysisEnabled: StateFlow<Boolean> = _postExerciseAnalysisEnabled.asStateFlow()
+
+    private val _repCounterDuringRecording = MutableStateFlow(false)
+    val repCounterDuringRecording: StateFlow<Boolean> = _repCounterDuringRecording.asStateFlow()
+
+    // Feature 09: render a shareable annotated video after analysis
+    private val _saveAnnotatedVideo = MutableStateFlow(false)
+    val saveAnnotatedVideo: StateFlow<Boolean> = _saveAnnotatedVideo.asStateFlow()
+
     init {
         loadSquatDepthSettings()
         loadVbtSettings()
@@ -87,6 +98,7 @@ class SettingsViewModel @Inject constructor(
         loadRestTimerSettings()
         loadTempoSettings()
         loadAutoStopSettings()
+        loadAnalysisModeSettings()
     }
 
     private fun loadSquatDepthSettings() {
@@ -351,6 +363,68 @@ class SettingsViewModel @Inject constructor(
                 enabled
             ).onSuccess {
                 _autoStopOnTargetReps.value = enabled
+            }
+        }
+    }
+
+    private fun loadAnalysisModeSettings() {
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.ANALYSIS_MODE,
+                SettingsKeys.ANALYSIS_MODE_POST_EXERCISE
+            ).collect { mode ->
+                _postExerciseAnalysisEnabled.value = mode != SettingsKeys.ANALYSIS_MODE_REAL_TIME
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.LIGHTWEIGHT_REP_COUNTER,
+                false
+            ).collect { enabled ->
+                _repCounterDuringRecording.value = enabled
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.getBooleanSetting(
+                SettingsKeys.SAVE_ANNOTATED_VIDEO,
+                false
+            ).collect { enabled ->
+                _saveAnnotatedVideo.value = enabled
+            }
+        }
+    }
+
+    fun updatePostExerciseAnalysisEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            val value = if (enabled) {
+                SettingsKeys.ANALYSIS_MODE_POST_EXERCISE
+            } else {
+                SettingsKeys.ANALYSIS_MODE_REAL_TIME
+            }
+            settingsRepository.saveStringSetting(SettingsKeys.ANALYSIS_MODE, value).onSuccess {
+                _postExerciseAnalysisEnabled.value = enabled
+            }
+        }
+    }
+
+    fun updateRepCounterDuringRecording(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(
+                SettingsKeys.LIGHTWEIGHT_REP_COUNTER,
+                enabled
+            ).onSuccess {
+                _repCounterDuringRecording.value = enabled
+            }
+        }
+    }
+
+    fun updateSaveAnnotatedVideo(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.saveBooleanSetting(
+                SettingsKeys.SAVE_ANNOTATED_VIDEO,
+                enabled
+            ).onSuccess {
+                _saveAnnotatedVideo.value = enabled
             }
         }
     }

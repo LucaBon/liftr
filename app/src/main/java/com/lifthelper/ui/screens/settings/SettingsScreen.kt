@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lifthelper.R
 import com.lifthelper.domain.exercise.VelocityLossState
@@ -26,6 +25,7 @@ import com.lifthelper.domain.feedback.FeedbackVerbosity
 import com.lifthelper.domain.feedback.TtsEngineInfo
 import com.lifthelper.domain.model.SquatDepthType
 import com.lifthelper.ui.components.ExportDialog
+import com.lifthelper.ui.theme.Spacing
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +52,9 @@ fun SettingsScreen(
     val restTimerEnabled by viewModel.restTimerEnabled.collectAsState()
     val restDurationDefault by viewModel.restDurationDefault.collectAsState()
     val autoStopOnTargetReps by viewModel.autoStopOnTargetReps.collectAsState()
+    val postExerciseAnalysisEnabled by viewModel.postExerciseAnalysisEnabled.collectAsState()
+    val repCounterDuringRecording by viewModel.repCounterDuringRecording.collectAsState()
+    val saveAnnotatedVideo by viewModel.saveAnnotatedVideo.collectAsState()
 
     var showExportDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -89,12 +92,12 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .padding(horizontal = Spacing.lg, vertical = Spacing.md)
         ) {
             // ── Calibration Section ──
             SectionHeader(stringResource(R.string.settings_section_calibration))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // Re-calibrate button
             Card(
@@ -104,15 +107,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Person,
                         contentDescription = stringResource(R.string.settings_recalibrate),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(Spacing.xl)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(Spacing.md))
                     Column {
                         Text(
                             text = stringResource(R.string.settings_recalibrate),
@@ -127,7 +130,7 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             // Anthropometric Calibration button
             Card(
@@ -137,15 +140,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.FitnessCenter,
                         contentDescription = stringResource(R.string.settings_capture_body),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(Spacing.xl)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(Spacing.md))
                     Column {
                         Text(
                             text = stringResource(R.string.settings_capture_body),
@@ -160,7 +163,7 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             // View/Edit Anthropometric Details button
             Card(
@@ -170,15 +173,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Person,
                         contentDescription = stringResource(R.string.settings_view_measurements),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(Spacing.xl)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(Spacing.md))
                     Column {
                         Text(
                             text = stringResource(R.string.settings_view_measurements),
@@ -193,12 +196,12 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Exercise Settings Section ──
             SectionHeader(stringResource(R.string.settings_section_exercise))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // Back Squat Depth Selector
             SquatDepthSelector(
@@ -207,7 +210,7 @@ fun SettingsScreen(
                 onDepthSelected = { viewModel.updateBackSquatDepth(it) }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             // Front Squat Depth Selector
             SquatDepthSelector(
@@ -216,19 +219,116 @@ fun SettingsScreen(
                 onDepthSelected = { viewModel.updateFrontSquatDepth(it) }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
+
+            // ── Analysis Mode Section (Feature 17) ──
+            SectionHeader(stringResource(R.string.analysis_settings_title))
+
+            Spacer(modifier = Modifier.height(Spacing.sm))
+
+            // Post-exercise analysis toggle
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.md),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.analysis_post_enabled),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.analysis_post_enabled_description),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = postExerciseAnalysisEnabled,
+                        onCheckedChange = { viewModel.updatePostExerciseAnalysisEnabled(it) }
+                    )
+                }
+            }
+
+            // Lightweight live rep counter — only relevant in post-exercise mode
+            AnimatedVisibility(
+                visible = postExerciseAnalysisEnabled,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column {
+                    Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
+
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.analysis_rep_counter_enabled),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.analysis_rep_counter_description),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = repCounterDuringRecording,
+                                onCheckedChange = { viewModel.updateRepCounterDuringRecording(it) }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
+
+                    // Annotated video (Feature 09): shareable clip with overlays
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.md),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.settings_annotated_video_title),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = stringResource(R.string.settings_annotated_video_description),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = saveAnnotatedVideo,
+                                onCheckedChange = { viewModel.updateSaveAnnotatedVideo(it) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── VBT Settings Section ──
             SectionHeader(stringResource(R.string.vbt_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // VBT Zones Toggle
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -256,7 +356,7 @@ fun SettingsScreen(
                 exit = shrinkVertically()
             ) {
                 Column {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
                     VelocityLossThresholdSelector(
                         currentThreshold = velocityLossThreshold,
@@ -265,19 +365,19 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Feedback Settings Section ──
             SectionHeader(stringResource(R.string.feedback_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // Audio Feedback Toggle
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -298,14 +398,14 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             // Haptic Feedback Toggle
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -326,21 +426,21 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             FeedbackLanguageSelector(
                 current = feedbackLanguage,
                 onSelected = { viewModel.updateFeedbackLanguage(it) }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             FeedbackVerbositySelector(
                 current = feedbackVerbosity,
                 onSelected = { viewModel.updateFeedbackVerbosity(it) }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
             TtsEngineSelector(
                 current = ttsEngine,
@@ -348,18 +448,18 @@ fun SettingsScreen(
                 onSelected = { viewModel.updateTtsEngine(it) }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Tempo Training Settings Section ──
             SectionHeader(stringResource(R.string.tempo_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -380,18 +480,18 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Set Control Settings Section ──
             SectionHeader(stringResource(R.string.set_control_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -412,19 +512,19 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Rest Timer Settings Section ──
             SectionHeader(stringResource(R.string.rest_timer_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             // Rest Timer Toggle
             Card(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
@@ -452,7 +552,7 @@ fun SettingsScreen(
                 exit = shrinkVertically()
             ) {
                 Column {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
 
                     RestDurationSelector(
                         currentDuration = restDurationDefault,
@@ -461,12 +561,12 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Data Export Section ──
             SectionHeader(stringResource(R.string.export_settings_title))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -475,15 +575,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.FileDownload,
                         contentDescription = stringResource(R.string.settings_export_data),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(Spacing.xl)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(Spacing.md))
                     Column {
                         Text(
                             text = stringResource(R.string.settings_export_data),
@@ -498,12 +598,12 @@ fun SettingsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
 
             // ── Help & Tutorial Section ──
             SectionHeader(stringResource(R.string.settings_section_help))
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -515,15 +615,15 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(Spacing.md),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.School,
                         contentDescription = stringResource(R.string.settings_replay_tutorial),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(Spacing.xl)
                     )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(Spacing.md))
                     Column {
                         Text(
                             text = stringResource(R.string.settings_replay_tutorial),
@@ -539,7 +639,7 @@ fun SettingsScreen(
             }
 
             // Bottom spacing for edge-to-edge
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(Spacing.lg))
         }
     }
 
@@ -560,7 +660,7 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = 4.dp)
+        modifier = Modifier.padding(bottom = Spacing.xs)
     )
 }
 
@@ -583,12 +683,12 @@ fun SquatDepthSelector(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(Spacing.md)
         ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
 
             ExposedDropdownMenuBox(
@@ -643,7 +743,7 @@ fun SquatDepthSelector(
                 text = currentDepth.description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp)
+                modifier = Modifier.padding(top = Spacing.sm)
             )
         }
     }
@@ -678,19 +778,19 @@ fun VelocityLossThresholdSelector(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(Spacing.md)
         ) {
             Text(
                 text = stringResource(R.string.vbt_velocity_loss_threshold),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = Spacing.xs)
             )
 
             Text(
                 text = stringResource(R.string.vbt_velocity_loss_threshold_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
 
             ExposedDropdownMenuBox(
@@ -747,17 +847,17 @@ private fun FeedbackLanguageSelector(
     val currentLabel = options.firstOrNull { it.first == current }?.second.orEmpty()
 
     Card(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Spacing.md)) {
             Text(
                 text = stringResource(R.string.feedback_language),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = Spacing.xs)
             )
             Text(
                 text = stringResource(R.string.feedback_language_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -814,17 +914,17 @@ private fun FeedbackVerbositySelector(
     val currentLabel = currentOption?.second.orEmpty()
 
     Card(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Spacing.md)) {
             Text(
                 text = stringResource(R.string.feedback_verbosity),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = Spacing.xs)
             )
             Text(
                 text = stringResource(R.string.feedback_verbosity_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -868,7 +968,7 @@ private fun FeedbackVerbositySelector(
                     text = it.third,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = Spacing.sm)
                 )
             }
         }
@@ -889,17 +989,17 @@ private fun TtsEngineSelector(
         ?: systemLabel
 
     Card(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Spacing.md)) {
             Text(
                 text = stringResource(R.string.feedback_tts_engine),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = Spacing.xs)
             )
             Text(
                 text = stringResource(R.string.feedback_tts_engine_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
             ExposedDropdownMenuBox(
                 expanded = expanded,
@@ -969,19 +1069,19 @@ fun RestDurationSelector(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(Spacing.md)
         ) {
             Text(
                 text = stringResource(R.string.rest_timer_default_duration),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = Spacing.xs)
             )
 
             Text(
                 text = stringResource(R.string.rest_timer_default_duration_description),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 8.dp)
+                modifier = Modifier.padding(bottom = Spacing.sm)
             )
 
             ExposedDropdownMenuBox(

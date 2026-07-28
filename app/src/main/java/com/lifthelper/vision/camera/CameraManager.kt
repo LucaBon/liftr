@@ -6,6 +6,8 @@ import android.hardware.camera2.CameraManager as SystemCameraManager
 import android.util.Size
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.Recorder
+import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -19,6 +21,22 @@ import java.util.concurrent.ExecutorService
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * The set of CameraX use cases bound at once. CameraX supports at most 3
+ * simultaneous use cases.
+ */
+enum class CameraMode {
+    /** Preview + ImageAnalysis for real-time ML (default, calibration). */
+    ANALYSIS_ONLY,
+
+    /** Post-exercise mode: Preview + VideoCapture (no ML during recording). */
+    RECORDING,
+
+    /** Post-exercise mode with optional lite rep counter:
+     *  Preview + VideoCapture + ImageAnalysis at low res/fps. */
+    RECORDING_WITH_COUNTER
+}
+
 @Singleton
 class CameraManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -29,9 +47,24 @@ class CameraManager @Inject constructor(
     private var imageAnalysis: ImageAnalysis? = null
     private var preview: Preview? = null
     private var cameraProvider: ProcessCameraProvider? = null
+    private var videoCapture: VideoCapture<Recorder>? = null
+    private var currentMode: CameraMode = CameraMode.ANALYSIS_ONLY
 
     @Volatile
     private var isInitializing = false
+
+    /**
+     * Incremented on every start and every stop. The `ProcessCameraProvider`
+     * future resolves asynchronously, so a `stopCamera()` issued while a start
+     * is still pending would otherwise be undone by the queued listener binding
+     * the use cases anyway — leaving the camera live after the screen is gone.
+     * The listener captures the generation it was scheduled with and aborts if
+     * it no longer matches.
+     *
+     * Only touched from the main thread (both start paths and [stopCamera] are
+     * main-thread entry points, and the listeners run on the main executor).
+     */
+    private var bindGeneration = 0
 
     private var frameCount = 0
     private var lastLogTime = System.currentTimeMillis()
@@ -81,12 +114,18 @@ class CameraManager @Inject constructor(
         }
 
         isInitializing = true
+        val bindToken = ++bindGeneration
         Log.i(TAG_CAMERA, "Requesting camera provider instance...")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
 
         cameraProviderFuture.addListener({
             try {
                 Log.d(TAG_CAMERA, "Camera provider future listener triggered")
+                if (bindToken != bindGeneration) {
+                    Log.w(TAG_CAMERA, "Camera was stopped while initializing, skipping bind")
+                    Timber.w("Camera was stopped while initializing, skipping bind")
+                    return@addListener
+                }
                 cameraProvider = cameraProviderFuture.get()
                 Log.i(TAG_CAMERA, "Camera provider obtained successfully")
 
@@ -300,6 +339,164 @@ class CameraManager @Inject constructor(
         }
     }
 
+    /**
+     * Start camera in recording mode for post-exercise analysis (Feature 17).
+     *
+     * Binds Preview + VideoCapture, plus an optional low-res ImageAnalysis when
+     * [withRepCounter] is true (for an approximate live rep counter). The plain
+     * [startCamera] continues to drive ANALYSIS_ONLY mode (real-time, calibration).
+     *
+     * @param lifecycleOwner Lifecycle to bind the camera to
+     * @param previewView Preview surface
+     * @param videoRecordingManager Manager that creates the VideoCapture use case
+     * @param withRepCounter If true, also bind ImageAnalysis at 320x240 throttled to ~5fps
+     * @param onFrameAnalyzed Frame callback (only used if [withRepCounter] is true)
+     * @param useFrontCamera Whether to use the front camera
+     */
+    fun startCameraForRecording(
+        lifecycleOwner: LifecycleOwner,
+        previewView: PreviewView,
+        videoRecordingManager: VideoRecordingManager,
+        withRepCounter: Boolean = false,
+        onFrameAnalyzed: ((ImageProxy) -> Unit)? = null,
+        useFrontCamera: Boolean = false
+    ) {
+        currentMode = if (withRepCounter) CameraMode.RECORDING_WITH_COUNTER else CameraMode.RECORDING
+        currentCameraSelector = if (useFrontCamera) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+        currentLifecycleOwner = lifecycleOwner
+        currentPreviewView = previewView
+        currentOnFrameAnalyzed = onFrameAnalyzed
+
+        if (camera != null || isInitializing) {
+            Log.w(TAG_CAMERA, "Camera already started or initializing, skipping (recording mode)")
+            return
+        }
+        isInitializing = true
+        val bindToken = ++bindGeneration
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+        cameraProviderFuture.addListener({
+            try {
+                if (bindToken != bindGeneration) {
+                    Log.w(TAG_CAMERA, "Camera was stopped while initializing, skipping bind (recording mode)")
+                    return@addListener
+                }
+                cameraProvider = cameraProviderFuture.get()
+
+                val displayRotation = (context as? android.app.Activity)?.windowManager?.defaultDisplay?.rotation
+                    ?: previewView.display?.rotation
+                    ?: android.view.Surface.ROTATION_0
+
+                val previewUseCase = Preview.Builder()
+                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+                    .setTargetRotation(displayRotation)
+                    .build()
+                    .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                preview = previewUseCase
+
+                val newVideoCapture = videoRecordingManager.createVideoCaptureUseCase()
+                videoCapture = newVideoCapture
+
+                val useCases = mutableListOf<UseCase>(previewUseCase, newVideoCapture)
+
+                if (withRepCounter && onFrameAnalyzed != null) {
+                    val repCounterAnalysis = ImageAnalysis.Builder()
+                        .setTargetResolution(Size(320, 240))
+                        .setTargetRotation(displayRotation)
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                        .build()
+                        .also { analysis ->
+                            var lastRepCounterFrame = 0L
+                            analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                val now = System.currentTimeMillis()
+                                // Throttle to ~5 FPS (200ms interval) so video capture keeps priority.
+                                if (now - lastRepCounterFrame >= 200L) {
+                                    lastRepCounterFrame = now
+                                    onFrameAnalyzed(imageProxy)
+                                } else {
+                                    imageProxy.close()
+                                }
+                            }
+                        }
+                    imageAnalysis = repCounterAnalysis
+                    useCases.add(repCounterAnalysis)
+                }
+
+                cameraProvider?.unbindAll()
+                camera = cameraProvider?.bindToLifecycle(
+                    lifecycleOwner,
+                    currentCameraSelector,
+                    *useCases.toTypedArray()
+                )
+
+                isInitializing = false
+                frameCount = 0
+                lastLogTime = System.currentTimeMillis()
+
+                camera?.let {
+                    Log.i(TAG_CAMERA, "✅ Camera started in ${currentMode.name} mode")
+                    retrieveCameraIntrinsics(
+                        if (withRepCounter) 320 else Constants.CAMERA_CALIBRATION_WIDTH,
+                        if (withRepCounter) 240 else Constants.CAMERA_CALIBRATION_HEIGHT
+                    )
+                } ?: Log.w(TAG_CAMERA, "Camera object null after binding (recording mode)")
+            } catch (e: Exception) {
+                isInitializing = false
+                Log.e(TAG_CAMERA, "❌ Camera initialization failed in recording mode", e)
+                Timber.e(e, "Camera initialization failed in recording mode")
+            }
+        }, ContextCompat.getMainExecutor(context))
+    }
+
+    /** Get the VideoCapture use case for starting/stopping recordings. */
+    fun getVideoCapture(): VideoCapture<Recorder>? = videoCapture
+
+    /** True when a VideoCapture is bound and the camera can record video. */
+    fun isReadyForRecording(): Boolean = videoCapture != null
+
+    /**
+     * Ensure the camera is bound in a recording mode (Preview + VideoCapture).
+     *
+     * Navigation/timing races can occasionally leave the shared camera bound in
+     * ANALYSIS_ONLY mode, so [getVideoCapture] returns null and post-exercise
+     * recording can't start. This self-heals by forcing a rebind into recording
+     * mode using the cached lifecycle owner and preview view.
+     *
+     * Binding is asynchronous — callers should poll [isReadyForRecording] /
+     * [getVideoCapture] after invoking this.
+     *
+     * @return true if a rebind was initiated (or already ready); false if it
+     *   couldn't be attempted because no preview/lifecycle has been bound yet.
+     */
+    fun ensureRecordingBinding(
+        videoRecordingManager: VideoRecordingManager,
+        withRepCounter: Boolean
+    ): Boolean {
+        if (videoCapture != null) return true
+        val owner = currentLifecycleOwner
+        val view = currentPreviewView
+        if (owner == null || view == null) {
+            Log.w(TAG_CAMERA, "Cannot rebind for recording: no cached lifecycle/preview view")
+            return false
+        }
+        Log.i(TAG_CAMERA, "VideoCapture missing — rebinding camera into recording mode (self-heal)")
+        stopCamera()
+        startCameraForRecording(
+            lifecycleOwner = owner,
+            previewView = view,
+            videoRecordingManager = videoRecordingManager,
+            withRepCounter = withRepCounter,
+            onFrameAnalyzed = if (withRepCounter) currentOnFrameAnalyzed else null,
+            useFrontCamera = currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+        )
+        return true
+    }
+
     fun stopCamera() {
         try {
             Log.d(TAG_CAMERA, "stopCamera() called - camera=$camera, isInitializing=$isInitializing")
@@ -312,6 +509,9 @@ class CameraManager @Inject constructor(
             }
 
             isInitializing = false
+            // Invalidate any provider-future listener still queued from a start
+            // that hasn't resolved yet, so it can't bind after we tear down.
+            bindGeneration++
             imageAnalysis?.clearAnalyzer()
             Log.d(TAG_CAMERA, "Cleared image analyzer")
 
@@ -321,6 +521,8 @@ class CameraManager @Inject constructor(
             camera = null
             imageAnalysis = null
             preview = null
+            videoCapture = null
+            currentMode = CameraMode.ANALYSIS_ONLY
 
             // Clear lens distortion intrinsics cache
             lensDistortionCorrector.clearCache()

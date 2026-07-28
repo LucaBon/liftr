@@ -23,6 +23,16 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        ndk {
+            // MediaPipe's vision native lib (libmediapipe_tasks_vision_jni.so)
+            // ships arm64-v8a, armeabi-v7a, and 32-bit x86 — but NOT x86_64.
+            // Bundling x86 (and omitting x86_64) lets x86_64 emulators run the
+            // 32-bit process, which has all required libs. Real devices keep
+            // using the arm builds. Without this the app crashes with an
+            // UnsatisfiedLinkError on x86_64 emulators.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86")
+        }
     }
 
     buildTypes {
@@ -74,10 +84,21 @@ android {
     }
 }
 
+// LiftDatabase sets exportSchema = true, but without this argument Room has
+// nowhere to write the schema JSON and silently skips it (build warning only).
+// The exported schemas are what MigrationTestHelper validates migrations
+// against; without them a broken migration is only discovered as a crash on a
+// user's device at first launch after upgrading.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     // Core Android
     implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
 
     // Compose
@@ -98,6 +119,7 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("androidx.camera:camera-video:$cameraxVersion")
 
     // MediaPipe
     implementation("com.google.mediapipe:tasks-vision:0.10.14")

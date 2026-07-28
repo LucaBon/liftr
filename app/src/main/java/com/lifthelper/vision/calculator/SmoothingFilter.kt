@@ -11,6 +11,12 @@ class KalmanFilter1D @Inject constructor() {
     private val measurementNoise = Constants.KALMAN_MEASUREMENT_NOISE
 
     fun update(measurement: Float): Float {
+        // A non-finite measurement would make the estimate Infinity, and the very
+        // next finite measurement turns it into NaN (Infinity - Infinity). NaN
+        // then survives every subsequent update and only clears on reset(), so
+        // one bad frame would silently disable tracking for the rest of the set.
+        if (!measurement.isFinite()) return estimate
+
         // Prediction step
         val predictionError = errorCovariance + processNoise
 

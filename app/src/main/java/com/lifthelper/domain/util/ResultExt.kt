@@ -1,12 +1,18 @@
 package com.lifthelper.domain.util
 
 import com.lifthelper.domain.error.LiftHelperError
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Maps the error of a Result to a different error type.
  *
  * If the Result is successful, it remains unchanged.
  * If the Result is a failure, the error is transformed using the provided function.
+ *
+ * Coroutine cancellation is rethrown rather than mapped: `runCatching` captures
+ * [CancellationException] like any other throwable, and converting it into a
+ * domain error would report a cancelled operation as a genuine failure while
+ * leaving the parent coroutine believing it was never cancelled.
  *
  * @param transform Function to transform the error
  * @return Result with transformed error
@@ -16,7 +22,11 @@ fun <T> Result<T>.mapError(
 ): Result<T> {
     return when {
         isSuccess -> this
-        else -> Result.failure(transform(exceptionOrNull()!!))
+        else -> {
+            val error = exceptionOrNull()!!
+            if (error is CancellationException) throw error
+            Result.failure(transform(error))
+        }
     }
 }
 

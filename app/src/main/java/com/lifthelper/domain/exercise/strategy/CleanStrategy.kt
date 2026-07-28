@@ -138,7 +138,7 @@ class CleanStrategy @Inject constructor(
             MovementPhase.IDLE ->
                 detectIdleToFirstPull(updatedState, currentWristsY, currentHipsY, poseResult.timestamp)
             MovementPhase.ECCENTRIC ->
-                detectFirstPullToSecondPull(updatedState, currentHipsY, poseResult.timestamp)
+                detectFirstPullToSecondPull(updatedState, currentWristsY, currentHipsY, poseResult.timestamp)
             MovementPhase.BOTTOM ->
                 detectSecondPullToCatch(updatedState, currentWristsY, poseResult.timestamp)
             MovementPhase.CONCENTRIC ->
@@ -212,6 +212,7 @@ class CleanStrategy @Inject constructor(
      */
     private fun detectFirstPullToSecondPull(
         state: ExercisePhaseState,
+        wristsY: Float?,
         hipsY: Float?,
         timestamp: Long
     ): PhaseTransitionResult {
@@ -237,8 +238,17 @@ class CleanStrategy @Inject constructor(
 
         logger.d(TAG, "FIRST_PULL: hipVelocity=${hipVelocity?.let { "%.2f m/s".format(it) } ?: "N/A"}")
 
-        // Update previous positions for velocity tracking
-        val updatedState = state.withPreviousPositions(hipsY = hipsY, timestamp = timestamp)
+        // Update previous positions for velocity tracking. The wrist position
+        // must be refreshed here too: withPreviousPositions keeps the stored
+        // value for any argument left out, so omitting it would carry the
+        // floor-level wrist Y from IDLE through the whole first pull. The first
+        // SECOND_PULL frame would then divide the entire pull displacement by a
+        // single frame interval and report a catch reversal of several m/s.
+        val updatedState = state.withPreviousPositions(
+            wristsY = wristsY ?: state.previousWristsY,
+            hipsY = hipsY,
+            timestamp = timestamp
+        )
 
         if (hipVelocity != null && hipVelocity > ExerciseThresholds.Clean.FIRST_TO_SECOND_PULL_HIP_VELOCITY) {
             logger.d(TAG, "Phase: ECCENTRIC/FIRST_PULL -> BOTTOM/SECOND_PULL (hipVelocity: %.2f m/s)".format(hipVelocity))
@@ -282,24 +292,20 @@ class CleanStrategy @Inject constructor(
         val previousWristsY = state.previousWristsY
         val previousTimestamp = state.previousTimestamp
 
-        // Calculate wrist velocity: negative = downward (catch reversal), positive = upward (still pulling)
+        // Wrist velocity, upward-positive — the same convention hip velocity uses
+        // above and that SnatchStrategy uses for peakPullVelocity. Image Y grows
+        // downward, so a rising wrist means wristsY decreased.
         val wristVelocity = if (previousWristsY != null && previousTimestamp != null) {
             val deltaTimeSeconds = (timestamp - previousTimestamp) / 1000f
             if (deltaTimeSeconds > 0f) {
-                // (currentY - previousY) / dt: negative = wrist moving up (Y decreased), positive = wrist moving down
-                // At catch, wrist starts moving DOWN as lifter drops under bar → positive value
-                // But the spec uses CATCH_WRIST_VELOCITY = -0.2f as threshold for downward reversal.
-                // Convention per spec: positive wrist velocity = downward, negative = upward.
-                // Frame-to-frame: (currentWristsY - previousWristsY) / deltaT
-                (wristsY - previousWristsY) / deltaTimeSeconds
+                (previousWristsY - wristsY) / deltaTimeSeconds
             } else null
         } else null
 
-        // Track peak upward pull velocity (most negative wrist velocity = fastest upward move)
+        // Peak pull velocity = fastest upward move = largest positive value.
         val currentPeakPullVelocity = state.peakPullVelocity
         val updatedPeakPullVelocity = if (wristVelocity != null) {
-            // Upward wrist velocity = negative wrist velocity value; track the most negative (fastest up)
-            if (currentPeakPullVelocity == null || wristVelocity < currentPeakPullVelocity) {
+            if (currentPeakPullVelocity == null || wristVelocity > currentPeakPullVelocity) {
                 wristVelocity
             } else currentPeakPullVelocity
         } else currentPeakPullVelocity
@@ -314,7 +320,9 @@ class CleanStrategy @Inject constructor(
 
         logger.d(TAG, "SECOND_PULL: wristVelocity=${wristVelocity?.let { "%.2f m/s".format(it) } ?: "N/A"}, peakPull=${updatedPeakPullVelocity?.let { "%.2f m/s".format(it) } ?: "N/A"}")
 
-        // Catch detected when wrist velocity crosses CATCH_WRIST_VELOCITY threshold (goes negative = downward reversal)
+        // Catch detected when the bar stops rising and reverses downward: with the
+        // upward-positive convention that is the velocity dropping below
+        // CATCH_WRIST_VELOCITY (-0.2 m/s, i.e. descending at 0.2 m/s).
         if (wristVelocity != null && wristVelocity < ExerciseThresholds.Clean.CATCH_WRIST_VELOCITY) {
             logger.d(TAG, "Phase: BOTTOM/SECOND_PULL -> CONCENTRIC/CATCH (wristVelocity: %.2f m/s)".format(wristVelocity))
             return PhaseTransitionResult(
@@ -562,7 +570,8 @@ class CleanStrategy @Inject constructor(
 
     override fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
 

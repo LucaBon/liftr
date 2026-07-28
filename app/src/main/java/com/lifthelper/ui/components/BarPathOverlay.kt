@@ -3,6 +3,7 @@ package com.lifthelper.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -36,17 +37,18 @@ fun BarPathOverlay(
 
         val firstPoint = barPathPoints.first()
 
-        // Draw dashed vertical reference line from first point's X
-        val refTop = OverlayCoordinateTransform.toCanvasOffset(
-            firstPoint.normalizedX, 0f, scaling, rotationDegrees, isFrontCamera
-        )
-        val refBottom = OverlayCoordinateTransform.toCanvasOffset(
-            firstPoint.normalizedX, 1f, scaling, rotationDegrees, isFrontCamera
+        // Dashed vertical reference line through the bar's starting position.
+        // It has to be built in canvas space: sweeping the image-space Y from 0
+        // to 1 at a fixed image-space X produces a line that the 90°/270°
+        // rotation turns on its side, drawing a horizontal line across the
+        // screen — which is what happened on every portrait workout.
+        val startRef = OverlayCoordinateTransform.toCanvasOffset(
+            firstPoint.normalizedX, firstPoint.normalizedY, scaling, rotationDegrees, isFrontCamera
         )
         drawLine(
             color = BarPathReference,
-            start = refTop,
-            end = refBottom,
+            start = Offset(startRef.x, scaling.offsetY),
+            end = Offset(startRef.x, scaling.offsetY + scaling.rotatedImageHeight * scaling.scale),
             strokeWidth = 2f,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
         )

@@ -33,6 +33,15 @@ interface IPoseDetector {
     fun getCurrentModel(): String
 
     /**
+     * Whether pose detection is usable on this device. Returns false when the
+     * underlying ML runtime (native library / model) could not be loaded — e.g.
+     * on emulator ABIs that lack the MediaPipe vision library. When false,
+     * [detectPose] is a no-op and callers should surface a friendly message
+     * rather than attempting camera-based tracking.
+     */
+    fun isAvailable(): Boolean = true
+
+    /**
      * Closes the pose detector and releases resources.
      */
     fun close()

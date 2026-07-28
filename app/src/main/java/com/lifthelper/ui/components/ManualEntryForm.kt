@@ -1,6 +1,7 @@
 package com.lifthelper.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,6 +13,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.lifthelper.R
+import com.lifthelper.ui.components.common.pressScale
+import com.lifthelper.ui.theme.Spacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,8 +45,8 @@ fun ManualEntryForm(
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
                 RoundedCornerShape(16.dp)
             )
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(Spacing.md),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         Text(
             text = stringResource(R.string.manual_entry_title),
@@ -90,7 +93,7 @@ fun ManualEntryForm(
         // Weight and Reps row
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             OutlinedTextField(
                 value = weightText,
@@ -120,6 +123,7 @@ fun ManualEntryForm(
         )
 
         // Log Set button
+        val logInteractionSource = remember { MutableInteractionSource() }
         Button(
             onClick = {
                 val weight = weightText.toFloatOrNull() ?: return@Button
@@ -131,7 +135,10 @@ fun ManualEntryForm(
                 notesText = ""
             },
             enabled = isValid,
-            modifier = Modifier.align(Alignment.End)
+            modifier = Modifier
+                .align(Alignment.End)
+                .pressScale(logInteractionSource),
+            interactionSource = logInteractionSource
         ) {
             Text(stringResource(R.string.manual_entry_log_set))
         }

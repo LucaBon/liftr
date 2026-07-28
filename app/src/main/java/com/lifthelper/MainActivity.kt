@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.OrientationEventListener
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -28,6 +29,9 @@ class MainActivity : ComponentActivity() {
     private var orientationEventListener: OrientationEventListener? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Must be installed before super.onCreate so the system swaps the
+        // launch (splash) theme for the post-splash app theme correctly.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
 
         // Restrict to standard orientations only (no inverted portrait/landscape)

@@ -8,17 +8,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 
 /**
- * Shared stat display component used across Workout, History, and Analytics screens.
- * Shows a numeric value above a descriptive label, center-aligned.
+ * Shared stat display used across Workout, History, and Analytics screens.
+ * Shows a bold performance number above an uppercase descriptive label,
+ * center-aligned. The value uses the display typeface for an athletic,
+ * data-forward feel.
  */
 @Composable
 fun StatItem(
     label: String,
     value: String,
-    valueStyle: TextStyle = MaterialTheme.typography.titleMedium,
-    valueColor: Color = Color.Unspecified,
+    valueStyle: TextStyle = MaterialTheme.typography.titleLarge,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
     labelColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -29,9 +32,10 @@ fun StatItem(
             color = valueColor
         )
         Text(
-            text = label,
+            text = label.uppercase(),
             style = MaterialTheme.typography.labelSmall,
-            color = labelColor
+            color = labelColor,
+            textAlign = TextAlign.Center
         )
     }
 }

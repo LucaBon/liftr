@@ -64,7 +64,15 @@ enum class VbtZone(
          */
         fun fromVelocity(velocity: MetersPerSecond): VbtZone {
             val v = velocity.abs().value
-            return entries.first { v >= it.minVelocity && v < it.maxVelocity }
+
+            // NaN fails every comparison and the fastest zone's upper bound is
+            // exclusive, so first{} would throw NoSuchElementException on NaN,
+            // on Float.MAX_VALUE and on infinity. Classify defensively instead:
+            // a non-finite velocity means the measurement is unusable, and
+            // anything at or beyond the top bound belongs in the fastest zone.
+            if (!v.isFinite()) return GRINDING
+            return entries.firstOrNull { v >= it.minVelocity && v < it.maxVelocity }
+                ?: entries.last()
         }
     }
 }

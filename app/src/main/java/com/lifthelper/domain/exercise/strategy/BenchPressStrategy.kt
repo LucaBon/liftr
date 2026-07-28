@@ -368,7 +368,8 @@ class BenchPressStrategy @Inject constructor(
 
     override fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
         val landmarks = poseResult.landmarks

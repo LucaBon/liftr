@@ -125,9 +125,10 @@ class CleanStrategyIntegrationTest {
         assertFalse(result.repCompleted)
         state = result.newState
 
-        // Frame 4 (t=1198): wrist velocity goes negative (still moving upward fast) → CONCENTRIC (catch)
-        // previousWristsY = 2.90 (frame 2/3), current = 2.50 (still rising)
-        // velocity = (2.50 - 2.90) / 0.066 = -6.06 m/s < -0.2 threshold
+        // Frame 4 (t=1198): bar still travelling UP fast — this must NOT be read
+        // as the catch. previousWristsY = 2.90 (frame 3), current = 2.50, so the
+        // upward velocity is (2.90 - 2.50) / 0.066 = +6.06 m/s, nowhere near the
+        // -0.2 m/s downward reversal threshold. Stays in SECOND_PULL.
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
             headY = 100f, shouldersY = 200f, hipsY = 480f, kneesY = 600f,
             wristsY = 675f, anklesY = 650f
@@ -135,21 +136,83 @@ class CleanStrategyIntegrationTest {
         every { positionCalculator.pixelsToMeters(675f, any(), any()) } returns 2.50f  // wrists continuing up fast
 
         result = strategy.detectPhase(createMockPoseResult(1198L), calibrationData, state)
+        assertEquals(MovementPhase.BOTTOM, result.newState.currentPhase)
+        assertFalse(result.repCompleted)
+        state = result.newState
+
+        // Frame 5 (t=1264): the bar peaks and reverses downward as the lifter
+        // drops under it and racks it — 2.50 → 2.56 (Y grows downward) is
+        // (2.50 - 2.56) / 0.066 = -0.91 m/s < -0.2 → CONCENTRIC (catch).
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 480f, kneesY = 600f,
+            wristsY = 681f, anklesY = 650f
+        )
+        every { positionCalculator.pixelsToMeters(681f, any(), any()) } returns 2.56f  // bar reverses downward
+
+        result = strategy.detectPhase(createMockPoseResult(1264L), calibrationData, state)
         assertEquals(MovementPhase.CONCENTRIC, result.newState.currentPhase)
         assertFalse(result.repCompleted)
         state = result.newState
 
-        // Frame 5 (t=1264): recovery — hips return near starting position (fallback path, low-visibility landmarks)
+        // Frame 6 (t=1330): recovery — hips return near starting position (fallback path, low-visibility landmarks)
         // startingHipsY = 2.00, currentHipsY = 2.05 → abs(2.05 - 2.00) = 0.05 <= 0.10 threshold
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
             headY = 100f, shouldersY = 200f, hipsY = 502f, kneesY = 600f,
-            wristsY = 675f, anklesY = 650f
+            wristsY = 681f, anklesY = 650f
         )
         every { positionCalculator.pixelsToMeters(502f, any(), any()) } returns 2.05f  // hips near starting
 
-        result = strategy.detectPhase(createMockPoseResult(1264L), calibrationData, state)
+        result = strategy.detectPhase(createMockPoseResult(1330L), calibrationData, state)
         assertEquals(MovementPhase.TOP, result.newState.currentPhase)
         assertTrue(result.repCompleted)
+    }
+
+    @Test
+    fun `peak pull velocity is recorded as a positive upward value`() {
+        // Regression guard for the inverted wrist-velocity convention: peak pull
+        // velocity is the fastest UPWARD travel, so it must come out positive.
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 600f,
+            wristsY = 700f, anklesY = 650f
+        )
+        every { positionCalculator.pixelsToMeters(any(), any(), any()) } returns 1.5f
+        every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.50f
+        every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.00f
+        every { positionCalculator.pixelsToMeters(500f, any(), any()) } returns 2.00f
+        every { positionCalculator.pixelsToMeters(600f, any(), any()) } returns 2.50f
+        every { positionCalculator.pixelsToMeters(700f, any(), any()) } returns 3.00f
+        every { positionCalculator.pixelsToMeters(650f, any(), any()) } returns 2.75f
+
+        var state = ExercisePhaseState.initial()
+        state = strategy.detectPhase(createMockPoseResult(1000L), calibrationData, state).newState
+
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 600f,
+            wristsY = 690f, anklesY = 650f
+        )
+        every { positionCalculator.pixelsToMeters(690f, any(), any()) } returns 2.90f
+        state = strategy.detectPhase(createMockPoseResult(1066L), calibrationData, state).newState
+
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 480f, kneesY = 600f,
+            wristsY = 690f, anklesY = 650f
+        )
+        every { positionCalculator.pixelsToMeters(480f, any(), any()) } returns 1.50f
+        state = strategy.detectPhase(createMockPoseResult(1132L), calibrationData, state).newState
+        assertEquals(MovementPhase.BOTTOM, state.currentPhase)
+
+        // Second pull: wrists rise 2.90 → 2.50 over 66 ms.
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 480f, kneesY = 600f,
+            wristsY = 675f, anklesY = 650f
+        )
+        every { positionCalculator.pixelsToMeters(675f, any(), any()) } returns 2.50f
+        state = strategy.detectPhase(createMockPoseResult(1198L), calibrationData, state).newState
+
+        val peak = state.peakPullVelocity
+        assertNotNull(peak)
+        assertTrue("Peak pull velocity should be positive (upward), was $peak", peak!! > 0f)
+        assertEquals(6.06f, peak, 0.2f)
     }
 
     @Test

@@ -1,5 +1,8 @@
 package com.lifthelper.ui.screens.analytics
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,12 +20,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lifthelper.R
 import com.lifthelper.ui.components.common.StatItem
+import com.lifthelper.ui.theme.Spacing
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.TimeRange
 import com.lifthelper.domain.model.Workout
@@ -34,7 +39,7 @@ import com.lifthelper.ui.components.charts.VolumeTonnageChart
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AnalyticsScreen(
     onNavigateBack: () -> Unit,
@@ -48,7 +53,10 @@ fun AnalyticsScreen(
                 title = { Text(stringResource(R.string.analytics_title)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.content_desc_back)
+                        )
                     }
                 }
             )
@@ -71,7 +79,7 @@ fun AnalyticsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
-                        .padding(24.dp),
+                        .padding(Spacing.lg),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -89,12 +97,19 @@ fun AnalyticsScreen(
 
             else -> {
                 val summary = uiState.summary!!
+                // One-time fade-in so charts and cards settle in gently after
+                // the navigation transition rather than snapping into place.
+                val contentAlpha = remember { Animatable(0f) }
+                LaunchedEffect(Unit) {
+                    contentAlpha.animateTo(1f, animationSpec = tween(durationMillis = 450))
+                }
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(paddingValues),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(paddingValues)
+                        .alpha(contentAlpha.value),
+                    contentPadding = PaddingValues(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
                     // Exercise filter chips
                     item {
@@ -198,7 +213,7 @@ fun AnalyticsScreen(
                                 Text(
                                     text = stringResource(R.string.analytics_select_exercise),
                                     style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(16.dp),
+                                    modifier = Modifier.padding(Spacing.md),
                                     textAlign = TextAlign.Center,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -215,7 +230,12 @@ fun AnalyticsScreen(
                         )
                         }
                         items(summary.recentWorkouts, key = { it.id }) { workout ->
-                            RecentWorkoutCard(workout = workout)
+                            RecentWorkoutCard(
+                                workout = workout,
+                                modifier = Modifier.animateItemPlacement(
+                                    animationSpec = tween(durationMillis = 300)
+                                )
+                            )
                         }
                     }
                 }
@@ -226,11 +246,16 @@ fun AnalyticsScreen(
 
 @Composable
 private fun EmptyAnalytics(paddingValues: PaddingValues) {
+    val alpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        alpha.animateTo(1f, animationSpec = tween(durationMillis = 450))
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(paddingValues)
-            .padding(24.dp),
+            .padding(Spacing.lg)
+            .alpha(alpha.value),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -240,13 +265,13 @@ private fun EmptyAnalytics(paddingValues: PaddingValues) {
             modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(Spacing.md))
         Text(
             text = stringResource(R.string.analytics_title),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(Spacing.sm))
         Text(
             text = stringResource(R.string.analytics_no_data),
             style = MaterialTheme.typography.bodyMedium,
@@ -265,7 +290,7 @@ private fun ExerciseFilterRow(
 
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         FilterChip(
             selected = selectedExercise == null,
@@ -289,7 +314,7 @@ private fun TimeRangeSelector(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
         TimeRange.entries.forEach { range ->
             FilterChip(
@@ -308,16 +333,25 @@ private fun SummaryStatsRow(
     totalSets: Int,
     totalReps: Int
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(Spacing.lg),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            StatItem(label = "Workouts", value = "$totalWorkouts")
-            StatItem(label = "Sets", value = "$totalSets")
-            StatItem(label = "Reps", value = "$totalReps")
+            StatItem(
+                label = stringResource(R.string.analytics_stat_workouts),
+                value = "$totalWorkouts",
+                valueColor = MaterialTheme.colorScheme.primary
+            )
+            StatItem(label = stringResource(R.string.home_stat_sets), value = "$totalSets")
+            StatItem(label = stringResource(R.string.home_stat_reps), value = "$totalReps")
         }
     }
 }
@@ -331,7 +365,7 @@ private fun SectionHeader(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         icon?.invoke()
         Text(
@@ -342,31 +376,35 @@ private fun SectionHeader(
 }
 
 @Composable
-private fun RecentWorkoutCard(workout: Workout) {
+private fun RecentWorkoutCard(workout: Workout, modifier: Modifier = Modifier) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy  HH:mm", Locale.getDefault()) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(Spacing.md)) {
             Text(
                 text = dateFormat.format(workout.date),
                 style = MaterialTheme.typography.titleMedium
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(Spacing.sm))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                StatItem(label = "Sets", value = "${workout.sets.size}")
-                StatItem(label = "Reps", value = "${workout.getTotalReps()}")
-                StatItem(label = "Avg Vel", value = "%.2f m/s".format(workout.getAverageVelocity().value))
+                StatItem(label = stringResource(R.string.home_stat_sets), value = "${workout.sets.size}")
+                StatItem(label = stringResource(R.string.home_stat_reps), value = "${workout.getTotalReps()}")
+                StatItem(
+                    label = stringResource(R.string.home_stat_avg_vel),
+                    value = "%.2f".format(workout.getAverageVelocity().value),
+                    valueColor = MaterialTheme.colorScheme.primary
+                )
             }
 
             if (workout.sets.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Spacing.sm))
                 HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(Spacing.sm))
 
                 workout.sets.forEachIndexed { index, set ->
                     Text(

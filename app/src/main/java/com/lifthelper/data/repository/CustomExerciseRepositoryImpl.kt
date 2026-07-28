@@ -66,13 +66,21 @@ class CustomExerciseRepositoryImpl @Inject constructor(
         if (trimmed.isBlank()) return
 
         dataStore.edit { preferences ->
-            val current = preferences[KEY_CUSTOM_EXERCISES]?.let {
+            val stored = preferences[KEY_CUSTOM_EXERCISES]
+            val current = if (stored == null) {
+                DEFAULT_ACCESSORIES
+            } else {
                 try {
-                    json.decodeFromString<List<String>>(it)
+                    json.decodeFromString<List<String>>(stored)
                 } catch (_: Exception) {
-                    DEFAULT_ACCESSORIES.toMutableList()
+                    // Do NOT fall back to the defaults here. Writing
+                    // defaults + the new name would overwrite the stored value
+                    // and destroy the user's list for good, turning a transient
+                    // read problem into permanent data loss. Leave the stored
+                    // value untouched and skip this addition instead.
+                    return@edit
                 }
-            } ?: DEFAULT_ACCESSORIES.toMutableList()
+            }
 
             // Case-insensitive deduplication
             if (current.none { it.equals(trimmed, ignoreCase = true) }) {

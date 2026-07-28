@@ -62,14 +62,19 @@ object OverlayCoordinateTransform {
      * @return Transformed (x, y) pair in rotated coordinate space (0.0-1.0)
      */
     fun transformCoordinates(x: Float, y: Float, rotation: Int, isFrontCamera: Boolean): Pair<Float, Float> {
-        val mirroredX = if (isFrontCamera) 1f - x else x
-
-        return when (rotation) {
-            90 -> Pair(1f - y, mirroredX)
-            180 -> Pair(1f - mirroredX, 1f - y)
-            270 -> Pair(y, 1f - mirroredX)
-            else -> Pair(mirroredX, y)
+        // Rotate first, mirror second. PreviewView mirrors the front camera
+        // horizontally in *display* space, so the flip belongs on the display X
+        // axis. Flipping the buffer's X before a 90°/270° rotation turns it into
+        // a display-vertical flip, which left front-camera overlays mirrored on
+        // the wrong axis (0°/180° happened to agree, hiding the bug).
+        val (rotatedX, rotatedY) = when (rotation) {
+            90 -> Pair(1f - y, x)
+            180 -> Pair(1f - x, 1f - y)
+            270 -> Pair(y, 1f - x)
+            else -> Pair(x, y)
         }
+
+        return if (isFrontCamera) Pair(1f - rotatedX, rotatedY) else Pair(rotatedX, rotatedY)
     }
 
     /**

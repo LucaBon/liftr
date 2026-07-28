@@ -28,6 +28,9 @@ data class WorkoutState(
     val isRecording: Boolean = false,
     val error: UiError? = null,
     val isLoading: Boolean = false,
+    // False when on-device pose detection couldn't initialize (e.g. unsupported
+    // ABI). Camera tracking is disabled and the UI explains; manual entry still works.
+    val poseDetectionAvailable: Boolean = true,
     val targetVelocityRange: ClosedFloatingPointRange<Float>? = null,
     val calibrationQuality: CalibrationQuality = CalibrationQuality.NONE,
     val vbtZone: VbtZone? = null,
@@ -41,6 +44,7 @@ data class WorkoutState(
     // and is cleared to `null` when the next rep starts or after a short delay.
     val lastRepDepthOk: Boolean? = null,
     val lastSetSummary: SetSummary? = null,
+    val isSetSummaryVisible: Boolean = false,
     val completedSetCount: Int = 0,
     val newPersonalRecords: List<PersonalRecord> = emptyList(),
     val workoutSaved: Boolean = false,
@@ -54,5 +58,52 @@ data class WorkoutState(
     val tempoModeEnabled: Boolean = false,
     val tempoPrescription: TempoPrescription? = null,
     val tempoState: TempoState? = null,
-    val tempoCue: TempoCue? = null
+    val tempoCue: TempoCue? = null,
+    // Post-exercise analysis (Feature 17)
+    val analysisMode: AnalysisMode = AnalysisMode.POST_EXERCISE,
+    val repCounterEnabled: Boolean = false,
+    val isVideoRecording: Boolean = false,
+    val recordingElapsedSeconds: Int = 0,
+    val analysisProgress: AnalysisProgress? = null,
+    // When true the compact banner is hidden but analysis keeps running.
+    val analysisProgressDismissed: Boolean = false,
+    val analysisError: String? = null,
+    // Playable set video (raw recording or annotated export when enabled).
+    val annotatedVideo: AnnotatedVideoInfo? = null,
+    val playbackIsAnnotated: Boolean = false,
+    val videoMessage: String? = null,
+    // One-shot snackbar when analysis finishes while the banner was dismissed.
+    val analysisCompleteMessage: String? = null
+)
+
+/**
+ * Metadata for a freshly rendered annotated workout video (Feature 09).
+ *
+ * @property path Absolute path to the app-private MP4
+ * @property sizeBytes File size used to show an estimate in the preview card
+ */
+data class AnnotatedVideoInfo(
+    val path: String,
+    val sizeBytes: Long
+)
+
+/**
+ * Which analysis pipeline a tracked set uses.
+ */
+enum class AnalysisMode {
+    /** Legacy: lite model runs on every frame during the set. */
+    REAL_TIME,
+
+    /** Default: record video during the set, analyze afterwards with the heavy model. */
+    POST_EXERCISE
+}
+
+/**
+ * Progress of the post-exercise analysis, surfaced as a dismissible banner.
+ */
+data class AnalysisProgress(
+    val currentFrame: Int,
+    val totalFrames: Int,
+    val percentComplete: Float,
+    val currentRep: Int
 )

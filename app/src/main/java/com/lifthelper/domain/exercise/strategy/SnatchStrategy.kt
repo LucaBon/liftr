@@ -142,12 +142,14 @@ class SnatchStrategy @Inject constructor(
         // Snatch phase order: IDLE -> ECCENTRIC (FIRST_PULL) -> BOTTOM (SECOND_PULL)
         //                     -> CONCENTRIC (CATCH/OVERHEAD_STABILIZE) -> TOP (LOCKOUT) -> IDLE
         return when (updatedState.currentPhase) {
-            MovementPhase.IDLE -> detectIdleToFirstPull(updatedState, currentWristsY, currentHipsY)
+            MovementPhase.IDLE -> detectIdleToFirstPull(
+                updatedState, currentWristsY, currentHipsY, poseResult.timestamp
+            )
             MovementPhase.ECCENTRIC -> detectFirstPullToSecondPull(
-                updatedState, currentHipsY, currentWristsY
+                updatedState, currentHipsY, currentWristsY, poseResult.timestamp
             )
             MovementPhase.BOTTOM -> detectSecondPullToCatch(
-                updatedState, currentWristsY, currentHeadY, currentHipsY
+                updatedState, currentWristsY, currentHeadY, currentHipsY, poseResult.timestamp
             )
             MovementPhase.CONCENTRIC -> detectCatchToLockout(
                 updatedState, currentHipsY, currentWristsY, currentHeadY, poseResult
@@ -165,7 +167,8 @@ class SnatchStrategy @Inject constructor(
     private fun detectIdleToFirstPull(
         state: ExercisePhaseState,
         wristsY: Float?,
-        hipsY: Float?
+        hipsY: Float?,
+        timestamp: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -179,9 +182,9 @@ class SnatchStrategy @Inject constructor(
         if (state.startingHipsY == null) {
             val newState = state
                 .withStartingPosition(state.currentHeadY, state.currentShouldersY, hipsY)
+                .withStartingWristsY(wristsY)
                 .withHighestHipsY(hipsY)
-                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY,
-                    timestamp = System.currentTimeMillis())
+                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestamp)
 
             logger.d(TAG, "Starting position set: wristsY=%.2f m, hipsY=%.2f m"
                 .format(wristsY, hipsY ?: Float.NaN))
@@ -196,11 +199,15 @@ class SnatchStrategy @Inject constructor(
         val newState = state.withPreviousPositions(
             wristsY = wristsY,
             hipsY = hipsY,
-            timestamp = System.currentTimeMillis()
+            timestamp = timestamp
         )
 
-        // Wrists rise = Y decreases (smaller Y = higher position)
-        val startingWristsY = state.previousWristsY ?: wristsY
+        // Wrists rise = Y decreases (smaller Y = higher position).
+        // Measured against the bar's resting position captured when the lift was
+        // armed — NOT against the previous frame, which is refreshed every IDLE
+        // frame and would require the whole threshold to be cleared within a
+        // single frame interval (~0.75 m/s just to leave IDLE).
+        val startingWristsY = state.startingWristsY ?: wristsY
         val wristRise = startingWristsY - wristsY
 
         if (wristRise > ExerciseThresholds.Snatch.IDLE_TO_FIRST_PULL_THRESHOLD) {
@@ -208,7 +215,7 @@ class SnatchStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
-                    .withOlympicLiftData(firstPullStartTime = System.currentTimeMillis()),
+                    .withOlympicLiftData(firstPullStartTime = timestamp),
                 repCompleted = false,
                 debugInfo = "First pull started: %.2f m wrist rise".format(wristRise)
             )
@@ -231,7 +238,8 @@ class SnatchStrategy @Inject constructor(
     private fun detectFirstPullToSecondPull(
         state: ExercisePhaseState,
         hipsY: Float?,
-        wristsY: Float?
+        wristsY: Float?,
+        now: Long
     ): PhaseTransitionResult {
         if (hipsY == null) {
             return PhaseTransitionResult(
@@ -241,7 +249,6 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val now = System.currentTimeMillis()
         val previousHipsY = state.previousHipsY
         val previousTimestamp = state.previousTimestamp
 
@@ -296,7 +303,8 @@ class SnatchStrategy @Inject constructor(
         state: ExercisePhaseState,
         wristsY: Float?,
         headY: Float?,
-        hipsY: Float?
+        hipsY: Float?,
+        now: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -306,7 +314,6 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val now = System.currentTimeMillis()
         val previousHipsY = state.previousHipsY
         val previousTimestamp = state.previousTimestamp
 
@@ -329,8 +336,12 @@ class SnatchStrategy @Inject constructor(
         val caughtOverhead = if (headY != null) {
             (headY - wristsY) >= ExerciseThresholds.Snatch.CATCH_WRIST_ABOVE_HEAD
         } else {
-            // Fallback: assume catch if wrists have risen significantly from starting position
-            val startingWristsY = state.previousWristsY
+            // Fallback when the head landmark is occluded: assume the catch once
+            // the wrists have risen well above the bar's resting position.
+            // Must be measured from the armed starting position — comparing
+            // against the previous frame would demand 0.3 m of travel inside a
+            // single frame, so the lift would stay stuck in SECOND_PULL forever.
+            val startingWristsY = state.startingWristsY
             startingWristsY != null && (startingWristsY - wristsY) > 0.3f
         }
 
@@ -483,7 +494,8 @@ class SnatchStrategy @Inject constructor(
 
     override fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
 

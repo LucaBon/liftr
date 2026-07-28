@@ -172,6 +172,34 @@ class DeadliftStrategy @Inject constructor(
             )
         }
 
+        // Re-baseline while still idle whenever the hips settle lower than the
+        // recorded start (larger Y = lower). A deadlift begins from the bottom,
+        // so the true setup is the lowest hip position seen before the pull.
+        // Without this, recording that starts while the lifter is standing locks
+        // the baseline at standing height — the hips can then never rise far
+        // enough above it to arm the pull and the whole set counts zero reps.
+        if (hipsY > state.startingHipsY) {
+            val rebaselinedTorsoAngle = if (state.currentShouldersX != null &&
+                state.currentHipsX != null && state.currentShouldersY != null) {
+                coordinateCalculator.torsoAngle(
+                    shoulderX = state.currentShouldersX,
+                    shoulderY = state.currentShouldersY,
+                    hipX = state.currentHipsX,
+                    hipY = hipsY
+                )
+            } else state.startingTorsoAngle
+
+            logger.d(TAG, "Re-baselined start: hips %.2f -> %.2f m".format(state.startingHipsY, hipsY))
+            return PhaseTransitionResult(
+                newState = state
+                    .withStartingPosition(state.currentHeadY, state.currentShouldersY, hipsY)
+                    .withHighestHipsY(hipsY)
+                    .withStartingTorsoAngle(rebaselinedTorsoAngle),
+                repCompleted = false,
+                debugInfo = "Setup position lowered"
+            )
+        }
+
         val startingHipsY = state.startingHipsY
 
         // Deadlift starts from the floor — hips move UP (Y decreases in our coord system
@@ -442,11 +470,12 @@ class DeadliftStrategy @Inject constructor(
 
     override fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
 
-        checkBackRounding(poseResult)?.let { issues.add(it) }
+        checkBackRounding(poseResult, currentState?.startingTorsoAngle)?.let { issues.add(it) }
         checkLockoutCompleteness(poseResult)?.let { issues.add(it) }
         checkBarDrift(poseResult, calibrationData)?.let { issues.add(it) }
 
@@ -461,7 +490,16 @@ class DeadliftStrategy @Inject constructor(
      * Compares current torso angle with starting angle — if it increases by more
      * than the threshold, the lifter's back is rounding under load.
      */
-    private fun checkBackRounding(poseResult: PoseResult): FormIssue? {
+    private fun checkBackRounding(
+        poseResult: PoseResult,
+        startingTorsoAngle: Float?
+    ): FormIssue? {
+        // Without the setup angle there is no baseline to compare against, and
+        // absolute torso lean says nothing about rounding: a correct conventional
+        // deadlift sets up at 45-70° from vertical, so any absolute threshold in
+        // that range fires on every well-executed rep.
+        if (startingTorsoAngle == null) return null
+
         val landmarks = poseResult.landmarks
 
         val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
@@ -482,22 +520,26 @@ class DeadliftStrategy @Inject constructor(
 
         val currentAngle = coordinateCalculator.torsoAngle(shoulderX, shoulderY, hipX, hipY)
 
-        // A significant forward lean angle suggests back rounding
-        // Since we're using raw landmark coordinates here (not calibrated),
-        // use absolute thresholds for the angle
-        return if (currentAngle > 60f) {
-            FormIssue(
+        // Rounding shows up as the torso tipping further forward than it was at
+        // setup while the bar is moving — the hips rising faster than the chest.
+        // Both angles come from landmark coordinates whose X and Y share one
+        // scale factor, so they are directly comparable.
+        val angleIncrease = currentAngle - startingTorsoAngle
+        val threshold = ExerciseThresholds.Deadlift.BACK_ROUNDING_THRESHOLD
+
+        return when {
+            angleIncrease > threshold -> FormIssue(
                 severity = Severity.CRITICAL,
-                message = "Back rounding detected",
+                message = "Back rounding detected (${angleIncrease.toInt()}° more than setup)",
                 suggestion = "Keep chest up and back flat"
             )
-        } else if (currentAngle > 45f) {
-            FormIssue(
+            angleIncrease > threshold * 0.6f -> FormIssue(
                 severity = Severity.WARNING,
-                message = "Excessive forward lean",
+                message = "Torso tipping forward under load (${angleIncrease.toInt()}°)",
                 suggestion = "Engage lats and keep chest proud"
             )
-        } else null
+            else -> null
+        }
     }
 
     /**

@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Near-black background with a subtle radial lift toward the center,
+         giving the icon depth on dark and light launchers alike. -->
+    <path android:pathData="M0,0 H108 V108 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="48"
+                android:gradientRadius="78"
+                android:startColor="#FF16191D"
+                android:endColor="#FF08090B" />
+        </aapt:attr>
+    </path>
+</vector>

@@ -27,8 +27,13 @@ import com.lifthelper.domain.value.Kilograms
 import com.lifthelper.domain.value.Meters
 import com.lifthelper.domain.value.MetersPerSecond
 import com.lifthelper.domain.value.RepCount
+import com.lifthelper.domain.vision.IPoseDetector
+import com.lifthelper.data.export.VideoShareManager
 import com.lifthelper.ui.screens.workout.WorkoutViewModel
+import com.lifthelper.vision.camera.CameraManager
+import com.lifthelper.vision.camera.VideoRecordingManager
 import com.lifthelper.vision.tracking.MovementPhase
+import android.content.Context
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -66,6 +71,11 @@ class WorkoutViewModelFeedbackTest {
     private lateinit var customExerciseRepository: CustomExerciseRepository
     private lateinit var calibrationRepository: CalibrationRepository
     private lateinit var settingsRepository: SettingsRepository
+    private lateinit var videoRecordingManager: VideoRecordingManager
+    private lateinit var videoShareManager: VideoShareManager
+    private lateinit var cameraManager: CameraManager
+    private lateinit var poseDetector: IPoseDetector
+    private lateinit var context: Context
     private lateinit var logger: Logger
     private lateinit var viewModel: WorkoutViewModel
 
@@ -90,6 +100,12 @@ class WorkoutViewModelFeedbackTest {
         customExerciseRepository = mockk()
         calibrationRepository = mockk()
         settingsRepository = mockk()
+        videoRecordingManager = mockk(relaxed = true)
+        videoShareManager = mockk(relaxed = true)
+        cameraManager = mockk(relaxed = true)
+        poseDetector = mockk(relaxed = true)
+        every { poseDetector.isAvailable() } returns true
+        context = mockk(relaxed = true)
         logger = mockk(relaxed = true)
 
         // Default settings flows
@@ -105,6 +121,8 @@ class WorkoutViewModelFeedbackTest {
         every { settingsRepository.getStringSetting("feedback_language", any()) } returns flowOf("SYSTEM")
         every { settingsRepository.getStringSetting("feedback_verbosity", any()) } returns flowOf("MINIMAL")
         every { settingsRepository.getStringSetting("feedback_tts_engine", "") } returns flowOf("")
+        every { settingsRepository.getStringSetting("analysis_mode", any()) } returns flowOf("post_exercise")
+        every { settingsRepository.getBooleanSetting("lightweight_rep_counter", false) } returns flowOf(false)
         every { customExerciseRepository.getExerciseNames() } returns flowOf(emptyList())
 
         viewModel = WorkoutViewModel(
@@ -117,6 +135,11 @@ class WorkoutViewModelFeedbackTest {
             calibrationRepository = calibrationRepository,
             settingsRepository = settingsRepository,
             feedbackEmitter = feedbackEmitter,
+            videoRecordingManager = videoRecordingManager,
+            videoShareManager = videoShareManager,
+            cameraManager = cameraManager,
+            poseDetector = poseDetector,
+            context = context,
             logger = logger,
             savedStateHandle = SavedStateHandle()
         )
@@ -153,6 +176,11 @@ class WorkoutViewModelFeedbackTest {
             calibrationRepository = calibrationRepository,
             settingsRepository = settingsRepository,
             feedbackEmitter = feedbackEmitter,
+            videoRecordingManager = videoRecordingManager,
+            videoShareManager = videoShareManager,
+            cameraManager = cameraManager,
+            poseDetector = poseDetector,
+            context = context,
             logger = logger,
             savedStateHandle = SavedStateHandle()
         )

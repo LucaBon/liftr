@@ -83,4 +83,29 @@ object SettingsKeys {
      * the "Replay Tutorial" entry in Settings.
      */
     const val ONBOARDING_COMPLETED = "onboarding_completed"
+
+    /**
+     * Analysis mode for tracked sets (Feature 17).
+     * String value: "post_exercise" (default) or "real_time" (legacy).
+     */
+    const val ANALYSIS_MODE = "analysis_mode"
+
+    /** Value for [ANALYSIS_MODE]: record video then analyze with the heavy model. */
+    const val ANALYSIS_MODE_POST_EXERCISE = "post_exercise"
+
+    /** Value for [ANALYSIS_MODE]: legacy per-frame real-time analysis. */
+    const val ANALYSIS_MODE_REAL_TIME = "real_time"
+
+    /**
+     * Whether to run a lightweight lite-model rep counter during post-exercise
+     * recording. Boolean, default false (recording-only for best video quality).
+     */
+    const val LIGHTWEIGHT_REP_COUNTER = "lightweight_rep_counter"
+
+    /**
+     * Whether to render a shareable annotated workout video (skeleton + velocity
+     * + rep counter burned in) after post-exercise analysis (Feature 09).
+     * Boolean, default false (opt-in — adds render time and storage use).
+     */
+    const val SAVE_ANNOTATED_VIDEO = "save_annotated_video"
 }

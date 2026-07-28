@@ -1,5 +1,6 @@
 package com.lifthelper.feedback
 
+import timber.log.Timber
 import android.content.Context
 import android.content.res.Configuration
 import android.media.AudioManager
@@ -80,10 +81,20 @@ class FeedbackManager @Inject constructor(
         appContext.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
-    private val toneGenerator: ToneGenerator = ToneGenerator(
-        AudioManager.STREAM_MUSIC,
-        ToneGenerator.MAX_VOLUME
-    )
+    /**
+     * Built lazily and defensively: the ToneGenerator constructor throws
+     * RuntimeException("Init failed") when the media server cannot allocate a
+     * tone resource. As an eagerly-initialised field of a @Singleton that
+     * exception escapes Hilt construction and crashes the app the first time
+     * anything injects feedback. Audio cues are optional, so degrade to silence.
+     */
+    private val toneGenerator: ToneGenerator? by lazy {
+        runCatching {
+            ToneGenerator(AudioManager.STREAM_MUSIC, ToneGenerator.MAX_VOLUME)
+        }.onFailure {
+            Timber.w(it, "ToneGenerator unavailable, tone cues disabled")
+        }.getOrNull()
+    }
 
     // ── IFeedbackEmitter ──────────────────────────────────────────────
 
@@ -213,7 +224,7 @@ class FeedbackManager @Inject constructor(
     override fun shutdown() {
         runCatching { tts.stop() }
         runCatching { tts.shutdown() }
-        toneGenerator.release()
+        runCatching { toneGenerator?.release() }
     }
 
     // ── TTS bootstrap ─────────────────────────────────────────────────
@@ -272,7 +283,8 @@ class FeedbackManager @Inject constructor(
 
     private fun playTone() {
         if (!audioEnabled.get()) return
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+        val generator = toneGenerator ?: return
+        runCatching { generator.startTone(ToneGenerator.TONE_PROP_BEEP, 150) }
     }
 
     // ── Haptic helpers ────────────────────────────────────────────────

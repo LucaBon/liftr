@@ -62,11 +62,17 @@ interface ExerciseStrategy {
      *
      * @param poseResult Current pose detection result
      * @param calibrationData User calibration data
+     * @param currentState Phase state for the rep being validated, when the
+     *   caller has it. Checks that are only meaningful relative to the start of
+     *   the rep (e.g. how far the torso angle has changed since the setup
+     *   position) need this; checks that read a single frame ignore it. Null
+     *   means those relative checks are skipped rather than guessed at.
      * @return Form validation result with issues and suggestions
      */
     fun validateForm(
         poseResult: PoseResult,
-        calibrationData: CalibrationData
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState? = null
     ): FormValidationResult
 
     /**

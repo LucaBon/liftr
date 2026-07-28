@@ -1,6 +1,7 @@
 package com.lifthelper.domain.usecase
 
 import com.lifthelper.domain.exercise.ExerciseMetrics
+import com.lifthelper.domain.exercise.ExercisePhaseState
 import com.lifthelper.domain.exercise.ExerciseStrategyFactory
 import com.lifthelper.domain.exercise.FormIssue
 import com.lifthelper.domain.exercise.FormValidationResult
@@ -11,6 +12,8 @@ import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.PoseResult
 import com.lifthelper.domain.model.VelocityData
 import com.lifthelper.domain.value.Kilograms
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -32,7 +35,13 @@ class AnalyzeRepUseCase @Inject constructor(
         val calibrationData: CalibrationData,
         val weight: Kilograms,
         val bufferedPoses: List<PoseResult>,
-        val finalVelocityData: VelocityData?
+        val finalVelocityData: VelocityData?,
+        /**
+         * Phase state of the rep being analysed. Form checks that are only
+         * meaningful relative to the start of the rep (e.g. deadlift back
+         * rounding, measured against the setup torso angle) need it.
+         */
+        val phaseState: ExercisePhaseState? = null
     )
 
     data class Result(
@@ -40,9 +49,14 @@ class AnalyzeRepUseCase @Inject constructor(
         val exerciseMetrics: ExerciseMetrics?
     )
 
-    operator fun invoke(params: Params): Result {
+    /**
+     * Replays the whole buffered rep through the strategy's form/metric passes,
+     * so it runs on [Dispatchers.Default] — callers invoke it from
+     * `viewModelScope` (Main) at rep completion, mid-set.
+     */
+    suspend operator fun invoke(params: Params): Result = withContext(Dispatchers.Default) {
         if (params.bufferedPoses.isEmpty()) {
-            return Result(
+            return@withContext Result(
                 formValidation = FormValidationResult(isValid = true, issues = emptyList()),
                 exerciseMetrics = null
             )
@@ -54,7 +68,7 @@ class AnalyzeRepUseCase @Inject constructor(
         val seenMessages = mutableSetOf<String>()
         for (pose in params.bufferedPoses) {
             try {
-                val result = strategy.validateForm(pose, params.calibrationData)
+                val result = strategy.validateForm(pose, params.calibrationData, params.phaseState)
                 for (issue in result.issues) {
                     if (seenMessages.add(issue.message)) {
                         aggregatedIssues.add(issue)
@@ -79,7 +93,7 @@ class AnalyzeRepUseCase @Inject constructor(
                 .getOrNull()
         } else null
 
-        return Result(formValidation = formValidation, exerciseMetrics = metrics)
+        Result(formValidation = formValidation, exerciseMetrics = metrics)
     }
 
     companion object {

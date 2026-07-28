@@ -22,7 +22,10 @@ import com.lifthelper.domain.vision.IPoseDetector
 import com.lifthelper.domain.vision.IPositionCalculator
 import com.lifthelper.domain.vision.IVelocityCalculator
 import com.lifthelper.vision.tracking.MovementPhase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -46,15 +49,34 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
 
     companion object {
         private const val TAG = "ProcessFrameUseCase"
+
+        /**
+         * Frame work (bitmap conversion, rotation, MediaPipe inference) must
+         * never run on the caller's thread — callers dispatch from
+         * `viewModelScope`, i.e. `Dispatchers.Main.immediate`, which would put
+         * ML inference on the UI thread.
+         *
+         * Parallelism is limited to 1 so successive frames stay serialized:
+         * [IPoseDetector] keeps per-frame state (cached result, last timestamp)
+         * that assumes one frame in flight at a time.
+         */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        private val frameDispatcher = Dispatchers.Default.limitedParallelism(1)
     }
 
     /**
      * Processes a camera frame for workout tracking.
      *
+     * Always runs on [frameDispatcher]; the [ImageProxy] is closed exactly once
+     * before returning, on every path including cancellation.
+     *
      * @param params Parameters including image, calibration, and current state
      * @return Result of frame processing
      */
-    override suspend fun invoke(params: Params): FrameProcessingResult {
+    override suspend fun invoke(params: Params): FrameProcessingResult =
+        withContext(frameDispatcher) { process(params) }
+
+    private suspend fun process(params: Params): FrameProcessingResult {
         try {
             // 1. Convert ImageProxy to CameraFrame and detect pose
             val cameraFrame = com.lifthelper.vision.adapter.ImageProxyAdapter.toCameraFrame(params.imageProxy)

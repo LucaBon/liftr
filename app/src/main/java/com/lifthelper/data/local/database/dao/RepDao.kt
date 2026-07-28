@@ -27,10 +27,13 @@ interface RepDao {
 
     // Analytics queries
 
+    // Manual sets are excluded: they carry a placeholder exerciseType and no
+    // tracked rep data, so they must not compete for velocity/quality records.
+
     @Query("""
         SELECT r.* FROM reps r
         INNER JOIN sets s ON r.setId = s.id
-        WHERE s.exerciseType = :exerciseType
+        WHERE s.exerciseType = :exerciseType AND s.isManual = 0
         ORDER BY r.peakVelocity DESC
         LIMIT 1
     """)
@@ -39,7 +42,7 @@ interface RepDao {
     @Query("""
         SELECT r.* FROM reps r
         INNER JOIN sets s ON r.setId = s.id
-        WHERE s.exerciseType = :exerciseType
+        WHERE s.exerciseType = :exerciseType AND s.isManual = 0
         ORDER BY r.qualityScore DESC
         LIMIT 1
     """)

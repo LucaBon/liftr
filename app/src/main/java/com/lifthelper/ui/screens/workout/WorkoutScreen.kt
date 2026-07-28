@@ -1,6 +1,7 @@
 package com.lifthelper.ui.screens.workout
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import android.util.Log
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
@@ -10,6 +11,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,13 +42,16 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.lifthelper.R
 import com.lifthelper.ui.components.common.StatItem
+import com.lifthelper.ui.components.common.pressScale
 import com.lifthelper.domain.exercise.Severity
 import com.lifthelper.domain.model.RepQualityScore
 import com.lifthelper.domain.model.ScoreGrade
 import com.lifthelper.domain.model.SetSummary
+import com.lifthelper.ui.components.AnalysisProgressBanner
 import com.lifthelper.ui.components.BarPathOverlay
 import com.lifthelper.ui.components.BarPathReplayCard
 import com.lifthelper.ui.components.CalibrationWarningOverlay
+import com.lifthelper.ui.components.RecordingIndicator
 import com.lifthelper.ui.components.ManualEntryForm
 import com.lifthelper.ui.components.PrCelebrationOverlay
 import com.lifthelper.ui.components.PoseOverlay
@@ -55,6 +60,7 @@ import com.lifthelper.ui.components.RestTimerOverlay
 import com.lifthelper.ui.components.VelocityLossStrip
 import com.lifthelper.ui.components.TempoInputWidget
 import com.lifthelper.ui.components.TempoProgressBar
+import com.lifthelper.ui.theme.Spacing
 import com.lifthelper.ui.theme.VbtStopAlert
 import com.lifthelper.util.Constants.TAG_WORKOUT
 import com.lifthelper.util.getRotationDegrees
@@ -87,6 +93,13 @@ fun WorkoutScreen(
     }
     val snackbarHostState = remember { SnackbarHostState() }
     var showSaveDialog by remember { mutableStateOf(false) }
+
+    // The toolbar arrow prompts before discarding tracked sets; system back has
+    // to do the same, otherwise gesture/hardware back destroys the ViewModel and
+    // silently throws away the whole session.
+    BackHandler(enabled = viewModel.hasUnsavedSets()) {
+        showSaveDialog = true
+    }
 
     // Save confirmation dialog
     if (showSaveDialog) {
@@ -168,6 +181,7 @@ fun WorkoutScreen(
                 .padding(paddingValues)
         ) {
             if (cameraPermissionState.status.isGranted) {
+                val postExerciseMode = uiState.analysisMode == AnalysisMode.POST_EXERCISE
                 // Camera preview
                 CameraPreview(
                     cameraManager = cameraManager,
@@ -175,7 +189,11 @@ fun WorkoutScreen(
                         // Always process frames to show pose overlay
                         viewModel.processFrame(imageProxy)
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    recordingMode = postExerciseMode,
+                    repCounterEnabled = uiState.repCounterEnabled,
+                    isVideoRecording = uiState.isVideoRecording,
+                    videoRecordingManager = cameraViewModel.videoRecordingManager
                 )
 
                 // Pose overlay
@@ -230,6 +248,16 @@ fun WorkoutScreen(
                     }
                 }
 
+                // Post-exercise recording indicator (pulsing dot + elapsed time)
+                if (uiState.isVideoRecording) {
+                    RecordingIndicator(
+                        elapsedSeconds = uiState.recordingElapsedSeconds,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp)
+                    )
+                }
+
                 // Calibration warning — compact pill at top-end in both orientations.
                 // Tapping it opens a dialog with the full explanation. When not
                 // recording, the camera-switch FAB sits at top-end with a 48dp
@@ -245,7 +273,7 @@ fun WorkoutScreen(
                 )
 
                 // Camera switch button (top right) - only show when not recording
-                if (!uiState.isRecording) {
+                if (!uiState.isRecording && !uiState.isVideoRecording) {
                     FloatingActionButton(
                         onClick = { cameraManager.switchCamera() },
                         modifier = Modifier
@@ -278,17 +306,17 @@ fun WorkoutScreen(
                                 Modifier.fillMaxWidth()
                             }
                         )
-                        .padding(16.dp)
+                        .padding(Spacing.md)
                         .verticalScroll(rememberScrollState())
                         .zIndex(10f),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    if (!uiState.isRecording) {
+                    if (!uiState.isRecording && !uiState.isVideoRecording) {
                         // Mode toggle: Camera / Manual
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                         ) {
                             FilterChip(
                                 selected = !uiState.isManualEntryMode,
@@ -354,31 +382,50 @@ fun WorkoutScreen(
                                             MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                                             RoundedCornerShape(12.dp)
                                         )
-                                        .padding(12.dp)
+                                        .padding(Spacing.sm + Spacing.xs)
                                 )
                             }
 
+                            // Analysis-mode hint — helps a new user understand
+                            // what happens after they hit record.
+                            AnalysisModeHint(mode = uiState.analysisMode)
+
+                            val startInteractionSource = remember { MutableInteractionSource() }
                             Button(
                                 onClick = { viewModel.startRecording() },
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = uiState.weight.value > 0f
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .pressScale(startInteractionSource),
+                                enabled = uiState.weight.value > 0f,
+                                interactionSource = startInteractionSource
                             ) {
-                                Text(stringResource(R.string.start_recording))
+                                Text(
+                                    if (uiState.analysisMode == AnalysisMode.POST_EXERCISE) {
+                                        stringResource(R.string.start_recording) + " \u25CF"
+                                    } else {
+                                        stringResource(R.string.start_recording)
+                                    }
+                                )
                             }
                         }
                     } else {
                         // Velocity-loss strip (peripheral, above controls).
                         // Only visible from rep 2 onwards when VBT tracking is on.
-                        VelocityLossStrip(
-                            velocityLossState = uiState.velocityLossState,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        // Real-time only — post-exercise has no live velocity.
+                        if (!uiState.isVideoRecording) {
+                            VelocityLossStrip(
+                                velocityLossState = uiState.velocityLossState,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
 
                         // Velocity-loss stop alert: non-modal toast above the
                         // Stop button. Slides in when the threshold is crossed
                         // and can be dismissed so it stops covering the preview.
                         AnimatedVisibility(
-                            visible = uiState.velocityLossState.shouldStop &&
+                            visible = !uiState.isVideoRecording &&
+                                uiState.velocityLossState.shouldStop &&
                                 !uiState.velocityLossAlertDismissed,
                             enter = slideInVertically { it } + fadeIn(),
                             exit = slideOutVertically { it } + fadeOut()
@@ -397,16 +444,25 @@ fun WorkoutScreen(
                             targetReps = uiState.targetReps.value
                         )
 
+                        val stopInteractionSource = remember { MutableInteractionSource() }
                         Button(
                             onClick = { viewModel.stopRecording() },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 56.dp),
+                                .heightIn(min = 56.dp)
+                                .pressScale(stopInteractionSource),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.error
-                            )
+                            ),
+                            interactionSource = stopInteractionSource
                         ) {
-                            Text(stringResource(R.string.stop_recording))
+                            Text(
+                                if (uiState.isVideoRecording) {
+                                    stringResource(R.string.stop_and_analyze)
+                                } else {
+                                    stringResource(R.string.stop_recording)
+                                }
+                            )
                         }
                     }
                 }
@@ -415,7 +471,7 @@ fun WorkoutScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp),
+                        .padding(Spacing.lg),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -424,22 +480,75 @@ fun WorkoutScreen(
                         style = MaterialTheme.typography.bodyLarge
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(Spacing.md))
 
                     Button(onClick = { cameraPermissionState.launchPermissionRequest() }) {
                         Text(stringResource(R.string.grant_permission))
                     }
                 }
             }
+
+            // Non-blocking analysis banner — dismissible; analysis keeps running
+            // in the foreground service while the athlete starts the next set.
+            if (uiState.analysisProgress != null && !uiState.analysisProgressDismissed) {
+                AnalysisProgressBanner(
+                    progress = uiState.analysisProgress!!,
+                    onDismiss = { viewModel.dismissAnalysisProgress() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 72.dp, start = 16.dp, end = 16.dp)
+                        .zIndex(15f)
+                )
+            }
         }
     }
 
-    // Post-set summary sheet
-    uiState.lastSetSummary?.let { summary ->
-        SetSummarySheet(
-            summary = summary,
-            onDismiss = { viewModel.dismissSummary() }
-        )
+    // Surface analysis errors via the snackbar.
+    LaunchedEffect(uiState.analysisError) {
+        uiState.analysisError?.let { message ->
+            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Long)
+            viewModel.clearAnalysisError()
+        }
+    }
+
+    // Transient video action feedback (save-to-gallery result).
+    LaunchedEffect(uiState.videoMessage) {
+        uiState.videoMessage?.let { message ->
+            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+            viewModel.clearVideoMessage()
+        }
+    }
+
+    val viewResultsLabel = stringResource(R.string.analysis_view_results)
+
+    // Background analysis finished while the banner was dismissed.
+    LaunchedEffect(uiState.analysisCompleteMessage, viewResultsLabel) {
+        uiState.analysisCompleteMessage?.let { message ->
+            val result = snackbarHostState.showSnackbar(
+                message = message,
+                actionLabel = viewResultsLabel,
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                viewModel.showPendingAnalysisResults()
+            }
+            viewModel.clearAnalysisCompleteMessage()
+        }
+    }
+
+    // Post-set summary sheet (includes set video playback when present)
+    if (uiState.isSetSummaryVisible) {
+        uiState.lastSetSummary?.let { summary ->
+            SetSummarySheet(
+                summary = summary,
+                annotatedVideo = uiState.annotatedVideo,
+                playbackIsAnnotated = uiState.playbackIsAnnotated,
+                onShareVideo = { viewModel.shareAnnotatedVideo() },
+                onSaveVideo = { viewModel.saveAnnotatedVideoToGallery() },
+                onDeleteVideo = { viewModel.deleteAnnotatedVideo() },
+                onDismiss = { viewModel.dismissSummary() }
+            )
+        }
     }
 
     // PR celebration overlay
@@ -466,13 +575,18 @@ fun WorkoutScreen(
 @Composable
 fun SetSummarySheet(
     summary: SetSummary,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    annotatedVideo: AnnotatedVideoInfo? = null,
+    playbackIsAnnotated: Boolean = false,
+    onShareVideo: () -> Unit = {},
+    onSaveVideo: () -> Unit = {},
+    onDeleteVideo: () -> Unit = {}
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = Spacing.md)
+                .padding(bottom = Spacing.lg)
                 .verticalScroll(rememberScrollState())
         ) {
             // Header
@@ -489,12 +603,26 @@ fun SetSummarySheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
+
+            // Annotated video preview (Feature 09) — shareable clip with the
+            // skeleton + velocity + rep counter burned in.
+            annotatedVideo?.let { video ->
+                com.lifthelper.ui.components.VideoPreviewCard(
+                    videoPath = video.path,
+                    sizeBytes = video.sizeBytes,
+                    isAnnotated = playbackIsAnnotated,
+                    onShare = onShareVideo,
+                    onSaveToGallery = onSaveVideo,
+                    onDelete = onDeleteVideo
+                )
+                Spacer(modifier = Modifier.height(Spacing.md))
+            }
 
             // Overall score bar
             ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Per-rep score table
             if (summary.repScores.isNotEmpty()) {
@@ -508,11 +636,11 @@ fun SetSummarySheet(
 
             // Bar path replay card
             if (summary.repBarPaths.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(Spacing.md))
                 BarPathReplayCard(repBarPaths = summary.repBarPaths)
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Aggregate form issues
             if (summary.aggregateFormIssues.isNotEmpty()) {
@@ -521,7 +649,7 @@ fun SetSummarySheet(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 summary.aggregateFormIssues.forEach { aggregate ->
                     val reps = aggregate.repNumbers.joinToString(", ")
                     val icon = when (aggregate.issue.severity) {
@@ -537,7 +665,7 @@ fun SetSummarySheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Stats row
             Row(
@@ -554,7 +682,7 @@ fun SetSummarySheet(
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(Spacing.md))
 
             // Dismiss button
             Button(
@@ -590,7 +718,7 @@ fun ScoreBar(score: Int, grade: ScoreGrade) {
                 color = gradeColor
             )
         }
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(Spacing.xs))
         LinearProgressIndicator(
             progress = { score / 100f },
             modifier = Modifier
@@ -689,7 +817,12 @@ fun RowScope.TableCell(
 fun CameraPreview(
     cameraManager: CameraManager,
     onFrameAnalyzed: (androidx.camera.core.ImageProxy) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Feature 17: choose CameraX binding based on the analysis pipeline.
+    recordingMode: Boolean = false,
+    repCounterEnabled: Boolean = false,
+    isVideoRecording: Boolean = false,
+    videoRecordingManager: com.lifthelper.vision.camera.VideoRecordingManager? = null
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -715,15 +848,30 @@ fun CameraPreview(
         update = { /* No updates needed */ }
     )
 
-    // Start camera after view is created
-    LaunchedEffect(previewView.value, cameraManager, lifecycleOwner) {
+    // (Re)bind the camera when the view is ready or the binding mode changes.
+    // Never rebind mid-recording — that would tear down VideoCapture and corrupt
+    // the in-progress MP4.
+    LaunchedEffect(previewView.value, cameraManager, lifecycleOwner, recordingMode, repCounterEnabled, isVideoRecording) {
+        if (isVideoRecording) return@LaunchedEffect
         previewView.value?.let { view ->
-            Log.i(TAG_WORKOUT, "LaunchedEffect: PreviewView ready, starting camera")
-            cameraManager.startCamera(
-                lifecycleOwner = lifecycleOwner,
-                previewView = view,
-                onFrameAnalyzed = onFrameAnalyzed
-            )
+            cameraManager.stopCamera()
+            if (recordingMode && videoRecordingManager != null) {
+                Log.i(TAG_WORKOUT, "Starting camera in RECORDING mode (repCounter=$repCounterEnabled)")
+                cameraManager.startCameraForRecording(
+                    lifecycleOwner = lifecycleOwner,
+                    previewView = view,
+                    videoRecordingManager = videoRecordingManager,
+                    withRepCounter = repCounterEnabled,
+                    onFrameAnalyzed = if (repCounterEnabled) onFrameAnalyzed else null
+                )
+            } else {
+                Log.i(TAG_WORKOUT, "Starting camera in ANALYSIS_ONLY mode")
+                cameraManager.startCamera(
+                    lifecycleOwner = lifecycleOwner,
+                    previewView = view,
+                    onFrameAnalyzed = onFrameAnalyzed
+                )
+            }
         } ?: Log.w(TAG_WORKOUT, "LaunchedEffect: PreviewView is null")
     }
 
@@ -810,8 +958,8 @@ fun WorkoutSetupPanel(
                 MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
                 RoundedCornerShape(16.dp)
             )
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(Spacing.sm + Spacing.xs),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         ExerciseSelector(
             selectedExercise = selectedExercise,
@@ -821,7 +969,7 @@ fun WorkoutSetupPanel(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
             OutlinedTextField(
                 value = weightText,
@@ -915,8 +1063,49 @@ fun VelocityLossStopAlert(
     }
 }
 
-// Helper ViewModel to inject CameraManager
+/**
+ * Compact banner explaining the active analysis mode so a first-time user knows
+ * what to expect when they tap record.
+ */
+@Composable
+fun AnalysisModeHint(
+    mode: AnalysisMode,
+    modifier: Modifier = Modifier
+) {
+    val (title, subtitle) = when (mode) {
+        AnalysisMode.POST_EXERCISE ->
+            stringResource(R.string.analysis_mode_post_title) to
+                stringResource(R.string.analysis_mode_post_subtitle)
+        AnalysisMode.REAL_TIME ->
+            stringResource(R.string.analysis_mode_realtime_title) to
+                stringResource(R.string.analysis_mode_realtime_subtitle)
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+        )
+    }
+}
+
+// Helper ViewModel to inject CameraManager + VideoRecordingManager
 @dagger.hilt.android.lifecycle.HiltViewModel
 class WorkoutCameraViewModel @Inject constructor(
-    val cameraManager: CameraManager
+    val cameraManager: CameraManager,
+    val videoRecordingManager: com.lifthelper.vision.camera.VideoRecordingManager
 ) : androidx.lifecycle.ViewModel()

@@ -329,3 +329,6 @@ Dependencies/
 # Custom - Project specific
 docs/
 CLAUDE.md
+
+# OMC agent tooling state
+.omc/

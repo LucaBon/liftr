@@ -95,6 +95,10 @@ class AnalyticsRepositoryImpl @Inject constructor(
             val allSets = setDao.getSetsForExerciseInRange(et, 0L)
             val lvPoints = allSets
                 .filter { it.completedReps > 0 }
+                // A zero mean velocity is not a measurement — it means the set
+                // carries no usable velocity data. Regressing load against it
+                // drags the fitted line toward a nonsense 1RM.
+                .filter { it.avgVelocity > 0f }
                 .map { LoadVelocityPoint(
                     load = Kilograms(it.weight),
                     meanVelocity = MetersPerSecond(it.avgVelocity),

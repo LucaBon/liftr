@@ -1,6 +1,7 @@
 package com.lifthelper.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
@@ -10,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -149,22 +153,45 @@ fun CompactVelocityCard(
     targetVelocityRange: ClosedFloatingPointRange<Float>?,
     modifier: Modifier = Modifier
 ) {
+    // Dark-glass panel so the velocity number reads as the hero metric, with a
+    // soft volt halo behind it for an energetic glow. The zone is signalled by
+    // a colored border, label, and progress bar rather than the panel fill.
     Column(
         modifier = modifier
             .widthIn(min = 140.dp)
-            .background(zoneColor.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.62f))
+            .border(1.5.dp, zoneColor.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "%.2f m/s".format(velocity),
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "%.2f m/s".format(velocity),
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.drawBehind {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                GradientVoltStart.copy(alpha = 0.55f),
+                                GradientVoltEnd.copy(alpha = 0.18f),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = size.maxDimension * 0.85f
+                        ),
+                        radius = size.maxDimension,
+                        center = center
+                    )
+                }
+            )
+        }
         Text(
             text = zoneLabel,
-            color = Color.White.copy(alpha = 0.95f),
+            color = zoneColor,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold
         )
@@ -172,15 +199,15 @@ fun CompactVelocityCard(
         targetVelocityRange?.let { range ->
             val span = (range.endInclusive - range.start).takeIf { it > 0f } ?: 1f
             val progress = ((velocity - range.start) / span).coerceIn(0f, 1f)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
-                color = Color.White,
-                trackColor = Color.White.copy(alpha = 0.3f)
+                color = zoneColor,
+                trackColor = Color.White.copy(alpha = 0.25f)
             )
         }
     }

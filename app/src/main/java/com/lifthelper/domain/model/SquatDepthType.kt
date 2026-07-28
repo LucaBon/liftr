@@ -19,7 +19,17 @@ import kotlin.math.atan2
 enum class SquatDepthType(
     val displayName: String,
     val description: String,
-    val minHipKneeDistance: Float // Signed distance in meters
+    val minHipKneeDistance: Float, // Signed distance in meters
+    /**
+     * Minimum bar travel required before this depth counts as "bottom".
+     *
+     * Must scale with the depth type. A single fixed value contradicts the
+     * shallow variants: QUARTER caps the hips 15cm *above* the knees, so the bar
+     * physically cannot descend as far as a parallel squat, and requiring the
+     * parallel-squat distance means the depth window and the descent gate can
+     * never be satisfied together — no rep is ever counted.
+     */
+    val minBarDescent: Meters
 ) {
     /**
      * Quarter Squat: ~135° knee flexion
@@ -30,7 +40,8 @@ enum class SquatDepthType(
     QUARTER(
         displayName = "Quarter Squat",
         description = "Minimal depth - explosive power training",
-        minHipKneeDistance = -0.15f // Hips 15cm+ above knees
+        minHipKneeDistance = -0.15f, // Hips 15cm+ above knees
+        minBarDescent = Meters(0.12f)
     ),
 
     /**
@@ -42,7 +53,8 @@ enum class SquatDepthType(
     HALF(
         displayName = "Half Squat",
         description = "Moderate depth - athletic performance",
-        minHipKneeDistance = -0.08f // Hips 8cm+ above knees
+        minHipKneeDistance = -0.08f, // Hips 8cm+ above knees
+        minBarDescent = Meters(0.22f)
     ),
 
     /**
@@ -55,7 +67,8 @@ enum class SquatDepthType(
     POWERLIFTING(
         displayName = "Powerlifting (Parallel)",
         description = "Competition standard - hip crease below knee",
-        minHipKneeDistance = -0.05f // Hips within 5cm of knee level
+        minHipKneeDistance = -0.05f, // Hips within 5cm of knee level
+        minBarDescent = Meters(0.30f)
     ),
 
     /**
@@ -67,7 +80,8 @@ enum class SquatDepthType(
     FULL(
         displayName = "Full Depth (ATG)",
         description = "Maximum depth - muscle development & mobility",
-        minHipKneeDistance = 0.05f // Hips 5cm+ below knees
+        minHipKneeDistance = 0.05f, // Hips 5cm+ below knees
+        minBarDescent = Meters(0.35f)
     );
 
     /**
