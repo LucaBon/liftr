@@ -95,4 +95,6 @@
     <string name="settings_section_help">Aiuto e tutorial</string>
     <string name="settings_replay_tutorial">Rivedi il tutorial</string>
     <string name="settings_replay_tutorial_desc">Ripeti la guida iniziale di configurazione</string>
+    <string name="analysis_results_ready_one">Analisi della serie pronta — tocca per vedere</string>
+    <string name="analysis_results_ready_many">%1$d analisi delle serie pronte — tocca per vedere</string>
 </resources>

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -93,6 +94,57 @@ fun AnalysisProgressBanner(
             ) {
                 Text(stringResource(R.string.analysis_continue_workout))
             }
+        }
+    }
+}
+
+/**
+ * Persistent notice that one or more background analyses have finished and
+ * their summaries have not been opened yet.
+ *
+ * The completion snackbar is transient, and a queued analysis can land a minute
+ * or more after the set it belongs to — long enough that the snackbar has gone
+ * before the athlete looks at the screen. This stays put until tapped, so a
+ * result can no longer be missed entirely. Tapping opens the most recent
+ * summary; every analysed set is persisted either way.
+ */
+@Composable
+fun AnalysisResultsReadyChip(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.96f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                text = if (count > 1) {
+                    stringResource(R.string.analysis_results_ready_many, count)
+                } else {
+                    stringResource(R.string.analysis_results_ready_one)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }

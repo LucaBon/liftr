@@ -3,6 +3,8 @@ package com.lifthelper.vision.recording
 import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.FrameAnnotation
 import com.lifthelper.vision.video.VideoFrameExtractor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,7 +39,15 @@ class AnnotatedVideoGenerator @Inject constructor(
      * if decoding/encoding failed (the partial output is cleaned up). Never
      * throws — the caller's analysis result must not be lost over a video error.
      */
-    suspend fun generate(params: Params): File? {
+    /**
+     * Re-encodes the recording with the skeleton and HUD burned in.
+     *
+     * Pinned to [Dispatchers.Default] for the same reason as
+     * [com.lifthelper.domain.usecase.AnalyzeVideoUseCase]: frame decode, bitmap
+     * compositing and MediaCodec encoding must never run on the caller's thread,
+     * which for the analysis service is the process main thread.
+     */
+    suspend fun generate(params: Params): File? = withContext(Dispatchers.Default) {
         val timeline = AnnotationTimeline(params.annotations)
         val extractor = VideoFrameExtractor(params.sourceVideo, logger)
 
@@ -45,7 +55,7 @@ class AnnotatedVideoGenerator @Inject constructor(
         var encoder: AnnotatedVideoEncoder? = null
         var frameCount = 0
 
-        return try {
+        try {
             extractor.extractFrames().collect { frame ->
                 if (encoder == null) {
                     val w = (extractor.width.coerceAtLeast(2)) and 1.inv()
@@ -72,7 +82,7 @@ class AnnotatedVideoGenerator @Inject constructor(
 
             if (encoder == null) {
                 logger.w(TAG, "No frames decoded; annotated video not produced")
-                return null
+                return@withContext null
             }
             encoder!!.finish()
             logger.i(TAG, "Annotated video written: ${params.outputFile.name} " +

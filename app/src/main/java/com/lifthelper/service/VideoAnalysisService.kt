@@ -27,11 +27,13 @@ import com.lifthelper.vision.recording.AnnotatedVideoGenerator
 import com.lifthelper.vision.recording.FrameCompositor
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
@@ -98,14 +100,21 @@ class VideoAnalysisService : LifecycleService() {
         lifecycleScope.launch {
             for (request in requests) {
                 try {
-                    runAnalysis(
-                        videoFile = request.videoFile,
-                        exerciseType = request.exerciseType,
-                        weight = request.weight,
-                        targetReps = request.targetReps,
-                        calibrationData = request.calibrationData,
-                        tempoPrescription = request.tempoPrescription
-                    )
+                    // lifecycleScope dispatches to Dispatchers.Main.immediate and
+                    // this service shares the app's process, so the analysis must
+                    // be moved off that thread explicitly — otherwise minutes of
+                    // frame decoding and ML inference block the UI and the app
+                    // ANRs. Service lifecycle calls below stay on Main.
+                    withContext(Dispatchers.Default) {
+                        runAnalysis(
+                            videoFile = request.videoFile,
+                            exerciseType = request.exerciseType,
+                            weight = request.weight,
+                            targetReps = request.targetReps,
+                            calibrationData = request.calibrationData,
+                            tempoPrescription = request.tempoPrescription
+                        )
+                    }
                 } finally {
                     if (pendingRequests.decrementAndGet() == 0) {
                         clearPendingInputs()

@@ -284,6 +284,15 @@ class WorkoutViewModel @Inject constructor(
                                     context.getString(R.string.analysis_complete_snackbar)
                                 } else {
                                     null
+                                },
+                                // The sheet is showing, so nothing is unseen.
+                                // Otherwise remember it until the athlete opens
+                                // it — the snackbar times out and would
+                                // otherwise be the only notice they ever get.
+                                unseenAnalysisCount = if (dismissed) {
+                                    current.unseenAnalysisCount + 1
+                                } else {
+                                    0
                                 }
                             )
                         }
@@ -376,7 +385,8 @@ class WorkoutViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 analysisCompleteMessage = null,
-                isSetSummaryVisible = it.lastSetSummary != null
+                isSetSummaryVisible = it.lastSetSummary != null,
+                unseenAnalysisCount = 0
             )
         }
     }
@@ -1407,7 +1417,9 @@ class WorkoutViewModel @Inject constructor(
                 lastSetSummary = null,
                 isSetSummaryVisible = false,
                 annotatedVideo = null,
-                playbackIsAnnotated = false
+                playbackIsAnnotated = false,
+                // Viewing and closing the sheet counts as having seen it.
+                unseenAnalysisCount = 0
             )
         }
     }

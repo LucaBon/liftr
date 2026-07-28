@@ -36,7 +36,9 @@ import com.lifthelper.domain.vision.IPositionCalculator
 import com.lifthelper.vision.pose.VideoFramePoseDetector
 import com.lifthelper.vision.tracking.MovementPhase
 import com.lifthelper.vision.video.VideoFrameExtractor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -91,13 +93,25 @@ class AnalyzeVideoUseCase @Inject constructor(
      *   build the shareable annotated video (Feature 09). Called once per frame
      *   that produced a pose, in presentation order.
      */
+    /**
+     * Decodes the whole recording and runs pose detection over every frame.
+     *
+     * Pinned to [Dispatchers.Default]: this is minutes of frame extraction and
+     * per-frame ML inference. Callers dispatch from a service `lifecycleScope`,
+     * which is `Dispatchers.Main.immediate`, so without this switch the entire
+     * analysis executes on the UI thread of the same process and ANRs the app.
+     *
+     * [onProgress] and [onFrameAnnotation] are therefore invoked on a background
+     * thread — they must only touch thread-safe sinks (a StateFlow, the
+     * notification manager), never Views.
+     */
     suspend fun invoke(
         params: Params,
         poseDetector: VideoFramePoseDetector,
         onProgress: (Progress) -> Unit,
         onFrameAnnotation: ((FrameAnnotation) -> Unit)? = null
-    ): Result<SetSummary> {
-        return try {
+    ): Result<SetSummary> = withContext(Dispatchers.Default) {
+        try {
             logger.i(TAG, "Analyzing ${params.videoFile.name} exercise=${params.exerciseType} weight=${params.weight.value}")
 
             configureSquatDepth(params.exerciseType)
@@ -128,7 +142,7 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             logger.i(TAG, "Pose detection complete: ${poseResults.size} poses from $frameIndex frames")
             if (poseResults.isEmpty()) {
-                return Result.failure(IllegalStateException("No poses detected in video"))
+                return@withContext Result.failure(IllegalStateException("No poses detected in video"))
             }
 
             // --- Phase 2: bidirectional velocities over the whole set ---

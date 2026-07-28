@@ -48,6 +48,7 @@ import com.lifthelper.domain.model.RepQualityScore
 import com.lifthelper.domain.model.ScoreGrade
 import com.lifthelper.domain.model.SetSummary
 import com.lifthelper.ui.components.AnalysisProgressBanner
+import com.lifthelper.ui.components.AnalysisResultsReadyChip
 import com.lifthelper.ui.components.BarPathOverlay
 import com.lifthelper.ui.components.BarPathReplayCard
 import com.lifthelper.ui.components.CalibrationWarningOverlay
@@ -494,6 +495,19 @@ fun WorkoutScreen(
                 AnalysisProgressBanner(
                     progress = uiState.analysisProgress!!,
                     onDismiss = { viewModel.dismissAnalysisProgress() },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 72.dp, start = 16.dp, end = 16.dp)
+                        .zIndex(15f)
+                )
+            } else if (uiState.unseenAnalysisCount > 0) {
+                // Persistent counterpart to the completion snackbar. A queued
+                // analysis can finish long after the set it belongs to, by which
+                // point a transient snackbar has already gone — without this the
+                // result was effectively invisible.
+                AnalysisResultsReadyChip(
+                    count = uiState.unseenAnalysisCount,
+                    onClick = { viewModel.showPendingAnalysisResults() },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 72.dp, start = 16.dp, end = 16.dp)

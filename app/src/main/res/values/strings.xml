@@ -397,4 +397,6 @@
     <string name="settings_section_help">Help &amp; Tutorial</string>
     <string name="settings_replay_tutorial">Replay Tutorial</string>
     <string name="settings_replay_tutorial_desc">Walk through the setup guide again</string>
+    <string name="analysis_results_ready_one">Set analysis ready — tap to view</string>
+    <string name="analysis_results_ready_many">%1$d set analyses ready — tap to view</string>
 </resources>

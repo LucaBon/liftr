@@ -1,6 +1,7 @@
 package com.lifthelper.data.repository
 
 import android.content.Context
+import com.lifthelper.domain.logging.Logger
 import com.lifthelper.domain.model.ExerciseType
 import com.lifthelper.domain.model.RecordingInfo
 import com.lifthelper.domain.repository.VideoStorageRepository
@@ -15,7 +16,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class VideoStorageRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val logger: Logger
 ) : VideoStorageRepository {
 
     private fun resolveRecordingsDir(): File =
@@ -39,14 +41,50 @@ class VideoStorageRepositoryImpl @Inject constructor(
     override fun deleteRecording(file: File): Boolean =
         runCatching { file.exists() && file.delete() }.getOrDefault(false)
 
+    /**
+     * Total bytes held by recordings, including the `annotated/` subdirectory.
+     * A flat `listFiles()` sum reported only the raw recordings and silently
+     * understated usage by the size of every annotated export.
+     */
     override fun getStorageUsedBytes(): Long =
-        resolveRecordingsDir().listFiles()?.sumOf { it.length() } ?: 0L
+        resolveRecordingsDir()
+            .walkTopDown()
+            .filter { it.isFile }
+            .sumOf { it.length() }
 
+    /**
+     * Deletes recordings older than [maxAgeMs].
+     *
+     * Walks recursively: `listFiles()` returns the `annotated/` directory too,
+     * and `File.delete()` on a non-empty directory silently returns false, so
+     * annotated exports were never reclaimable. Only files are removed — the
+     * directories themselves are kept so nothing has to recreate them.
+     *
+     * Age is taken from the file's last-modified time, so a recording that is
+     * still being written or analysed (seconds old) can never be caught by a
+     * sane retention window.
+     */
     override fun cleanupOldRecordings(maxAgeMs: Long) {
         val cutoff = System.currentTimeMillis() - maxAgeMs
-        resolveRecordingsDir().listFiles()
-            ?.filter { it.lastModified() < cutoff }
-            ?.forEach { it.delete() }
+        var deletedCount = 0
+        var freedBytes = 0L
+
+        resolveRecordingsDir()
+            .walkBottomUp()
+            .filter { it.isFile && it.lastModified() < cutoff }
+            .forEach { file ->
+                val size = file.length()
+                if (runCatching { file.delete() }.getOrDefault(false)) {
+                    deletedCount++
+                    freedBytes += size
+                } else {
+                    logger.w(TAG, "Could not delete stale recording: ${file.name}")
+                }
+            }
+
+        if (deletedCount > 0) {
+            logger.i(TAG, "Retention: removed $deletedCount recording(s), freed ${freedBytes / 1_048_576} MB")
+        }
     }
 
     override fun getAllRecordings(): List<RecordingInfo> {
@@ -76,6 +114,7 @@ class VideoStorageRepositoryImpl @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "VideoStorageRepository"
         private const val RECORDINGS_DIR = "recordings"
         private const val ANNOTATED_DIR = "annotated"
     }

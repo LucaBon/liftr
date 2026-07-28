@@ -73,7 +73,18 @@ data class WorkoutState(
     val playbackIsAnnotated: Boolean = false,
     val videoMessage: String? = null,
     // One-shot snackbar when analysis finishes while the banner was dismissed.
-    val analysisCompleteMessage: String? = null
+    val analysisCompleteMessage: String? = null,
+    /**
+     * Analyses that finished while the athlete had dismissed the progress
+     * banner and whose summary has not been opened yet.
+     *
+     * The snackbar alone is not enough: it times out, and a queued analysis can
+     * land a minute or more after the set it belongs to, so its result was easy
+     * to miss entirely. This drives a persistent affordance that survives until
+     * the summary is actually viewed. The sets themselves are always persisted
+     * regardless of whether this is ever acted on.
+     */
+    val unseenAnalysisCount: Int = 0
 )
 
 /**
