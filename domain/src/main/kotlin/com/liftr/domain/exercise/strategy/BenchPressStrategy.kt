@@ -132,11 +132,11 @@ class BenchPressStrategy @Inject constructor(
             leftWrist.visibility < minVisibility || rightWrist.visibility < minVisibility) return null
 
         // Average left and right sides
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f
+        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
         val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val elbowX = (leftElbow.x + rightElbow.x) / 2f
+        val elbowX = (leftElbow.x + rightElbow.x) / 2f * poseResult.aspectScaleX
         val elbowY = (leftElbow.y + rightElbow.y) / 2f
-        val wristX = (leftWrist.x + rightWrist.x) / 2f
+        val wristX = (leftWrist.x + rightWrist.x) / 2f * poseResult.aspectScaleX
         val wristY = (leftWrist.y + rightWrist.y) / 2f
 
         return coordinateCalculator.angleBetweenPoints(
@@ -399,7 +399,7 @@ class BenchPressStrategy @Inject constructor(
 
         if (leftWrist.visibility < 0.5f || rightWrist.visibility < 0.5f) return null
 
-        val wristsX = (leftWrist.x + rightWrist.x) / 2f
+        val wristsX = (leftWrist.x + rightWrist.x) / 2f * poseResult.aspectScaleX
         val wristsXMeters = positionCalculator.pixelsToMeters(wristsX, poseResult, calibrationData)
 
         // Compare with shoulders X as reference (bar should be roughly above shoulders)
@@ -408,7 +408,7 @@ class BenchPressStrategy @Inject constructor(
 
         if (leftShoulder.visibility < 0.5f || rightShoulder.visibility < 0.5f) return null
 
-        val shouldersX = (leftShoulder.x + rightShoulder.x) / 2f
+        val shouldersX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
         val shouldersXMeters = positionCalculator.pixelsToMeters(shouldersX, poseResult, calibrationData)
 
         val drift = abs(wristsXMeters - shouldersXMeters)

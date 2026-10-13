@@ -901,10 +901,6 @@ class WorkoutViewModel @Inject constructor(
             }
             return
         }
-        if (_uiState.value.weight.value <= 0f) {
-            logger.w(TAG, "startRecording ignored: weight not set")
-            return
-        }
         when (_uiState.value.analysisMode) {
             AnalysisMode.POST_EXERCISE -> startPostExerciseRecording()
             AnalysisMode.REAL_TIME -> startRealTimeRecording()
@@ -1523,7 +1519,7 @@ class WorkoutViewModel @Inject constructor(
     }
 
     fun logManualSet(exerciseName: String, weight: Float, reps: Int, notes: String = "") {
-        if (exerciseName.isBlank() || weight <= 0f || reps <= 0) return
+        if (exerciseName.isBlank() || weight < 0f || reps <= 0) return
 
         // Initialize workout start time on first set
         if (completedSets.isEmpty()) {

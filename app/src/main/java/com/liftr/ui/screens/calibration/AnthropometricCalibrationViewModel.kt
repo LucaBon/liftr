@@ -178,13 +178,14 @@ class AnthropometricCalibrationViewModel @Inject constructor(
             return
         }
 
-        // Get user height and shoulder width from calibration data
+        // Shoulder width is measured here, not taken from calibrationData: that
+        // value is a tape-measured outer width (or a 45 cm default when left
+        // empty), while the landmarks measure between the shoulder joints.
         val userHeight = calibrationData?.userHeight ?: 1.75f
         val userWeight = calibrationData?.anthropometricData?.userWeight
-        val manualShoulderWidth = calibrationData?.shoulderWidth
 
         // Try to get valid measurements from buffered frames
-        val bestResult = selectBestFrameForMeasurement(frames, userHeight, userWeight, manualShoulderWidth)
+        val bestResult = selectBestFrameForMeasurement(frames, userHeight, userWeight)
 
         if (bestResult != null && bestResult.isValid()) {
             Log.i(TAG_CALIBRATION, "✅ Anthropometric data captured successfully from buffered frames")
@@ -227,8 +228,7 @@ class AnthropometricCalibrationViewModel @Inject constructor(
     private fun selectBestFrameForMeasurement(
         frames: List<com.liftr.domain.model.PoseResult>,
         userHeight: Float,
-        userWeight: Float?,
-        manualShoulderWidth: Float?
+        userWeight: Float?
     ): AnthropometricData? {
         // Score each frame based on critical landmark visibility
         val scoredFrames = frames.mapNotNull { frame ->
@@ -246,7 +246,6 @@ class AnthropometricCalibrationViewModel @Inject constructor(
                 poseResult = frame,
                 userHeight = userHeight,
                 userWeight = userWeight,
-                manualShoulderWidth = manualShoulderWidth,
                 isFrontCamera = cameraManager.isFrontCamera()
             ).getOrNull()
 

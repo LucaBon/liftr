@@ -53,12 +53,12 @@ class BodySegmentExtractor(
             null
         }
 
-        // Calculate total height
+        // Total height is head top to floor, the span the user's stature
+        // refers to; the floor sits below the ankle (or knee) joints.
         val totalHeight = if (anklesY != null) {
-            anklesY - headTopY  // Full body visible
+            (anklesY - headTopY) / (1f - CoordinateCalculator.ANKLE_HEIGHT_RATIO)
         } else {
-            // Estimate: if knees are at 60% of height, total = (kneesY - headTopY) / 0.6
-            (kneesY - headTopY) / 0.6f
+            (kneesY - headTopY) / (1f - CoordinateCalculator.KNEE_HEIGHT_RATIO)
         }
 
         return BodyHeights(

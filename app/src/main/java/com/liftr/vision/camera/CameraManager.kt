@@ -73,6 +73,7 @@ class CameraManager @Inject constructor(
     private var currentPreviewView: PreviewView? = null
     private var currentOnFrameAnalyzed: ((ImageProxy) -> Unit)? = null
     private var currentUseHighResolution: Boolean = false
+    private var currentVideoRecordingManager: VideoRecordingManager? = null
 
     fun startCamera(
         lifecycleOwner: LifecycleOwner,
@@ -254,8 +255,25 @@ class CameraManager @Inject constructor(
             CameraSelector.DEFAULT_BACK_CAMERA
         }
 
-        // Restart camera with new selector, preserving resolution setting
+        // Restart camera with new selector, preserving the binding mode and
+        // resolution setting. stopCamera() resets currentMode, so read it first.
+        val mode = currentMode
         stopCamera()
+        val recordingManager = currentVideoRecordingManager
+        if (mode != CameraMode.ANALYSIS_ONLY && recordingManager != null) {
+            val lifecycleOwner = currentLifecycleOwner ?: return
+            val previewView = currentPreviewView ?: return
+            val withRepCounter = mode == CameraMode.RECORDING_WITH_COUNTER
+            startCameraForRecording(
+                lifecycleOwner = lifecycleOwner,
+                previewView = previewView,
+                videoRecordingManager = recordingManager,
+                withRepCounter = withRepCounter,
+                onFrameAnalyzed = if (withRepCounter) currentOnFrameAnalyzed else null,
+                useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+            )
+            return
+        }
         currentLifecycleOwner?.let { lifecycleOwner ->
             currentPreviewView?.let { previewView ->
                 currentOnFrameAnalyzed?.let { onFrameAnalyzed ->
@@ -362,6 +380,7 @@ class CameraManager @Inject constructor(
         useFrontCamera: Boolean = false
     ) {
         currentMode = if (withRepCounter) CameraMode.RECORDING_WITH_COUNTER else CameraMode.RECORDING
+        currentVideoRecordingManager = videoRecordingManager
         currentCameraSelector = if (useFrontCamera) {
             CameraSelector.DEFAULT_FRONT_CAMERA
         } else {

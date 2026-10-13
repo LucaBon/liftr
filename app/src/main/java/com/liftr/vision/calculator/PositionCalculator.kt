@@ -214,20 +214,24 @@ class PositionCalculator @Inject constructor(
 
         return if (normalizedHipsY != null || normalizedShouldersY != null ||
                    normalizedHeadY != null || normalizedKneesY != null) {
+            // X values go out in image-height units so they share Y's unit
+            // (see PoseResult.aspectScaleX); consumers combine them with Y in
+            // angles and convert them to meters with the Y-derived scale.
+            val sx = poseResult.aspectScaleX
             BodyPartPositions(
                 hipsY = normalizedHipsY,
                 shouldersY = normalizedShouldersY,
                 headY = normalizedHeadY,
                 kneesY = normalizedKneesY,
-                hipsX = hipsX,
-                kneesX = kneesX,
+                hipsX = hipsX?.times(sx),
+                kneesX = kneesX?.times(sx),
                 wristsY = normalizedWristsY,
-                wristsX = wristsX,
+                wristsX = wristsX?.times(sx),
                 elbowsY = normalizedElbowsY,
-                elbowsX = elbowsX,
+                elbowsX = elbowsX?.times(sx),
                 anklesY = normalizedAnklesY,
-                anklesX = anklesX,
-                shouldersX = shouldersX
+                anklesX = anklesX?.times(sx),
+                shouldersX = shouldersX?.times(sx)
             )
         } else null
     }

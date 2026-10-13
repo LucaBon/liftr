@@ -18,7 +18,9 @@ object PoseResultTestFixtures {
         imageWidth: Int,
         imageHeight: Int,
         userHeightMeters: Float = 1.75f,
-        isFrontCamera: Boolean = false
+        isFrontCamera: Boolean = false,
+        shoulderWidthRatio: Float = 0.23f,
+        hipWidthRatio: Float = 0.20f
     ): PoseResult {
         val isPortrait = imageHeight > imageWidth
 
@@ -37,19 +39,13 @@ object PoseResultTestFixtures {
         // Calculate total body height in normalized Y space
         val totalBodyHeightNorm = ankles - headTop  // 0.90 - 0.05 = 0.85
 
-        // Shoulder width: typically 40-50cm, ~23% of height
-        val shoulderWidthRatio = 0.23f
-        // Hip width: typically 30-40cm, ~20% of height (adjusted to pass alignment check)
-        // Note: Real ratio is ~18%, but alignment checker requires shoulder/hip ratio < 1.25
-        val hipWidthRatio = 0.20f
+        // Shoulder width defaults to ~23% of height (40-50cm). Hip width defaults
+        // to ~20% (real ratio is ~18%, but the alignment checker requires a
+        // shoulder/hip ratio < 1.25).
         // Knee spacing: ~10% of height
         val kneeSpacingRatio = 0.10f
 
-        // Width in normalized X coordinates.
-        // MediaPipe Pose Landmarker returns landmarks in isotropic normalized
-        // coordinates (both axes share the same unit — the model letterboxes
-        // its input to a square), so x and y are directly comparable and no
-        // per-orientation aspect-ratio correction is applied here.
+        // Widths in image-height units (the unit of normalized y).
         val shoulderWidthX = shoulderWidthRatio * totalBodyHeightNorm
         val hipWidthX = hipWidthRatio * totalBodyHeightNorm
         val kneeSpacingX = kneeSpacingRatio * totalBodyHeightNorm
@@ -60,59 +56,65 @@ object PoseResultTestFixtures {
         // Helper to mirror X coordinate for front camera
         fun mirrorX(x: Float) = if (isFrontCamera) 1f - x else x
 
+        // MediaPipe normalizes x by the image width and y by the height, so a
+        // horizontal offset given in image-height units becomes offset * H / W
+        // in normalized x.
+        val xPerHeightUnit = imageHeight.toFloat() / imageWidth
+        fun px(offset: Float) = mirrorX(centerX + offset * xPerHeightUnit)
+
         // 0: Nose
-        landmarks.add(PoseKeypoint(mirrorX(centerX), nose, 0f, 0.99f))
+        landmarks.add(PoseKeypoint(px(0f), nose, 0f, 0.99f))
 
         // 1-6: Face landmarks (eyes, ears) - optional for body measurements
-        landmarks.add(PoseKeypoint(mirrorX(centerX - 0.02f), nose - 0.01f, 0f, 0.95f)) // left eye inner
-        landmarks.add(PoseKeypoint(mirrorX(centerX - 0.03f), nose - 0.01f, 0f, 0.95f)) // left eye
-        landmarks.add(PoseKeypoint(mirrorX(centerX - 0.04f), nose - 0.01f, 0f, 0.95f)) // left eye outer
-        landmarks.add(PoseKeypoint(mirrorX(centerX + 0.02f), nose - 0.01f, 0f, 0.95f)) // right eye inner
-        landmarks.add(PoseKeypoint(mirrorX(centerX + 0.03f), nose - 0.01f, 0f, 0.95f)) // right eye
-        landmarks.add(PoseKeypoint(mirrorX(centerX + 0.04f), nose - 0.01f, 0f, 0.95f)) // right eye outer
+        landmarks.add(PoseKeypoint(px(-0.02f), nose - 0.01f, 0f, 0.95f)) // left eye inner
+        landmarks.add(PoseKeypoint(px(-0.03f), nose - 0.01f, 0f, 0.95f)) // left eye
+        landmarks.add(PoseKeypoint(px(-0.04f), nose - 0.01f, 0f, 0.95f)) // left eye outer
+        landmarks.add(PoseKeypoint(px(0.02f), nose - 0.01f, 0f, 0.95f)) // right eye inner
+        landmarks.add(PoseKeypoint(px(0.03f), nose - 0.01f, 0f, 0.95f)) // right eye
+        landmarks.add(PoseKeypoint(px(0.04f), nose - 0.01f, 0f, 0.95f)) // right eye outer
 
         // 7-8: Ears
-        landmarks.add(PoseKeypoint(mirrorX(centerX - 0.06f), nose, 0f, 0.90f)) // left ear
-        landmarks.add(PoseKeypoint(mirrorX(centerX + 0.06f), nose, 0f, 0.90f)) // right ear
+        landmarks.add(PoseKeypoint(px(-0.06f), nose, 0f, 0.90f)) // left ear
+        landmarks.add(PoseKeypoint(px(0.06f), nose, 0f, 0.90f)) // right ear
 
         // 9-10: Mouth
-        landmarks.add(PoseKeypoint(mirrorX(centerX - 0.01f), nose + 0.03f, 0f, 0.85f)) // mouth left
-        landmarks.add(PoseKeypoint(mirrorX(centerX + 0.01f), nose + 0.03f, 0f, 0.85f)) // mouth right
+        landmarks.add(PoseKeypoint(px(-0.01f), nose + 0.03f, 0f, 0.85f)) // mouth left
+        landmarks.add(PoseKeypoint(px(0.01f), nose + 0.03f, 0f, 0.85f)) // mouth right
 
         // 11-12: Shoulders (CRITICAL)
-        landmarks.add(PoseKeypoint(mirrorX(centerX - shoulderWidthX / 2), shoulders, 0f, 0.99f)) // left shoulder
-        landmarks.add(PoseKeypoint(mirrorX(centerX + shoulderWidthX / 2), shoulders, 0f, 0.99f)) // right shoulder
+        landmarks.add(PoseKeypoint(px(-(shoulderWidthX / 2)), shoulders, 0f, 0.99f)) // left shoulder
+        landmarks.add(PoseKeypoint(px(shoulderWidthX / 2), shoulders, 0f, 0.99f)) // right shoulder
 
         // 13-14: Elbows
-        landmarks.add(PoseKeypoint(mirrorX(centerX - shoulderWidthX / 2), shoulders + 0.12f, 0f, 0.95f)) // left elbow
-        landmarks.add(PoseKeypoint(mirrorX(centerX + shoulderWidthX / 2), shoulders + 0.12f, 0f, 0.95f)) // right elbow
+        landmarks.add(PoseKeypoint(px(-(shoulderWidthX / 2)), shoulders + 0.12f, 0f, 0.95f)) // left elbow
+        landmarks.add(PoseKeypoint(px(shoulderWidthX / 2), shoulders + 0.12f, 0f, 0.95f)) // right elbow
 
         // 15-16: Wrists
-        landmarks.add(PoseKeypoint(mirrorX(centerX - shoulderWidthX / 2), shoulders + 0.24f, 0f, 0.90f)) // left wrist
-        landmarks.add(PoseKeypoint(mirrorX(centerX + shoulderWidthX / 2), shoulders + 0.24f, 0f, 0.90f)) // right wrist
+        landmarks.add(PoseKeypoint(px(-(shoulderWidthX / 2)), shoulders + 0.24f, 0f, 0.90f)) // left wrist
+        landmarks.add(PoseKeypoint(px(shoulderWidthX / 2), shoulders + 0.24f, 0f, 0.90f)) // right wrist
 
         // 17-22: Hands (pinky, index, thumb) - not used for measurements
         for (i in 17..22) {
-            landmarks.add(PoseKeypoint(mirrorX(centerX), shoulders + 0.26f, 0f, 0.70f))
+            landmarks.add(PoseKeypoint(px(0f), shoulders + 0.26f, 0f, 0.70f))
         }
 
         // 23-24: Hips (CRITICAL)
-        landmarks.add(PoseKeypoint(mirrorX(centerX - hipWidthX / 2), hips, 0f, 0.99f)) // left hip
-        landmarks.add(PoseKeypoint(mirrorX(centerX + hipWidthX / 2), hips, 0f, 0.99f)) // right hip
+        landmarks.add(PoseKeypoint(px(-(hipWidthX / 2)), hips, 0f, 0.99f)) // left hip
+        landmarks.add(PoseKeypoint(px(hipWidthX / 2), hips, 0f, 0.99f)) // right hip
 
         // 25-26: Knees (CRITICAL)
-        landmarks.add(PoseKeypoint(mirrorX(centerX - kneeSpacingX / 2), knees, 0f, 0.99f)) // left knee
-        landmarks.add(PoseKeypoint(mirrorX(centerX + kneeSpacingX / 2), knees, 0f, 0.99f)) // right knee
+        landmarks.add(PoseKeypoint(px(-(kneeSpacingX / 2)), knees, 0f, 0.99f)) // left knee
+        landmarks.add(PoseKeypoint(px(kneeSpacingX / 2), knees, 0f, 0.99f)) // right knee
 
         // 27-28: Ankles (CRITICAL)
-        landmarks.add(PoseKeypoint(mirrorX(centerX - kneeSpacingX / 2), ankles, 0f, 0.95f)) // left ankle
-        landmarks.add(PoseKeypoint(mirrorX(centerX + kneeSpacingX / 2), ankles, 0f, 0.95f)) // right ankle
+        landmarks.add(PoseKeypoint(px(-(kneeSpacingX / 2)), ankles, 0f, 0.95f)) // left ankle
+        landmarks.add(PoseKeypoint(px(kneeSpacingX / 2), ankles, 0f, 0.95f)) // right ankle
 
         // 29-32: Feet (heel, toe) - not used for measurements
-        landmarks.add(PoseKeypoint(mirrorX(centerX - kneeSpacingX / 2), ankles + 0.03f, 0f, 0.85f)) // left heel
-        landmarks.add(PoseKeypoint(mirrorX(centerX + kneeSpacingX / 2), ankles + 0.03f, 0f, 0.85f)) // right heel
-        landmarks.add(PoseKeypoint(mirrorX(centerX - kneeSpacingX / 2), ankles + 0.05f, 0f, 0.80f)) // left toe
-        landmarks.add(PoseKeypoint(mirrorX(centerX + kneeSpacingX / 2), ankles + 0.05f, 0f, 0.80f)) // right toe
+        landmarks.add(PoseKeypoint(px(-(kneeSpacingX / 2)), ankles + 0.03f, 0f, 0.85f)) // left heel
+        landmarks.add(PoseKeypoint(px(kneeSpacingX / 2), ankles + 0.03f, 0f, 0.85f)) // right heel
+        landmarks.add(PoseKeypoint(px(-(kneeSpacingX / 2)), ankles + 0.05f, 0f, 0.80f)) // left toe
+        landmarks.add(PoseKeypoint(px(kneeSpacingX / 2), ankles + 0.05f, 0f, 0.80f)) // right toe
 
         return PoseResult(
             landmarks = landmarks,
@@ -138,12 +140,14 @@ object PoseResultTestFixtures {
         val centerX = 0.5f
         val centerY = 0.5f
 
+        // Rotate in image-height units so the tilt is a true rotation on screen.
+        val xPerHeightUnit = imageHeight.toFloat() / imageWidth
         val rotatedLandmarks = idealPose.landmarks.map { landmark ->
-            val dx = landmark.x - centerX
+            val dx = (landmark.x - centerX) / xPerHeightUnit
             val dy = landmark.y - centerY
             val cos = kotlin.math.cos(tiltAngleRad)
             val sin = kotlin.math.sin(tiltAngleRad)
-            val newX = dx * cos - dy * sin + centerX
+            val newX = (dx * cos - dy * sin) * xPerHeightUnit + centerX
             val newY = dx * sin + dy * cos + centerY
 
             landmark.copy(x = newX, y = newY)

@@ -22,6 +22,18 @@ data class PoseResult(
     val imageHeight: Int = 480,
     val isPortrait: Boolean = false  // Track orientation for coordinate normalization
 ) {
+    /**
+     * Factor that converts a normalized x distance into image-height units.
+     *
+     * MediaPipe normalizes x by the image width and y by the image height, so
+     * on a non-square frame the two axes have different units: in a 9:16
+     * portrait frame a normalized dx is 16/9 times "longer" than the same
+     * normalized dy. Multiply x (or dx) by this before combining it with y in
+     * a distance, an angle or a conversion to meters.
+     */
+    val aspectScaleX: Float
+        get() = if (imageWidth > 0 && imageHeight > 0) imageWidth.toFloat() / imageHeight else 1f
+
     companion object {
         // MediaPipe Pose landmark indices (Full set: 0-32)
         const val NOSE = 0

@@ -404,7 +404,6 @@ fun WorkoutScreen(
                                     .fillMaxWidth()
                                     .heightIn(min = 56.dp)
                                     .pressScale(startInteractionSource),
-                                enabled = uiState.weight.value > 0f,
                                 interactionSource = startInteractionSource
                             ) {
                                 Text(
@@ -447,7 +446,7 @@ fun WorkoutScreen(
                         // Compact info chip during recording
                         WorkoutInfoChip(
                             exerciseName = uiState.selectedExercise.label(),
-                            weight = uiState.weight.value,
+                            weight = uiState.weight.value.takeIf { uiState.selectedExercise.hasExternalLoad() },
                             targetReps = uiState.targetReps.value
                         )
 
@@ -617,7 +616,7 @@ fun SetSummarySheet(
             )
 
             val isJump = summary.exerciseType.isJumpExercise()
-            val showWeight = summary.exerciseType != ExerciseType.VERTICAL_JUMP
+            val showWeight = summary.exerciseType.hasExternalLoad()
             Text(
                 text = summary.exerciseType.label() +
                     (if (showWeight) " \u00B7 ${summary.weight.value.toInt()} kg" else "") + " \u00B7 " +
@@ -1073,12 +1072,12 @@ fun WorkoutSetupPanel(
 @Composable
 fun WorkoutInfoChip(
     exerciseName: String,
-    weight: Float,
+    weight: Float?,
     targetReps: Int,
     modifier: Modifier = Modifier
 ) {
     Text(
-        text = "$exerciseName \u00B7 ${weight.toInt()}kg \u00B7 $targetReps reps",
+        text = exerciseName + (weight?.let { " \u00B7 ${it.toInt()}kg" } ?: "") + " \u00B7 $targetReps reps",
         style = MaterialTheme.typography.labelLarge,
         color = Color.White,
         modifier = modifier

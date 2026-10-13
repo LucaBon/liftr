@@ -302,10 +302,13 @@ class DeadliftStrategyIntegrationTest {
         // form, not rounding: only an increase relative to the setup counts.
         // Regression guard for the absolute-threshold check that fired on every
         // properly executed rep.
+        // The shoulders sit 0.25 image heights in front of the hips and 0.20
+        // above them (51° from vertical). On a 1920x1080 frame normalized x is
+        // per image width, so that horizontal offset is 0.25 * 1080 / 1920.
         val landmarks = createLandmarksWithDeadliftForm(
             shoulderY = 0.30f,
             hipY = 0.50f,
-            shoulderX = 0.25f,
+            shoulderX = 0.50f - 0.25f * 1080f / 1920f,
             hipX = 0.50f,
             kneeAngle = 175f,
             hipAngle = 175f

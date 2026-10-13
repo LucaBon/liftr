@@ -398,11 +398,11 @@ class DeadliftStrategy @Inject constructor(
             leftHip.visibility < minVis || rightHip.visibility < minVis ||
             leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
 
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f
+        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
         val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f
+        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
         val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f
+        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
         val kneeY = (leftKnee.y + rightKnee.y) / 2f
 
         return coordinateCalculator.angleBetweenPoints(
@@ -433,11 +433,11 @@ class DeadliftStrategy @Inject constructor(
             leftKnee.visibility < minVis || rightKnee.visibility < minVis ||
             leftAnkle.visibility < minVis || rightAnkle.visibility < minVis) return null
 
-        val hipX = (leftHip.x + rightHip.x) / 2f
+        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
         val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f
+        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
         val kneeY = (leftKnee.y + rightKnee.y) / 2f
-        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f
+        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f * poseResult.aspectScaleX
         val ankleY = (leftAnkle.y + rightAnkle.y) / 2f
 
         return coordinateCalculator.angleBetweenPoints(
@@ -513,17 +513,18 @@ class DeadliftStrategy @Inject constructor(
         if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
             leftHip.visibility < minVis || rightHip.visibility < minVis) return null
 
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f
+        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
         val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f
+        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
         val hipY = (leftHip.y + rightHip.y) / 2f
 
         val currentAngle = coordinateCalculator.torsoAngle(shoulderX, shoulderY, hipX, hipY)
 
         // Rounding shows up as the torso tipping further forward than it was at
         // setup while the bar is moving — the hips rising faster than the chest.
-        // Both angles come from landmark coordinates whose X and Y share one
-        // scale factor, so they are directly comparable.
+        // Both angles are computed with X converted to image-height units (the
+        // setup angle from meters, this one via aspectScaleX), so they are
+        // directly comparable.
         val angleIncrease = currentAngle - startingTorsoAngle
         val threshold = ExerciseThresholds.Deadlift.BACK_ROUNDING_THRESHOLD
 

@@ -1,7 +1,12 @@
 package com.liftr.domain.model
 
 /**
- * Data class to hold positions of different body parts (in pixels)
+ * Positions of body parts in normalized image coordinates.
+ *
+ * Y values are normalized by the image height. X values are expressed in the
+ * same unit (normalized x multiplied by [PoseResult.aspectScaleX]), so X and Y
+ * can be combined directly in angles and distances. They are therefore not
+ * suitable for drawing on screen, which needs the raw normalized x.
  */
 data class BodyPartPositions(
     val hipsY: Float?,

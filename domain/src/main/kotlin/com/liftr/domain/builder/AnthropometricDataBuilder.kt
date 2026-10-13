@@ -111,7 +111,19 @@ class AnthropometricDataBuilder @Inject constructor(
         // Step 6: Calculate head top position
         val visibleHeadLandmarks = poseValidator.getVisibleHeadLandmarks(landmarks)
         val headFaceY = coordinateCalculator.averageY(normalizedLandmarks, *visibleHeadLandmarks.toIntArray())
-        val headTopY = coordinateCalculator.estimateHeadTop(headFaceY, isYAxisInverted)
+        val headTopY = if (anklesVisible) {
+            coordinateCalculator.estimateHeadTop(
+                headFaceY,
+                coordinateCalculator.averageY(normalizedLandmarks, 27, 28),
+                CoordinateCalculator.ANKLE_HEIGHT_RATIO
+            )
+        } else {
+            coordinateCalculator.estimateHeadTop(
+                headFaceY,
+                coordinateCalculator.averageY(normalizedLandmarks, 25, 26),
+                CoordinateCalculator.KNEE_HEIGHT_RATIO
+            )
+        }
 
         logger.d(TAG, "Estimated head top: $headTopY (face was $headFaceY)")
 
@@ -342,7 +354,7 @@ class AnthropometricDataBuilder @Inject constructor(
             torsoHeightRatio = segmentHeights.torso / bodyHeights.totalHeight,
             upperLegHeightRatio = segmentHeights.upperLeg / bodyHeights.totalHeight,
             lowerLegHeightRatio = segmentHeights.lowerLeg / bodyHeights.totalHeight,
-            footHeightRatio = 0.04f, // Estimated (feet not reliably detected)
+            footHeightRatio = CoordinateCalculator.ANKLE_HEIGHT_RATIO, // Estimated (feet not reliably detected)
 
             // Widths as ratios (using validated values)
             shoulderWidthRatio = finalShoulderWidth / bodyHeights.totalHeight,

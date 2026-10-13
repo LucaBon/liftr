@@ -12,6 +12,9 @@ enum class ExerciseType {
 
     fun isJumpExercise(): Boolean = this == VERTICAL_JUMP || this == LOADED_JUMP
 
+    /** False for bodyweight exercises, which are performed without a weight. */
+    fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP
+
     fun getDisplayName(): String = when (this) {
         FRONT_SQUAT -> "Front Squat"
         BACK_SQUAT -> "Back Squat"

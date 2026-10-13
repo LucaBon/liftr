@@ -35,7 +35,7 @@ fun ManualEntryForm(
     }
 
     val isValid = exerciseName.isNotBlank() &&
-        (weightText.toFloatOrNull() ?: 0f) > 0f &&
+        (weightText.toFloatOrNull() ?: -1f) >= 0f &&
         (repsText.toIntOrNull() ?: 0) > 0
 
     Column(

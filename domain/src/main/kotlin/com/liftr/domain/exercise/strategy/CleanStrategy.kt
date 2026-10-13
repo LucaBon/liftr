@@ -464,11 +464,11 @@ class CleanStrategy @Inject constructor(
             leftHip.visibility < minVis || rightHip.visibility < minVis ||
             leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
 
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f
+        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
         val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f
+        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
         val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f
+        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
         val kneeY = (leftKnee.y + rightKnee.y) / 2f
 
         return coordinateCalculator.angleBetweenPoints(
@@ -499,11 +499,11 @@ class CleanStrategy @Inject constructor(
             leftKnee.visibility < minVis || rightKnee.visibility < minVis ||
             leftAnkle.visibility < minVis || rightAnkle.visibility < minVis) return null
 
-        val hipX = (leftHip.x + rightHip.x) / 2f
+        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
         val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f
+        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
         val kneeY = (leftKnee.y + rightKnee.y) / 2f
-        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f
+        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f * poseResult.aspectScaleX
         val ankleY = (leftAnkle.y + rightAnkle.y) / 2f
 
         return coordinateCalculator.angleBetweenPoints(

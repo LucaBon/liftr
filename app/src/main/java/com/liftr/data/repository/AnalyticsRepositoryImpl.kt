@@ -43,7 +43,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
             // Load-based records mean nothing for bodyweight jumps, and volume,
             // 1RM and quality scores don't apply to jumps at all.
             val isJump = et.isJumpExercise()
-            val hasLoad = et != ExerciseType.VERTICAL_JUMP
+            val hasLoad = et.hasExternalLoad()
 
             // Best jump
             val bestJump = if (isJump) setDao.getHighestJumpSet(et) else null
@@ -273,7 +273,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
         val now = System.currentTimeMillis()
         val newPRs = mutableListOf<PersonalRecord>()
         val isJump = exerciseType.isJumpExercise()
-        val hasLoad = exerciseType != ExerciseType.VERTICAL_JUMP
+        val hasLoad = exerciseType.hasExternalLoad()
 
         // Check best jump
         val jumpHeight = set.jumpHeight?.value

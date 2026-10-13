@@ -22,7 +22,6 @@ enum class AlignmentIssue {
 data class AlignmentCheckResult(
     val issue: AlignmentIssue,
     val tiltAngleDegrees: Float = 0f,
-    val shoulderHipWidthRatio: Float = 1f,  // Ratio of shoulder width to hip width
     val shoulderWidthToHeightRatio: Float = 0f,  // Shoulder width as percentage of height
     val bodyCenterX: Float = 0.5f,  // Horizontal center position of body (0-1 range)
     val message: String = ""
@@ -37,7 +36,6 @@ class CameraAlignmentChecker {
         // Thresholds
         private const val MAX_TILT_ANGLE_DEGREES = 8f  // Maximum acceptable camera tilt
         private const val MIN_SHOULDER_WIDTH_RATIO = 0.15f  // Minimum shoulder width / height ratio for frontal view
-        private const val MAX_SHOULDER_HIP_WIDTH_DIFFERENCE = 0.25f  // Max acceptable difference between shoulder and hip widths
 
         // Center alignment thresholds (to minimize lens distortion)
         private const val MIN_CENTER_X = 0.35f  // Minimum X position for centered body
@@ -52,7 +50,6 @@ class CameraAlignmentChecker {
      * @param isPortrait Whether the image is in portrait orientation
      * @return Alignment check result with detected issues
      */
-    @Suppress("UNUSED_PARAMETER")
     fun checkAlignment(poseResult: PoseResult, aspectRatio: Float, isPortrait: Boolean): AlignmentCheckResult {
         val landmarks = poseResult.landmarks
 
@@ -73,18 +70,22 @@ class CameraAlignmentChecker {
             )
         }
 
+        // MediaPipe normalizes x by the image width and y by the height, so x
+        // distances are converted to image-height units before being compared
+        // with y (in tilt angles and in the width-to-height ratio).
+        val xScale = CoordinateCalculator.xScale(aspectRatio, isPortrait)
+
         // 1. Check camera tilt by analyzing shoulder and hip angles
-        val shoulderTilt = calculateTiltAngle(leftShoulder, rightShoulder)
-        val hipTilt = calculateTiltAngle(leftHip, rightHip)
+        val shoulderTilt = calculateTiltAngle(leftShoulder, rightShoulder, xScale)
+        val hipTilt = calculateTiltAngle(leftHip, rightHip, xScale)
         val avgTilt = (shoulderTilt + hipTilt) / 2f
         val isTilted = abs(avgTilt) > MAX_TILT_ANGLE_DEGREES
 
-        // 2. Check if viewing from side by comparing shoulder/hip widths.
-        // MediaPipe Pose Landmarker returns landmarks in isotropic normalized
-        // coordinates (same unit on both axes), so dx and dy can be compared
-        // directly — no aspect-ratio scaling is applied here.
-        val shoulderWidthNorm = abs(rightShoulder.x - leftShoulder.x)
-        val hipWidthNorm = abs(rightHip.x - leftHip.x)
+        // 2. Check if viewing from side: turning away narrows the shoulders
+        // relative to height. Shoulder and hip widths are not compared — the
+        // hip landmarks are the hip joints, ~0.6x the shoulder width when
+        // facing the camera, and turning narrows both by the same factor.
+        val shoulderWidthNorm = abs(rightShoulder.x - leftShoulder.x) * xScale
 
         // Calculate height for ratio
         val headY = landmarks.getOrNull(0)?.y ?: leftShoulder.y
@@ -92,13 +93,7 @@ class CameraAlignmentChecker {
         val heightNorm = abs(ankleY - headY)
 
         val shoulderWidthToHeightRatio = shoulderWidthNorm / heightNorm
-        val shoulderHipWidthRatio = if (hipWidthNorm > 0.01f) shoulderWidthNorm / hipWidthNorm else 1f
-
-        // Side view indicators:
-        // 1. Shoulder width is too small relative to height (< 15% of height)
-        // 2. Shoulder and hip widths differ significantly (should be similar in frontal view)
-        val isSideView = shoulderWidthToHeightRatio < MIN_SHOULDER_WIDTH_RATIO ||
-                        abs(shoulderHipWidthRatio - 1f) > MAX_SHOULDER_HIP_WIDTH_DIFFERENCE
+        val isSideView = shoulderWidthToHeightRatio < MIN_SHOULDER_WIDTH_RATIO
 
         // 3. Check if body is centered in frame (to minimize lens distortion)
         // Calculate body center as average of shoulders and hips
@@ -134,7 +129,6 @@ class CameraAlignmentChecker {
         return AlignmentCheckResult(
             issue = issue,
             tiltAngleDegrees = avgTilt,
-            shoulderHipWidthRatio = shoulderHipWidthRatio,
             shoulderWidthToHeightRatio = shoulderWidthToHeightRatio,
             bodyCenterX = bodyCenterX,
             message = message
@@ -145,8 +139,8 @@ class CameraAlignmentChecker {
      * Calculate tilt angle between two landmarks (e.g., shoulders or hips)
      * Returns angle in degrees. 0° = horizontal, positive = tilted clockwise
      */
-    private fun calculateTiltAngle(left: PoseKeypoint, right: PoseKeypoint): Float {
-        val dx = right.x - left.x
+    private fun calculateTiltAngle(left: PoseKeypoint, right: PoseKeypoint, xScale: Float): Float {
+        val dx = (right.x - left.x) * xScale
         val dy = right.y - left.y
         val angleRadians = atan2(dy, dx)
         return Math.toDegrees(angleRadians.toDouble()).toFloat()

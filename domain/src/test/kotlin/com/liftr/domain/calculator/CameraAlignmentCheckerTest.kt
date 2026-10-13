@@ -279,22 +279,23 @@ class CameraAlignmentCheckerTest {
     }
 
     /**
-     * Test 10: Shoulder/hip width difference ratio is calculated correctly
+     * Test 10: Hips much narrower than shoulders is still a frontal view.
+     * MediaPipe's hip landmarks are the hip joints; a real frontal capture
+     * measured shoulders 21% and hips 12.4% of height (ratio 1.7).
      */
     @Test
-    fun testShoulderHipRatio_calculated() {
+    fun testNarrowHipJoints_notSideView() {
         // Arrange
-        val poseResult = PoseResultTestFixtures.createPortraitPose(false)
+        val poseResult = PoseResultTestFixtures.createIdealFrontalPose(
+            540, 960, shoulderWidthRatio = 0.21f, hipWidthRatio = 0.124f
+        )
         val (aspectRatio, isPortrait) = getOrientationInfo(poseResult.imageWidth, poseResult.imageHeight)
 
         // Act
         val result = checker.checkAlignment(poseResult, aspectRatio, isPortrait)
 
         // Assert
-        assertTrue(
-            "Shoulder/hip width ratio should be reasonable (0.8 - 1.5)",
-            result.shoulderHipWidthRatio in 0.8f..1.5f
-        )
+        assertEquals(AlignmentIssue.NONE, result.issue)
     }
 
     /**

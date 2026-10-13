@@ -15,6 +15,35 @@ import kotlin.math.sqrt
  */
 class CoordinateCalculator {
 
+    companion object {
+        /** Face landmarks (nose/ears) to head top, as a fraction of stature. */
+        const val FACE_TO_HEAD_TOP_RATIO = 0.065f
+
+        /** Ankle joint height above the floor, as a fraction of stature. */
+        const val ANKLE_HEIGHT_RATIO = 0.04f
+
+        /** Knee joint height above the floor, as a fraction of stature. */
+        const val KNEE_HEIGHT_RATIO = 0.285f
+
+        /**
+         * Factor that converts a normalized x distance into image-height units, the
+         * unit of normalized y.
+         *
+         * MediaPipe normalizes x by the image width and y by the image height. On a
+         * portrait frame (height = width * aspectRatio) a normalized dx therefore
+         * spans fewer pixels per unit than dy and must be divided by the aspect
+         * ratio; on a landscape frame it must be multiplied by it.
+         *
+         * @param aspectRatio Image aspect ratio (longer side / shorter side, >= 1.0)
+         * @param isPortrait true if the image is taller than it is wide
+         * @return imageWidth / imageHeight
+         */
+        fun xScale(aspectRatio: Float, isPortrait: Boolean): Float {
+            if (aspectRatio <= 0f || !aspectRatio.isFinite()) return 1f
+            return if (isPortrait) 1f / aspectRatio else aspectRatio
+        }
+    }
+
     /**
      * Calculates the aspect ratio and determines device orientation.
      *
@@ -116,50 +145,34 @@ class CoordinateCalculator {
     }
 
     /**
-     * Calculates Euclidean distance between two points.
-     *
-     * MediaPipe's Pose Landmarker returns landmark coordinates in an isotropic
-     * normalized space (empirically, both axes share the same unit — the model
-     * letterboxes its input to a square before inference and the returned x/y
-     * are effectively normalized by the longer edge, not per-axis). This means
-     * dx and dy can be combined directly with a plain Euclidean formula and NO
-     * aspect-ratio correction — applying one makes horizontal distances wrong
-     * by a factor of `aspectRatio` (either over- or underestimating widths
-     * depending on the direction of the scaling).
-     *
-     * The `aspectRatio` and `isPortrait` parameters are retained for API
-     * compatibility and are intentionally unused.
+     * Calculates the Euclidean distance between two points, in image-height
+     * units (the unit of normalized y).
      *
      * @param p1 First point
      * @param p2 Second point
-     * @param aspectRatio Image aspect ratio (unused — landmarks are isotropic)
-     * @param isPortrait true if image is in portrait orientation (unused)
-     * @return Euclidean distance in normalized landmark units
+     * @param aspectRatio Image aspect ratio (longer side / shorter side, >= 1.0)
+     * @param isPortrait true if image is in portrait orientation
+     * @return Distance in image-height units
      */
-    @Suppress("UNUSED_PARAMETER")
     fun calculateDistance(
         p1: PoseKeypoint,
         p2: PoseKeypoint,
         aspectRatio: Float,
         isPortrait: Boolean
-    ): Float {
-        val dx = p2.x - p1.x
-        val dy = p2.y - p1.y
-        return sqrt(dx * dx + dy * dy)
-    }
+    ): Float = calculateDistance(p1.x, p1.y, p2.x, p2.y, aspectRatio, isPortrait)
 
     /**
-     * Calculates distance between two coordinate pairs.
+     * Calculates the distance between two coordinate pairs, in image-height
+     * units (the unit of normalized y).
      *
      * @param x1 X coordinate of first point
      * @param y1 Y coordinate of first point
      * @param x2 X coordinate of second point
      * @param y2 Y coordinate of second point
-     * @param aspectRatio Image aspect ratio (>= 1.0)
+     * @param aspectRatio Image aspect ratio (longer side / shorter side, >= 1.0)
      * @param isPortrait true if image is in portrait orientation
-     * @return Distance in normalized units with aspect correction
+     * @return Distance in image-height units
      */
-    @Suppress("UNUSED_PARAMETER")
     fun calculateDistance(
         x1: Float,
         y1: Float,
@@ -168,37 +181,29 @@ class CoordinateCalculator {
         aspectRatio: Float,
         isPortrait: Boolean
     ): Float {
-        val dx = x2 - x1
+        val dx = (x2 - x1) * xScale(aspectRatio, isPortrait)
         val dy = y2 - y1
         return sqrt(dx * dx + dy * dy)
     }
 
     /**
-     * Returns the distance unchanged.
+     * Expresses a distance measured along one image axis in image-height units.
      *
-     * MediaPipe's Pose Landmarker returns landmark coordinates in an isotropic
-     * normalized space: both x and y share the same unit regardless of image
-     * orientation (empirically the model letterboxes its input to a square and
-     * the exposed NormalizedLandmark.x/y are effectively normalized by the
-     * longer edge). Horizontal distances therefore do NOT need aspect-ratio
-     * correction — applying any scaling (either multiplying or dividing by
-     * aspectRatio) results in widths being off by that factor.
+     * Horizontal distances are converted with [xScale]; vertical distances are
+     * already in image-height units and are returned unchanged.
      *
-     * The parameters are kept for API compatibility and are unused.
-     *
-     * @param distance Raw distance in normalized landmark units
-     * @param aspectRatio Image aspect ratio (unused)
-     * @param isPortrait true if image is in portrait orientation (unused)
-     * @param isHorizontal true if this is a horizontal distance (unused)
-     * @return The distance unchanged
+     * @param distance Distance in normalized landmark units along one axis
+     * @param aspectRatio Image aspect ratio (longer side / shorter side, >= 1.0)
+     * @param isPortrait true if image is in portrait orientation
+     * @param isHorizontal true if this is a horizontal (x) distance
+     * @return The distance in image-height units
      */
-    @Suppress("UNUSED_PARAMETER")
     fun scaleForAspectRatio(
         distance: Float,
         aspectRatio: Float,
         isPortrait: Boolean,
         isHorizontal: Boolean
-    ): Float = distance
+    ): Float = if (isHorizontal) distance * xScale(aspectRatio, isPortrait) else distance
 
     /**
      * Calculates average Y position from multiple landmark indices.
@@ -243,6 +248,9 @@ class CoordinateCalculator {
      * Returns the angle in degrees in the range [0, 180].
      * Returns 0 if either segment has zero length.
      *
+     * X and Y must share a unit: pass x already multiplied by
+     * [com.liftr.domain.model.PoseResult.aspectScaleX].
+     *
      * @param ax X coordinate of point A
      * @param ay Y coordinate of point A
      * @param bx X coordinate of point B (vertex)
@@ -277,6 +285,9 @@ class CoordinateCalculator {
      * 0 degrees means the torso is perfectly upright (shoulder directly above hip).
      * 90 degrees means the torso is horizontal.
      *
+     * X and Y must share a unit: pass x already multiplied by
+     * [com.liftr.domain.model.PoseResult.aspectScaleX].
+     *
      * @param shoulderX X coordinate of shoulder midpoint
      * @param shoulderY Y coordinate of shoulder midpoint
      * @param hipX X coordinate of hip midpoint
@@ -293,24 +304,23 @@ class CoordinateCalculator {
     }
 
     /**
-     * Estimates head top position from face landmarks.
+     * Estimates the head top from the face level and a lower reference landmark.
      *
-     * Face landmarks (nose/ears) are roughly at mid-head.
-     * Head height is typically ~13% of body height.
-     * So head top is ~6.5% of body height above face level.
+     * Face landmarks (nose/ears) sit [FACE_TO_HEAD_TOP_RATIO] of stature below
+     * the head top, and the reference landmark sits [lowerHeightRatio] of
+     * stature above the floor, so the face-to-reference distance is a known
+     * fraction of stature. That gives stature in image units, and the head-top
+     * offset scales with the body instead of the frame.
      *
      * @param headFaceY Y position of face landmarks
-     * @param isYAxisInverted true if Y-axis was inverted during normalization
+     * @param lowerY Y position of the reference landmark (ankles or knees)
+     * @param lowerHeightRatio Height of the reference landmark above the floor,
+     *   as a fraction of stature ([ANKLE_HEIGHT_RATIO] or [KNEE_HEIGHT_RATIO])
      * @return Estimated Y position of head top
      */
-    fun estimateHeadTop(headFaceY: Float, isYAxisInverted: Boolean): Float {
-        val headTopEstimateOffset = 0.065f  // ~6.5% of body height
-
-        return if (isYAxisInverted) {
-            headFaceY + headTopEstimateOffset  // If flipped, add to go "up"
-        } else {
-            headFaceY - headTopEstimateOffset  // Normal: subtract to go up
-        }
+    fun estimateHeadTop(headFaceY: Float, lowerY: Float, lowerHeightRatio: Float): Float {
+        val stature = (lowerY - headFaceY) / (1f - FACE_TO_HEAD_TOP_RATIO - lowerHeightRatio)
+        return headFaceY - FACE_TO_HEAD_TOP_RATIO * stature
     }
 }
 
