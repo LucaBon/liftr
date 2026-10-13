@@ -6,6 +6,11 @@
 -keep class com.google.mediapipe.** { *; }
 -dontwarn com.google.mediapipe.**
 
+# MediaPipe ships the AutoValue annotation processor as a runtime dependency.
+# It references javac APIs that don't exist on Android and never runs in the app.
+-dontwarn javax.annotation.processing.**
+-dontwarn javax.lang.model.**
+
 # Keep domain model data classes (serialization, Room converters)
 -keep class com.liftr.domain.model.** { *; }
 -keep class com.liftr.data.local.database.entities.** { *; }
