@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.liftr.R
 import com.liftr.domain.exercise.TempoCue
 import com.liftr.domain.exercise.TempoState
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 
 /**
  * Real-time tempo progress overlay shown during recording when tempo mode is active.

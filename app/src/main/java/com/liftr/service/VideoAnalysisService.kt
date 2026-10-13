@@ -25,6 +25,7 @@ import com.liftr.vision.camera.LensDistortionCorrector
 import com.liftr.vision.pose.VideoFramePoseDetector
 import com.liftr.vision.recording.AnnotatedVideoGenerator
 import com.liftr.vision.recording.FrameCompositor
+import com.liftr.vision.video.VideoFilePoseSource
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Dispatchers
@@ -224,7 +225,7 @@ class VideoAnalysisService : LifecycleService() {
                     calibrationData = calibrationData,
                     tempoPrescription = tempoPrescription
                 ),
-                poseDetector = poseDetector,
+                poseSource = VideoFilePoseSource(videoFile, poseDetector, logger),
                 onProgress = { progress ->
                     _analysisState.value = AnalysisState.Analyzing(progress)
                     updateNotification(

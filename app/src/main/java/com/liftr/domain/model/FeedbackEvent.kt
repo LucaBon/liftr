@@ -1,7 +1,7 @@
 package com.liftr.domain.model
 
 import com.liftr.domain.exercise.FormIssue
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 
 /**
  * Events that should trigger audio and/or haptic feedback during a workout.

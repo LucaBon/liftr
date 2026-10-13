@@ -1,5 +1,6 @@
 package com.liftr.vision.tracking
 
+import com.liftr.domain.model.MovementPhase
 import android.util.Log
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.vision.ISquatPhaseDetector

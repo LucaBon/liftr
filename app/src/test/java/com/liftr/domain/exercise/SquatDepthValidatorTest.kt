@@ -35,7 +35,7 @@ class SquatDepthValidatorTest {
         // Setup: Hip joint at knee level (parallel squat)
         // Hip crease will be estimated 12% higher, so slightly above knee
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y, // Hip joint at knee level
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -59,7 +59,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should fail quarter squat when too deep`() {
         // Setup: Hips at knee level - too deep for quarter squat
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y, // At knee level
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -81,7 +81,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should pass full squat when hips clearly below knees`() {
         // Setup: Hips 10cm below knees - deep full squat
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y + 0.10f, // 10cm below knees
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X + 0.08f, // Femur angled forward
@@ -103,7 +103,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should handle missing hip data gracefully`() {
         // Setup: Missing hip Y coordinate
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = null, // Missing
             currentKneesY = KNEE_Y,
             currentHipsX = null,
@@ -126,7 +126,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should handle missing knee data gracefully`() {
         // Setup: Missing knee Y coordinate
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = HIP_Y,
             currentKneesY = null, // Missing
             currentHipsX = CENTER_X,
@@ -147,7 +147,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should use multiple methods when all data available`() {
         // Setup: Complete state with all coordinates
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y + 0.02f, // Slightly below knees
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X + 0.05f, // Some forward lean
@@ -172,7 +172,7 @@ class SquatDepthValidatorTest {
     @Test
     fun `validateDepth should provide detailed debug info`() {
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y,
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -198,7 +198,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should calculate femur angle correctly for vertical stance`() {
         // Setup: Hips directly above knees (standing position)
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.IDLE,
+            currentPhase = com.liftr.domain.model.MovementPhase.IDLE,
             currentHipsY = 0.5f, // Hips higher
             currentKneesY = 1.0f, // Knees lower
             currentHipsX = CENTER_X, // Same X = vertical
@@ -221,7 +221,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should calculate femur angle correctly for deep squat`() {
         // Setup: Hips forward and below knees (deep squat position)
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = 1.1f, // Hips below knees
             currentKneesY = 1.0f,
             currentHipsX = 0.6f, // Hips forward from knees
@@ -242,7 +242,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should apply tolerance correctly`() {
         // Setup: Borderline case - exactly at the edge
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y + 0.001f, // Just barely below knees (1mm)
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -272,7 +272,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should work for all depth types`() {
         // Test that all depth types can be validated without crashing
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y,
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -298,7 +298,7 @@ class SquatDepthValidatorTest {
         // The hip crease is always above (lower Y) the hip joint
         // Test that this relationship is maintained
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = 0.95f, // Hip joint
             currentKneesY = 1.0f,  // Knees below
             currentHipsX = CENTER_X,
@@ -333,7 +333,7 @@ class SquatDepthValidatorTest {
         // Create a borderline case where some methods pass and some fail
 
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y - 0.05f, // 5cm above knees
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -357,7 +357,7 @@ class SquatDepthValidatorTest {
     @Test
     fun `validation methods should have reasonable weights`() {
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y,
             currentKneesY = KNEE_Y,
             currentHipsX = CENTER_X,
@@ -385,7 +385,7 @@ class SquatDepthValidatorTest {
     fun `validateDepth should handle X coordinate missing for femur angle`() {
         // Setup: Y coordinates present but X coordinates missing
         val state = ExercisePhaseState(
-            currentPhase = com.liftr.vision.tracking.MovementPhase.BOTTOM,
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
             currentHipsY = KNEE_Y,
             currentKneesY = KNEE_Y,
             currentHipsX = null, // Missing

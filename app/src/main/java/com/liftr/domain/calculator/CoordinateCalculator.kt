@@ -62,7 +62,7 @@ class CoordinateCalculator {
 
         val headY = visibleHeadLandmarks
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= com.liftr.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
+            .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
             .map { it.y }
             .average()
             .toFloat()
@@ -75,7 +75,7 @@ class CoordinateCalculator {
         val referenceY = if (ankleVisible) {
             val ankles = listOf(27, 28)
                 .mapNotNull { landmarks.getOrNull(it) }
-                .filter { it.visibility >= com.liftr.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
+                .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
                 .map { it.y }
                 .average()
                 .toFloat()
@@ -83,7 +83,7 @@ class CoordinateCalculator {
         } else {
             val knees = listOf(25, 26)
                 .mapNotNull { landmarks.getOrNull(it) }
-                .filter { it.visibility >= com.liftr.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
+                .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
                 .map { it.y }
                 .average()
                 .toFloat()
@@ -212,7 +212,7 @@ class CoordinateCalculator {
     fun averageY(landmarks: List<PoseKeypoint>, vararg indices: Int): Float {
         return indices.toList()
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= com.liftr.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
+            .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
             .map { it.y }
             .average()
             .toFloat()
@@ -230,7 +230,7 @@ class CoordinateCalculator {
     fun averageX(landmarks: List<PoseKeypoint>, vararg indices: Int): Float {
         return indices.toList()
             .mapNotNull { landmarks.getOrNull(it) }
-            .filter { it.visibility >= com.liftr.util.Constants.LANDMARK_VISIBILITY_THRESHOLD }
+            .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
             .map { it.x }
             .average()
             .toFloat()

@@ -1,18 +1,11 @@
 package com.liftr.vision.tracking
 
+import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.vision.IMovementPhaseDetector
 import com.liftr.util.CircularBuffer
 import com.liftr.util.Constants
 import javax.inject.Inject
 import kotlin.math.abs
-
-enum class MovementPhase {
-    IDLE,
-    ECCENTRIC,    // Lowering
-    BOTTOM,       // Transition
-    CONCENTRIC,   // Lifting
-    TOP           // Lockout
-}
 
 class MovementPhaseDetector @Inject constructor() : IMovementPhaseDetector {
     private var currentPhase = MovementPhase.IDLE

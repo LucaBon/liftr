@@ -1,5 +1,7 @@
 package com.liftr.util
 
+import com.liftr.domain.model.PoseKeypoint
+
 object Constants {
     // Logging Tags
     const val TAG_CAMERA = "Liftr_Camera"
@@ -26,8 +28,7 @@ object Constants {
     const val POSE_MIN_PRESENCE_CONFIDENCE = 0.3f
 
     // Landmark visibility threshold — minimum confidence to consider a landmark valid.
-    // MediaPipe returns 0.0-1.0; 0.5 balances detection sensitivity vs false positives.
-    const val LANDMARK_VISIBILITY_THRESHOLD = 0.5f
+    const val LANDMARK_VISIBILITY_THRESHOLD = PoseKeypoint.VISIBILITY_THRESHOLD
 
     // Velocity Calculation
     const val VELOCITY_HISTORY_SIZE = 5 // Buffer size for 2nd order backward difference (requires minimum 3 points)

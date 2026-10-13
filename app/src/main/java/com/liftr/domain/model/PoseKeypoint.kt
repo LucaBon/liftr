@@ -5,7 +5,15 @@ data class PoseKeypoint(
     val y: Float,
     val z: Float,
     val visibility: Float
-)
+) {
+    companion object {
+        /**
+         * Minimum [visibility] for a landmark to count as valid. MediaPipe returns
+         * 0.0-1.0; 0.5 balances detection sensitivity vs false positives.
+         */
+        const val VISIBILITY_THRESHOLD = 0.5f
+    }
+}
 
 data class PoseResult(
     val landmarks: List<PoseKeypoint>,

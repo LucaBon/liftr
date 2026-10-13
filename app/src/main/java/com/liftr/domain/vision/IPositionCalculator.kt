@@ -3,7 +3,7 @@ package com.liftr.domain.vision
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.CalibrationQuality
 import com.liftr.domain.model.PoseResult
-import com.liftr.vision.calculator.BodyPartPositions
+import com.liftr.domain.model.BodyPartPositions
 
 /**
  * Interface for position calculation operations.

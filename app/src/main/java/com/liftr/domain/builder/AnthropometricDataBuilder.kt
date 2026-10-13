@@ -10,8 +10,8 @@ import com.liftr.domain.model.PoseResult
 import com.liftr.domain.validation.MeasurementValidator
 import com.liftr.domain.validation.PoseValidator
 import com.liftr.domain.validation.ValidationResult
-import com.liftr.vision.calculator.AlignmentIssue
-import com.liftr.vision.calculator.CameraAlignmentChecker
+import com.liftr.domain.calculator.AlignmentIssue
+import com.liftr.domain.calculator.CameraAlignmentChecker
 import javax.inject.Inject
 
 /**

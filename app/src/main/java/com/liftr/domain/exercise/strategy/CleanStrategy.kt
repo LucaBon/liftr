@@ -19,7 +19,7 @@ import com.liftr.domain.value.Joules
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs

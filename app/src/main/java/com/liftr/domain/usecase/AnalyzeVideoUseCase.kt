@@ -33,9 +33,8 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.vision.IPositionCalculator
-import com.liftr.vision.pose.VideoFramePoseDetector
-import com.liftr.vision.tracking.MovementPhase
-import com.liftr.vision.video.VideoFrameExtractor
+import com.liftr.domain.vision.VideoPoseSource
+import com.liftr.domain.model.MovementPhase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -51,12 +50,11 @@ import javax.inject.Inject
  * [AnalyzeRepUseCase]) so the produced [SetSummary] is byte-for-byte compatible
  * with the live pipeline's output and renders in the identical summary sheet.
  *
- * 1. Extract frames ([VideoFrameExtractor]).
- * 2. Detect pose per frame ([VideoFramePoseDetector], heavy model).
- * 3. Smooth velocities bidirectionally ([BidirectionalVelocityCalculator]).
- * 4. Walk frames: phase detection + rep counting (`ExerciseStrategy`).
- * 5. Per rep: form validation ([AnalyzeRepUseCase]), quality scoring, bar path.
- * 6. Assemble a [SetSummary].
+ * 1. Decode frames and detect pose per frame ([VideoPoseSource], heavy model).
+ * 2. Smooth velocities bidirectionally ([BidirectionalVelocityCalculator]).
+ * 3. Walk frames: phase detection + rep counting (`ExerciseStrategy`).
+ * 4. Per rep: form validation ([AnalyzeRepUseCase]), quality scoring, bar path.
+ * 5. Assemble a [SetSummary].
  */
 class AnalyzeVideoUseCase @Inject constructor(
     private val positionCalculator: IPositionCalculator,
@@ -87,7 +85,7 @@ class AnalyzeVideoUseCase @Inject constructor(
      * Run the full post-exercise analysis.
      *
      * @param params Video file, exercise config, and calibration
-     * @param poseDetector A ready [VideoFramePoseDetector] (caller owns its lifecycle)
+     * @param poseSource Per-frame poses for the video; closed by this call
      * @param onProgress Per-frame progress callback
      * @param onFrameAnnotation Optional sink for per-frame overlay data, used to
      *   build the shareable annotated video (Feature 09). Called once per frame
@@ -107,7 +105,7 @@ class AnalyzeVideoUseCase @Inject constructor(
      */
     suspend fun invoke(
         params: Params,
-        poseDetector: VideoFramePoseDetector,
+        poseSource: VideoPoseSource,
         onProgress: (Progress) -> Unit,
         onFrameAnnotation: ((FrameAnnotation) -> Unit)? = null
     ): Result<SetSummary> = withContext(Dispatchers.Default) {
@@ -117,16 +115,13 @@ class AnalyzeVideoUseCase @Inject constructor(
             configureSquatDepth(params.exerciseType)
 
             // --- Phase 1: extract frames + detect poses ---
-            val extractor = VideoFrameExtractor(params.videoFile, logger)
             val poseResults = mutableListOf<PoseResult>()
             var frameIndex = 0
             try {
-                extractor.extractFrames().collect { frame ->
-                    val pose = poseDetector.detectPose(frame.bitmap, frame.timestampMs)
+                poseSource.poses().collect { pose ->
                     if (pose != null) poseResults.add(pose)
-                    frame.bitmap.recycle()
                     frameIndex++
-                    val total = extractor.totalFrames.coerceAtLeast(1)
+                    val total = poseSource.totalFrames.coerceAtLeast(1)
                     onProgress(
                         Progress(
                             currentFrame = frameIndex,
@@ -137,7 +132,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                     )
                 }
             } finally {
-                extractor.close()
+                poseSource.close()
             }
 
             logger.i(TAG, "Pose detection complete: ${poseResults.size} poses from $frameIndex frames")

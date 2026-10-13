@@ -32,7 +32,7 @@ import com.liftr.data.export.VideoShareManager
 import com.liftr.ui.screens.workout.WorkoutViewModel
 import com.liftr.vision.camera.CameraManager
 import com.liftr.vision.camera.VideoRecordingManager
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import android.content.Context
 import io.mockk.coEvery
 import io.mockk.every

@@ -4,6 +4,7 @@ import androidx.camera.core.ImageProxy
 import com.liftr.domain.model.CameraFrame
 import com.liftr.domain.model.FrameData
 import com.liftr.domain.model.FrameProcessor
+import com.liftr.domain.vision.FrameSource
 
 /**
  * Adapter that converts ImageProxy to domain CameraFrame.
@@ -25,6 +26,17 @@ object ImageProxyAdapter {
             data = ImageProxyFrameData(imageProxy)
         )
     }
+}
+
+/**
+ * [FrameSource] backed by a CameraX [ImageProxy]; [release] closes the proxy.
+ */
+class ImageProxyFrameSource(
+    private val imageProxy: ImageProxy
+) : FrameSource {
+    override fun toCameraFrame(): CameraFrame = ImageProxyAdapter.toCameraFrame(imageProxy)
+
+    override fun release() = imageProxy.close()
 }
 
 /**

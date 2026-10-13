@@ -11,7 +11,7 @@ import com.liftr.domain.logging.Logger
 import com.liftr.domain.validation.MeasurementValidator
 import com.liftr.domain.validation.PoseValidator
 import com.liftr.infrastructure.logging.AndroidLogger
-import com.liftr.vision.calculator.CameraAlignmentChecker
+import com.liftr.domain.calculator.CameraAlignmentChecker
 import dagger.Binds
 import dagger.Module
 import dagger.Provides

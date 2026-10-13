@@ -11,7 +11,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Watts
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 
 /**
  * Strategy interface for exercise-specific logic.

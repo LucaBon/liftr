@@ -13,8 +13,8 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.vision.IPositionCalculator
-import com.liftr.vision.calculator.BodyPartPositions
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.BodyPartPositions
+import com.liftr.domain.model.MovementPhase
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertEquals

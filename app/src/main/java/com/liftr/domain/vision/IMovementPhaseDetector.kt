@@ -1,7 +1,7 @@
 package com.liftr.domain.vision
 
 import com.liftr.domain.model.PoseResult
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 
 /**
  * Interface for movement phase detection.

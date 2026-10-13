@@ -1,6 +1,6 @@
 package com.liftr.domain.exercise
 
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 
 /**
  * Immutable state object for exercise phase detection.

@@ -1,5 +1,6 @@
 package com.liftr.vision.calculator
 
+import com.liftr.domain.model.BodyPartPositions
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
@@ -8,25 +9,6 @@ import com.liftr.domain.model.PoseResult
 import com.liftr.domain.vision.IPositionCalculator
 import javax.inject.Inject
 import kotlin.math.sqrt
-
-/**
- * Data class to hold positions of different body parts (in pixels)
- */
-data class BodyPartPositions(
-    val hipsY: Float?,
-    val shouldersY: Float?,
-    val headY: Float?,
-    val kneesY: Float?,
-    val hipsX: Float? = null,
-    val kneesX: Float? = null,
-    val wristsY: Float? = null,
-    val wristsX: Float? = null,
-    val elbowsY: Float? = null,
-    val elbowsX: Float? = null,
-    val anklesY: Float? = null,
-    val anklesX: Float? = null,
-    val shouldersX: Float? = null
-)
 
 /**
  * Result of pixels-per-meter calibration with quality indicator

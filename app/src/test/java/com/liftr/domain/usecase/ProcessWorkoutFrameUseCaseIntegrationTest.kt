@@ -1,6 +1,6 @@
 package com.liftr.domain.usecase
 
-import androidx.camera.core.ImageProxy
+import com.liftr.domain.vision.FrameSource
 import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.ExerciseStrategy
 import com.liftr.domain.exercise.ExerciseStrategyFactory
@@ -25,7 +25,7 @@ import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPoseDetector
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.vision.IVelocityCalculator
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
@@ -103,7 +103,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     @Test
     fun `successful frame processing should return Success result with all data`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
@@ -129,7 +129,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { positionCalculator.getCalibrationQuality(any(), any()) } returns CalibrationQuality.OPTIMAL
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -156,13 +156,13 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     @Test
     fun `no pose detected should return NoPoseDetected result`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
         every { poseDetector.detectPose(any()) } returns null
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -176,19 +176,19 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
 
         // Then
         assertTrue(result is FrameProcessingResult.NoPoseDetected)
-        verify { imageProxy.close() }
+        verify { frameSource.release() }
     }
 
     @Test
     fun `no calibration data should return NoCalibration result`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
         every { poseDetector.detectPose(any()) } returns poseResult
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = null,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -202,13 +202,13 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
 
         // Then
         assertTrue(result is FrameProcessingResult.NoCalibration)
-        verify { imageProxy.close() }
+        verify { frameSource.release() }
     }
 
     @Test
     fun `recording disabled should not detect phase or count reps`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
@@ -229,7 +229,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { positionCalculator.getCalibrationQuality(any(), any()) } returns CalibrationQuality.OPTIMAL
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -250,7 +250,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     @Test
     fun `rep completion should increment rep count`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
@@ -276,7 +276,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { positionCalculator.getCalibrationQuality(any(), any()) } returns CalibrationQuality.OPTIMAL
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -300,7 +300,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     @Test
     fun `different exercise types should use different strategies`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
         val frontSquatStrategy = mockk<ExerciseStrategy>()
 
@@ -326,7 +326,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { positionCalculator.getCalibrationQuality(any(), any()) } returns CalibrationQuality.OPTIMAL
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.FRONT_SQUAT,
@@ -344,15 +344,15 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
     }
 
     @Test
-    fun `imageProxy should always be closed even on error`() = runTest {
+    fun `frameSource should always be closed even on error`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
 
         every { poseDetector.detectPose(any()) } throws RuntimeException("Test error")
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,
@@ -366,13 +366,13 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
 
         // Then
         assertTrue(result is FrameProcessingResult.Error)
-        verify { imageProxy.close() } // Should be closed even on error
+        verify { frameSource.release() } // Should be closed even on error
     }
 
     @Test
     fun `null velocity data should still process successfully`() = runTest {
         // Given
-        val imageProxy = mockk<ImageProxy>(relaxed = true)
+        val frameSource = mockk<FrameSource>(relaxed = true)
         val timestamp = System.currentTimeMillis()
         val strategy = mockk<ExerciseStrategy>()
 
@@ -391,7 +391,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { positionCalculator.getCalibrationQuality(any(), any()) } returns CalibrationQuality.OPTIMAL
 
         val params = ProcessWorkoutFrameUseCase.Params(
-            imageProxy = imageProxy,
+            frame = frameSource,
             timestamp = timestamp,
             calibrationData = calibrationData,
             exerciseType = ExerciseType.BACK_SQUAT,

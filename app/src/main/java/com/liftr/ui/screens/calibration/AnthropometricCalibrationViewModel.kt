@@ -39,7 +39,7 @@ class AnthropometricCalibrationViewModel @Inject constructor(
     private val cameraManager: com.liftr.vision.camera.CameraManager,
     private val anthropometricDataBuilder: com.liftr.domain.builder.AnthropometricDataBuilder,
     private val coordinateCalculator: com.liftr.domain.calculator.CoordinateCalculator,
-    private val cameraAlignmentChecker: com.liftr.vision.calculator.CameraAlignmentChecker
+    private val cameraAlignmentChecker: com.liftr.domain.calculator.CameraAlignmentChecker
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AnthropometricCalibrationState())

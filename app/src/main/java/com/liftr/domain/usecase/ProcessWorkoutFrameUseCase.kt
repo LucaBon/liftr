@@ -1,6 +1,5 @@
 package com.liftr.domain.usecase
 
-import androidx.camera.core.ImageProxy
 import com.liftr.domain.error.LiftrError
 import com.liftr.domain.error.PoseErrorCode
 import com.liftr.domain.logging.Logger
@@ -18,10 +17,11 @@ import com.liftr.domain.exercise.strategy.FrontSquatStrategy
 import com.liftr.domain.repository.SettingsKeys
 import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.vision.FrameSource
 import com.liftr.domain.vision.IPoseDetector
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.vision.IVelocityCalculator
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -67,7 +67,7 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
     /**
      * Processes a camera frame for workout tracking.
      *
-     * Always runs on [frameDispatcher]; the [ImageProxy] is closed exactly once
+     * Always runs on [frameDispatcher]; the [FrameSource] is released exactly once
      * before returning, on every path including cancellation.
      *
      * @param params Parameters including image, calibration, and current state
@@ -78,8 +78,8 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
 
     private suspend fun process(params: Params): FrameProcessingResult {
         try {
-            // 1. Convert ImageProxy to CameraFrame and detect pose
-            val cameraFrame = com.liftr.vision.adapter.ImageProxyAdapter.toCameraFrame(params.imageProxy)
+            // 1. Convert the frame to a CameraFrame and detect pose
+            val cameraFrame = params.frame.toCameraFrame()
             val poseResult = poseDetector.detectPose(cameraFrame)
                 ?: return FrameProcessingResult.NoPoseDetected
 
@@ -152,7 +152,7 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
                 cause = e
             )
         } finally {
-            params.imageProxy.close()
+            params.frame.release()
         }
     }
 
@@ -237,7 +237,7 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
      * Parameters for frame processing.
      */
     data class Params(
-        val imageProxy: ImageProxy,
+        val frame: FrameSource,
         val timestamp: Long,
         val calibrationData: CalibrationData?,
         val exerciseType: ExerciseType,

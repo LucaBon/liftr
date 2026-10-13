@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.liftr.R
 import com.liftr.data.export.VideoShareManager
 import com.liftr.service.VideoAnalysisService
+import com.liftr.vision.adapter.ImageProxyFrameSource
 import com.liftr.vision.camera.CameraManager
 import com.liftr.vision.camera.VideoRecordingManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,7 +60,7 @@ import com.liftr.domain.value.RepCount
 import com.liftr.domain.vision.IPoseDetector
 import com.liftr.ui.common.UiError
 import com.liftr.ui.common.toUiError
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -517,7 +518,7 @@ class WorkoutViewModel @Inject constructor(
                     val generation = setGeneration
                     val result = processFrameUseCase(
                         ProcessWorkoutFrameUseCase.Params(
-                            imageProxy = frame,
+                            frame = ImageProxyFrameSource(frame),
                             timestamp = System.currentTimeMillis(),
                             calibrationData = calibrationData,
                             exerciseType = _uiState.value.selectedExercise,

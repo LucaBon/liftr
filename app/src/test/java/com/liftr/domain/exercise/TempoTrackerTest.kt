@@ -1,7 +1,7 @@
 package com.liftr.domain.exercise
 
 import com.liftr.domain.model.TempoPrescription
-import com.liftr.vision.tracking.MovementPhase
+import com.liftr.domain.model.MovementPhase
 import org.junit.Assert.*
 import org.junit.Test
 

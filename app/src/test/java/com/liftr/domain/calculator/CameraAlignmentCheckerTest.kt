@@ -1,4 +1,4 @@
-package com.liftr.vision.calculator
+package com.liftr.domain.calculator
 
 import com.liftr.domain.model.PoseResultTestFixtures
 import org.junit.Assert.*
