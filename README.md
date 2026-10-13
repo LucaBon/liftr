@@ -34,6 +34,18 @@ Requires Android Studio Hedgehog+ with JDK 17.
 ./gradlew jacocoTestReport         # Coverage report
 ```
 
+### Release signing
+
+Release builds are signed with the Play upload key. Copy `keystore.properties.example`
+to `keystore.properties` (gitignored) and fill it in, or set `LIFTR_KEYSTORE_FILE`,
+`LIFTR_KEYSTORE_PASSWORD`, `LIFTR_KEY_ALIAS` and `LIFTR_KEY_PASSWORD`. Then:
+
+```bash
+./gradlew bundleRelease            # Signed AAB for Google Play
+```
+
+Without either, release builds are produced unsigned.
+
 See [`CLAUDE.md`](./CLAUDE.md) for architecture notes and development conventions.
 
 ## License

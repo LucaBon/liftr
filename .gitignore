@@ -206,6 +206,7 @@ app/src/main/assets/crashlytics-build.properties
 
 # Secret files (API keys, passwords, etc.)
 secrets.properties
+keystore.properties
 secret.properties
 api_keys.properties
 *.secret

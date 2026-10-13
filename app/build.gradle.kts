@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +8,17 @@ plugins {
     kotlin("plugin.serialization")
     id("jacoco")
 }
+
+// Release signing (Play upload key). Read from keystore.properties at the repo
+// root (gitignored) or, when absent, from LIFTR_* environment variables for CI.
+// With neither present the release build is produced unsigned.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun signingValue(key: String, env: String): String? =
+    keystoreProperties.getProperty(key) ?: System.getenv(env)
 
 android {
     namespace = "com.liftr"
@@ -35,8 +48,21 @@ android {
         }
     }
 
+    signingConfigs {
+        val storeFilePath = signingValue("storeFile", "LIFTR_KEYSTORE_FILE")
+        if (storeFilePath != null) {
+            create("release") {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = signingValue("storePassword", "LIFTR_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "LIFTR_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "LIFTR_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
