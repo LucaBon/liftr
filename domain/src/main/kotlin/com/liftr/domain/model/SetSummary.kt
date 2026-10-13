@@ -2,6 +2,7 @@ package com.liftr.domain.model
 
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.model.BarPathData
@@ -39,9 +40,16 @@ data class SetSummary(
     val bestRepIndex: Int,
     val worstRepIndex: Int,
     val aggregateFormIssues: List<AggregateFormIssue>,
-    val repBarPaths: List<BarPathData> = emptyList()
+    val repBarPaths: List<BarPathData> = emptyList(),
+    val repJumpHeights: List<Meters> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
+
+    val bestJumpHeight: Meters? get() = repJumpHeights.maxByOrNull { it.value }
+
+    val avgJumpHeight: Meters?
+        get() = if (repJumpHeights.isEmpty()) null
+        else Meters(repJumpHeights.map { it.value }.average().toFloat())
 }
 
 /**

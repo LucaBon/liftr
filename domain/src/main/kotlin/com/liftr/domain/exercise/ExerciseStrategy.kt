@@ -3,6 +3,7 @@ package com.liftr.domain.exercise
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.JumpData
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.SquatDepthType
 import com.liftr.domain.model.VelocityData
@@ -97,12 +98,14 @@ interface ExerciseStrategy {
  * @property repCompleted Whether a complete rep was just finished
  * @property debugInfo Debug information about the phase detection
  * @property depthValidation Depth validation result when transitioning through BOTTOM phase (squats only)
+ * @property jump The measured jump when [repCompleted] (jumps only)
  */
 data class PhaseTransitionResult(
     val newState: ExercisePhaseState,
     val repCompleted: Boolean,
     val debugInfo: String = "",
-    val depthValidation: DepthValidationResult? = null
+    val depthValidation: DepthValidationResult? = null,
+    val jump: JumpData? = null
 )
 
 /**

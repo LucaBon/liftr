@@ -7,6 +7,7 @@ import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.CalibrationQuality
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.JumpData
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.SquatDepthType
 import com.liftr.domain.model.VelocityData
@@ -229,7 +230,8 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
             repCounted = phaseTransitionResult.repCompleted,
             repCount = newRepCount,
             debugInfo = phaseTransitionResult.debugInfo,
-            depthValidation = phaseTransitionResult.depthValidation
+            depthValidation = phaseTransitionResult.depthValidation,
+            jump = phaseTransitionResult.jump
         )
     }
 
@@ -290,7 +292,8 @@ data class PhaseResult(
     val repCounted: Boolean,
     val repCount: Int,
     val debugInfo: String,
-    val depthValidation: DepthValidationResult? = null
+    val depthValidation: DepthValidationResult? = null,
+    val jump: JumpData? = null  // Measured jump when repCounted (jumps only)
 ) {
     // Convenience property for backwards compatibility
     val phase: MovementPhase

@@ -6,8 +6,10 @@ import com.liftr.domain.exercise.strategy.BenchPressStrategy
 import com.liftr.domain.exercise.strategy.CleanStrategy
 import com.liftr.domain.exercise.strategy.DeadliftStrategy
 import com.liftr.domain.exercise.strategy.FrontSquatStrategy
+import com.liftr.domain.exercise.strategy.JumpStrategy
 import com.liftr.domain.exercise.strategy.SnatchStrategy
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.vision.IPositionCalculator
 import dagger.Module
 import dagger.Provides
@@ -108,7 +110,8 @@ object ExerciseModule {
         benchPressStrategy: BenchPressStrategy,
         deadliftStrategy: DeadliftStrategy,
         cleanStrategy: CleanStrategy,
-        snatchStrategy: SnatchStrategy
+        snatchStrategy: SnatchStrategy,
+        logger: Logger
     ): ExerciseStrategyFactory {
         return ExerciseStrategyFactory(
             backSquatStrategy = backSquatStrategy,
@@ -116,7 +119,9 @@ object ExerciseModule {
             benchPressStrategy = benchPressStrategy,
             deadliftStrategy = deadliftStrategy,
             cleanStrategy = cleanStrategy,
-            snatchStrategy = snatchStrategy
+            snatchStrategy = snatchStrategy,
+            verticalJumpStrategy = JumpStrategy(ExerciseType.VERTICAL_JUMP, logger),
+            loadedJumpStrategy = JumpStrategy(ExerciseType.LOADED_JUMP, logger)
         )
     }
 }

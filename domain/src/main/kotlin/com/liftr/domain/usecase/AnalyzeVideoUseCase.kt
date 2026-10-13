@@ -30,6 +30,7 @@ import com.liftr.domain.model.VelocityData
 import com.liftr.domain.repository.SettingsKeys
 import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.vision.IPositionCalculator
@@ -183,6 +184,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repScores = mutableListOf<RepQualityScore>()
         val repVelocities = mutableListOf<MetersPerSecond>()
         val repBarPaths = mutableListOf<BarPathData>()
+        val repJumpHeights = mutableListOf<Meters>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -283,10 +285,16 @@ class AnalyzeVideoUseCase @Inject constructor(
                     BarPathAnalyzer.analyze(repNumber = repScores.size, points = currentRepBarPoints.toList())
                 )
 
-                val avgRepVelocity = if (repVelocityCount > 0) {
-                    MetersPerSecond(repVelocitySum / repVelocityCount)
-                } else MetersPerSecond(0f)
+                // A jump's takeoff velocity (from flight time) is its rep velocity,
+                // so VBT zones and velocity loss work the same way for jumps.
+                val jump = transition.jump
+                val avgRepVelocity = when {
+                    jump != null -> jump.takeoffVelocity
+                    repVelocityCount > 0 -> MetersPerSecond(repVelocitySum / repVelocityCount)
+                    else -> MetersPerSecond(0f)
+                }
                 repVelocities.add(avgRepVelocity)
+                jump?.let { repJumpHeights.add(it.height) }
 
                 onProgress(
                     Progress(
@@ -316,14 +324,15 @@ class AnalyzeVideoUseCase @Inject constructor(
             previousPhase = newPhase
         }
 
-        return assembleSummary(params, repScores, repVelocities, repBarPaths)
+        return assembleSummary(params, repScores, repVelocities, repBarPaths, repJumpHeights)
     }
 
     private fun assembleSummary(
         params: Params,
         repScores: List<RepQualityScore>,
         repVelocities: List<MetersPerSecond>,
-        repBarPaths: List<BarPathData>
+        repBarPaths: List<BarPathData>,
+        repJumpHeights: List<Meters>
     ): SetSummary {
         val avgVelocity = if (repVelocities.isNotEmpty()) {
             MetersPerSecond(repVelocities.map { it.value }.average().toFloat())
@@ -353,7 +362,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             bestRepIndex = repScores.indices.maxByOrNull { repScores[it].totalScore } ?: 0,
             worstRepIndex = repScores.indices.minByOrNull { repScores[it].totalScore } ?: 0,
             aggregateFormIssues = aggregateFormIssues(repScores),
-            repBarPaths = repBarPaths
+            repBarPaths = repBarPaths,
+            repJumpHeights = repJumpHeights
         )
     }
 

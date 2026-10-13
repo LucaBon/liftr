@@ -267,6 +267,41 @@ object ExerciseThresholds {
     }
 
     /**
+     * Thresholds for vertical and loaded jumps.
+     *
+     * Fractions are of the standing head-to-toe span in normalized image
+     * coordinates, so they hold at any camera distance.
+     */
+    object Jump {
+        /** Toe rise that marks takeoff/landing for timing (~2.5 cm for 1.75 m) */
+        const val TIMING_LEVEL = 0.015f
+
+        /** Toe rise that confirms the athlete is airborne (~5 cm) */
+        const val AIRBORNE_LEVEL = 0.03f
+
+        /** Hip drop that starts a countermovement (~7 cm) */
+        const val DIP_LEVEL = 0.04f
+
+        /** Hip rise from the lowest point that marks the turnaround (~2 cm) */
+        const val TURNAROUND_LEVEL = 0.01f
+
+        /** Shorter flights are tracking noise (h < 1.2 cm) */
+        const val MIN_FLIGHT_MS = 100f
+
+        /** Longer flights mean tracking was lost (h > 1.2 m) */
+        const val MAX_FLIGHT_MS = 1000f
+
+        /** Airborne frames needed to fit the flight parabola (~100 ms at 30 fps) */
+        const val MIN_FIT_SAMPLES = 4
+
+        /** Nose height as a fraction of stature, to express the span in meters */
+        const val NOSE_HEIGHT_RATIO = 0.92f
+
+        /** Smoothing factor for re-anchoring the standing baseline */
+        const val BASELINE_SMOOTHING = 0.2f
+    }
+
+    /**
      * Velocity calculation thresholds.
      */
     object Velocity {

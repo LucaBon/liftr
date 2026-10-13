@@ -62,7 +62,9 @@ data class ExercisePhaseState(
      * for the shallow depth types the window is a *maximum* depth that can be
      * passed straight through between two frames of a fast descent.
      */
-    val depthWindowSatisfied: Boolean = false
+    val depthWindowSatisfied: Boolean = false,
+    // Jump fields
+    val jump: JumpTrackingState? = null
 ) {
     /**
      * Create a new state with updated current phase.
