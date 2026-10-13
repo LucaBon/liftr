@@ -21,7 +21,7 @@ An Android app that turns your phone camera into a barbell-tracking coach. Uses 
 - **Room** for local persistence
 - **DataStore** for preferences
 - **MPAndroidChart** for analytics visualization
-- Clean Architecture: `domain/` (pure Kotlin) → `data/` + `vision/` → `ui/`
+- Clean Architecture: `:domain` module (pure Kotlin JVM, no Android) → `data/` + `vision/` → `ui/` in `:app`
 
 ## Build
 
@@ -30,7 +30,7 @@ Requires Android Studio Hedgehog+ with JDK 17.
 ```bash
 ./gradlew assembleDebug            # Build debug APK
 ./gradlew installDebug             # Install on connected device
-./gradlew testDebugUnitTest        # Run unit tests
+./gradlew :domain:test testDebugUnitTest  # Run unit tests (domain + app)
 ./gradlew jacocoTestReport         # Coverage report
 ```
 

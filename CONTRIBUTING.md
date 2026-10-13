@@ -36,13 +36,13 @@ git rebase --signoff HEAD~N    # last N commits
 ## What we look for in a PR
 
 - **Scope:** keep PRs focused. One feature or one fix per PR. Refactors should be separate from behavior changes.
-- **Tests:** new domain/data logic must come with unit tests. See `app/src/test/` for examples. Target coverage thresholds are enforced by `./gradlew jacocoTestCoverageVerification` (80% line / 70% branch for non-UI code).
+- **Tests:** new domain/data logic must come with unit tests. See `domain/src/test/` and `app/src/test/` for examples. Target coverage thresholds are enforced by `./gradlew jacocoTestCoverageVerification` (80% line / 70% branch for non-UI code).
 - **Architecture:** respect the layer boundaries described in [`CLAUDE.md`](./CLAUDE.md):
-  - `domain/` — pure Kotlin, no Android imports.
+  - `domain/` — separate `:domain` Gradle module (Kotlin/JVM), so Android imports fail to compile. Run its tests with `./gradlew :domain:test`.
   - `data/` and `vision/` — Android/framework code, implements `domain/` interfaces.
   - `ui/` — Compose, ViewModels, navigation.
 - **Value objects:** prefer `Kilograms`, `Meters`, `MetersPerSecond`, etc. over raw `Float` in domain signatures.
-- **New lift support:** add the strategy under `domain/exercise/strategy/`, register it in `ExerciseStrategyFactory` (both the `when` block and `getAllStrategies()`), and add an integration test under `app/src/test/java/com/liftr/domain/exercise/strategy/`.
+- **New lift support:** add the strategy under `domain/exercise/strategy/`, register it in `ExerciseStrategyFactory` (both the `when` block and `getAllStrategies()`), and add an integration test under `domain/src/test/kotlin/com/liftr/domain/exercise/strategy/`.
 - **Commit messages:** short imperative subject (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`, `chore:`), optional body explaining the why.
 
 ## What we do NOT accept
@@ -50,7 +50,7 @@ git rebase --signoff HEAD~N    # last N commits
 - **Code copied from incompatibly-licensed sources** (proprietary, GPL-2-only, BSD-4-clause with advertising clause, etc.). AGPL-3.0 can absorb MIT/Apache/BSD-2/BSD-3/GPLv3 code, but not the reverse.
 - **PRs without DCO sign-off.**
 - **PRs that commit secrets, API keys, keystores, or real user data.** See `.gitignore` for the patterns we already filter.
-- **PRs that break `./gradlew testDebugUnitTest`.**
+- **PRs that break `./gradlew :domain:test testDebugUnitTest`.**
 - **PRs that add dependencies without justification.** Every new dependency increases APK size, build time, and attack surface.
 
 ## Reporting bugs

@@ -3,7 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
-    kotlin("plugin.serialization") version "1.9.22"
+    kotlin("plugin.serialization")
     id("jacoco")
 }
 
@@ -94,6 +94,8 @@ ksp {
 }
 
 dependencies {
+    implementation(project(":domain"))
+
     // Core Android
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.core:core-splashscreen:1.0.1")

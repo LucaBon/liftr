@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Liftr"
 include(":app")
+include(":domain")

@@ -572,8 +572,9 @@ class WorkoutViewModel @Inject constructor(
                     )
 
                     // VBT: Update zone and velocity loss on rep completion
-                    if (repJustCounted && result.velocityData != null) {
-                        val repAvgVelocity = result.velocityData.average
+                    val repVelocity = result.velocityData
+                    if (repJustCounted && repVelocity != null) {
+                        val repAvgVelocity = repVelocity.average
 
                         // Determine VBT zone
                         if (vbtZonesEnabled) {
