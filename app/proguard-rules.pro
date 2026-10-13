@@ -7,8 +7,8 @@
 -dontwarn com.google.mediapipe.**
 
 # Keep domain model data classes (serialization, Room converters)
--keep class com.lifthelper.domain.model.** { *; }
--keep class com.lifthelper.data.local.database.entities.** { *; }
+-keep class com.liftr.domain.model.** { *; }
+-keep class com.liftr.data.local.database.entities.** { *; }
 
 # Room database — keep generated DAO implementations
 -keep class * extends androidx.room.RoomDatabase { *; }

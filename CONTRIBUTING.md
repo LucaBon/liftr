@@ -1,10 +1,10 @@
-# Contributing to LiftHelper
+# Contributing to Liftr
 
-Thanks for your interest in improving LiftHelper. This document explains the ground rules for contributions.
+Thanks for your interest in improving Liftr. This document explains the ground rules for contributions.
 
 ## License of contributions
 
-LiftHelper is licensed under **GNU Affero General Public License v3.0** (see [`LICENSE`](./LICENSE)).
+Liftr is licensed under **GNU Affero General Public License v3.0** (see [`LICENSE`](./LICENSE)).
 
 **By submitting a contribution (pull request, patch, code snippet, or any other material) to this repository, you agree that your contribution is licensed under the same AGPL-3.0 license** and may be redistributed by the project under those terms.
 
@@ -42,7 +42,7 @@ git rebase --signoff HEAD~N    # last N commits
   - `data/` and `vision/` — Android/framework code, implements `domain/` interfaces.
   - `ui/` — Compose, ViewModels, navigation.
 - **Value objects:** prefer `Kilograms`, `Meters`, `MetersPerSecond`, etc. over raw `Float` in domain signatures.
-- **New lift support:** add the strategy under `domain/exercise/strategy/`, register it in `ExerciseStrategyFactory` (both the `when` block and `getAllStrategies()`), and add an integration test under `app/src/test/java/com/lifthelper/domain/exercise/strategy/`.
+- **New lift support:** add the strategy under `domain/exercise/strategy/`, register it in `ExerciseStrategyFactory` (both the `when` block and `getAllStrategies()`), and add an integration test under `app/src/test/java/com/liftr/domain/exercise/strategy/`.
 - **Commit messages:** short imperative subject (`fix:`, `feat:`, `refactor:`, `test:`, `docs:`, `chore:`), optional body explaining the why.
 
 ## What we do NOT accept
@@ -71,4 +71,4 @@ Be respectful. Technical disagreements are fine; personal attacks are not. Maint
 
 ## Commercial licensing
 
-If your intended use of LiftHelper is incompatible with AGPL-3.0 (closed-source product, internal corporate deployment without source release, etc.), contact **luca.bonura@gmail.com** for commercial licensing options. Contributions to the open-source project do not grant any commercial license to your own derivative works.
+If your intended use of Liftr is incompatible with AGPL-3.0 (closed-source product, internal corporate deployment without source release, etc.), contact **luca.bonura@gmail.com** for commercial licensing options. Contributions to the open-source project do not grant any commercial license to your own derivative works.

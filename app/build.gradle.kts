@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.lifthelper"
+    namespace = "com.liftr"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.lifthelper"
+        applicationId = "com.liftr"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Lift Helper</string>
+    <string name="app_name">Liftr</string>
 
     <!-- Calibration Screen -->
-    <string name="calibration_title">Welcome to Lift Helper</string>
+    <string name="calibration_title">Welcome to Liftr</string>
     <string name="calibration_description">Enter your height to calibrate distance measurements. Height is used because it remains constant regardless of camera angle (frontal or side view).</string>
     <string name="height_label">Your Height (cm)</string>
     <string name="shoulder_width_label">Shoulder Width (cm)</string>
@@ -26,7 +26,7 @@
     <string name="settings_threshold_label">Threshold</string>
 
     <!-- Home Screen -->
-    <string name="home_title">Lift Helper</string>
+    <string name="home_title">Liftr</string>
     <string name="start_workout">Start Workout</string>
     <string name="view_history">View History</string>
     <string name="settings">Settings</string>
@@ -135,7 +135,7 @@
 
     <!-- Measurement Accuracy -->
     <string name="accuracy_info_title">Measurement Accuracy</string>
-    <string name="accuracy_info_description">Lift Helper uses computer vision and biomechanics calculations to track your movements. Accuracy depends on several factors:</string>
+    <string name="accuracy_info_description">Liftr uses computer vision and biomechanics calculations to track your movements. Accuracy depends on several factors:</string>
     <string name="accuracy_centered">Best accuracy (98–99%): Keep your body centered in the frame</string>
     <string name="accuracy_edge">Reduced accuracy (90–95%): Measurements near frame edges affected by lens distortion</string>
     <string name="accuracy_optimal">Optimal conditions: Portrait or landscape mode, proper lighting, full body visible</string>
@@ -385,7 +385,7 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start_training">Start Training</string>
-    <string name="onboarding_welcome_title">Welcome to Lift Helper</string>
+    <string name="onboarding_welcome_title">Welcome to Liftr</string>
     <string name="onboarding_welcome_body">Track your lifts with AI-powered velocity analysis. Get real-time form feedback and rep quality scores — all from your phone\'s camera.</string>
     <string name="onboarding_camera_title">Set Up Your Camera</string>
     <string name="onboarding_camera_body">Place your phone 2–3 meters from the rack, at hip height, with a clear side view of the lifter. Use a stable surface or tripod and avoid strong backlighting.</string>

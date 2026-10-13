@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LiftHelper"
+rootProject.name = "Liftr"
 include(":app")

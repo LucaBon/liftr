@@ -1,4 +1,4 @@
-# LiftHelper
+# Liftr
 
 An Android app that turns your phone camera into a barbell-tracking coach. Uses on-device computer vision (MediaPipe Pose) to count reps, measure bar velocity, score rep quality, and validate form in real time — no wearables or sensors required.
 
@@ -38,7 +38,7 @@ See [`CLAUDE.md`](./CLAUDE.md) for architecture notes and development convention
 
 ## License
 
-LiftHelper is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
+Liftr is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
 
 See [`LICENSE`](./LICENSE) for the full text.
 
@@ -49,7 +49,7 @@ See [`LICENSE`](./LICENSE) for the full text.
 
 ### Commercial licensing
 
-If you want to use LiftHelper (or derivative works) in a closed-source product, internal deployment, or any context where AGPL-3.0 obligations are not acceptable, a **commercial license** is available.
+If you want to use Liftr (or derivative works) in a closed-source product, internal deployment, or any context where AGPL-3.0 obligations are not acceptable, a **commercial license** is available.
 
 Contact: **luca.bonura@gmail.com**
 

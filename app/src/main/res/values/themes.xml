@@ -2,16 +2,16 @@
 <resources>
     <!-- Base app theme. Dark window background prevents a white flash on cold
          start before Compose draws the dark "Volt Performance" UI. -->
-    <style name="Theme.LiftHelper" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Liftr" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <!-- Launch (splash) theme: near-black background with the volt bolt mark. -->
-    <style name="Theme.LiftHelper.Starting" parent="Theme.SplashScreen">
+    <style name="Theme.Liftr.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
-        <item name="postSplashScreenTheme">@style/Theme.LiftHelper</item>
+        <item name="postSplashScreenTheme">@style/Theme.Liftr</item>
     </style>
 </resources>
