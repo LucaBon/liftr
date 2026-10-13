@@ -47,6 +47,7 @@
     <string name="tts_tempo_hold">Tieni %1$d</string>
     <string name="tts_tempo_slower">Più lento</string>
     <string name="tts_tempo_faster">Più veloce</string>
+    <string name="tts_jump_height">%1$d centimetri</string>
     <string name="tts_depth_insufficient">Profondità insufficiente</string>
 
     <!-- Set control -->
@@ -97,4 +98,21 @@
     <string name="settings_replay_tutorial_desc">Ripeti la guida iniziale di configurazione</string>
     <string name="analysis_results_ready_one">Analisi della serie pronta — tocca per vedere</string>
     <string name="analysis_results_ready_many">%1$d analisi delle serie pronte — tocca per vedere</string>
+
+    <!-- Exercise Types -->
+    <string name="exercise_front_squat">Front squat</string>
+    <string name="exercise_back_squat">Back squat</string>
+    <string name="exercise_bench_press">Panca piana</string>
+    <string name="exercise_deadlift">Stacco da terra</string>
+    <string name="exercise_clean">Girata</string>
+    <string name="exercise_snatch">Strappo</string>
+    <string name="exercise_vertical_jump">Salto verticale</string>
+    <string name="exercise_loaded_jump">Salto con sovraccarico</string>
+
+    <!-- Jumps -->
+    <string name="jump_height_cm">%1$.0f cm</string>
+    <string name="jump_last_label">Ultimo salto</string>
+    <string name="set_summary_best_jump">Salto migliore</string>
+    <string name="set_summary_avg_jump">Salto medio</string>
+    <string name="set_summary_jump_number">Salto %1$d</string>
 </resources>

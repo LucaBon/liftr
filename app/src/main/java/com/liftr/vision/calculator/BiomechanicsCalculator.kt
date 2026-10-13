@@ -286,30 +286,6 @@ class BiomechanicsCalculator @Inject constructor(
     }
 
     /**
-     * Calculate velocity at center of mass (for jump height estimation)
-     *
-     * v_takeoff = sqrt(2 * g * jump_height)
-     *
-     * @param jumpHeight Jump height in meters
-     * @return Takeoff velocity in m/s
-     */
-    fun calculateTakeoffVelocity(jumpHeight: Float): Float {
-        return kotlin.math.sqrt(2 * GRAVITY * kotlin.math.abs(jumpHeight))
-    }
-
-    /**
-     * Calculate jump height from takeoff velocity
-     *
-     * jump_height = v² / (2 * g)
-     *
-     * @param takeoffVelocity Vertical velocity at takeoff
-     * @return Jump height
-     */
-    fun calculateJumpHeight(takeoffVelocity: MetersPerSecond): Meters {
-        return Meters((takeoffVelocity.value.pow(2)) / (2 * GRAVITY))
-    }
-
-    /**
      * Calculate relative strength (strength per kg body weight)
      *
      * Useful for comparing athletes of different sizes

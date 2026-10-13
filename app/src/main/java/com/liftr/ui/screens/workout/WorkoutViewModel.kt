@@ -69,6 +69,7 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 @HiltViewModel
 class WorkoutViewModel @Inject constructor(
@@ -162,6 +163,7 @@ class WorkoutViewModel @Inject constructor(
     // --- Rep Quality Scoring: per-set accumulators ---
     private var setRepScores = mutableListOf<RepQualityScore>()
     private var setRepVelocities = mutableListOf<MetersPerSecond>()
+    private var setJumpHeights = mutableListOf<Meters>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -353,6 +355,7 @@ class WorkoutViewModel @Inject constructor(
             completedReps = summary.completedReps,
             avgVelocity = summary.avgVelocity,
             peakVelocity = summary.peakVelocity,
+            jumpHeight = summary.bestJumpHeight,
             timestamp = now,
             reps = reps
         )
@@ -568,13 +571,13 @@ class WorkoutViewModel @Inject constructor(
                         velocityData = result.velocityData,
                         repCount = RepCount(newRepCount),
                         calibrationQuality = result.calibrationQuality,
+                        lastJumpHeight = result.phaseResult?.jump?.height ?: state.lastJumpHeight,
                         error = null
                     )
 
                     // VBT: Update zone and velocity loss on rep completion
-                    val repVelocity = result.velocityData
-                    if (repJustCounted && repVelocity != null) {
-                        val repAvgVelocity = repVelocity.average
+                    val repAvgVelocity = repVelocityOf(result)
+                    if (repJustCounted && repAvgVelocity != null) {
 
                         // Determine VBT zone
                         if (vbtZonesEnabled) {
@@ -789,9 +792,13 @@ class WorkoutViewModel @Inject constructor(
         previousConcentricDurations.add(concentricDuration)
 
         // Track per-rep velocity
-        val repAvgVelocity = result.velocityData?.average ?: MetersPerSecond(0f)
-        val repPeakVelocity = result.velocityData?.instantaneous ?: MetersPerSecond(0f)
-        result.velocityData?.let { setRepVelocities.add(it.average) }
+        val jump = result.phaseResult?.jump
+        val repAvgVelocity = repVelocityOf(result) ?: MetersPerSecond(0f)
+        val repPeakVelocity = jump?.takeoffVelocity
+            ?: result.velocityData?.instantaneous
+            ?: MetersPerSecond(0f)
+        repVelocityOf(result)?.let { setRepVelocities.add(it) }
+        jump?.let { setJumpHeights.add(it.height) }
 
         // Build Rep domain object for persistence
         val rep = Rep(
@@ -822,6 +829,14 @@ class WorkoutViewModel @Inject constructor(
         val depthOk = currentRepDepthValidation?.isValid
         _uiState.update { it.copy(currentRepScore = score, lastRepDepthOk = depthOk) }
     }
+
+    /**
+     * The velocity a counted rep is judged by: a jump's takeoff velocity (from
+     * flight time), otherwise the tracked bar velocity. Using takeoff velocity
+     * lets VBT zones and velocity loss work unchanged for jumps.
+     */
+    private fun repVelocityOf(result: FrameProcessingResult.Success): MetersPerSecond? =
+        result.phaseResult?.jump?.takeoffVelocity ?: result.velocityData?.average
 
     /**
      * Extracts a full bar path point from the pose result and velocity data.
@@ -1014,6 +1029,7 @@ class WorkoutViewModel @Inject constructor(
         currentRepBottomTime = 0L
         setRepScores.clear()
         setRepVelocities.clear()
+        setJumpHeights.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1033,6 +1049,7 @@ class WorkoutViewModel @Inject constructor(
             it.copy(
                 isRecording = true,
                 repCount = RepCount(0),
+                lastJumpHeight = null,
                 error = null,
                 vbtZone = null,
                 velocityLossState = VelocityLossTracker.reset(velocityLossThreshold),
@@ -1053,7 +1070,11 @@ class WorkoutViewModel @Inject constructor(
     ) {
         // Rep counted
         if (repJustCounted) {
-            feedbackEmitter.emit(FeedbackEvent.RepCounted(newRepCount))
+            val jump = result.phaseResult?.jump
+            feedbackEmitter.emit(
+                if (jump != null) FeedbackEvent.JumpMeasured((jump.height.value * 100).roundToInt())
+                else FeedbackEvent.RepCounted(newRepCount)
+            )
 
             // Depth-not-reached cue (only real-time form cue that survived the
             // per-frame strip — it's robust and critical to rep validity).
@@ -1221,6 +1242,7 @@ class WorkoutViewModel @Inject constructor(
                 completedReps = RepCount(setRepScores.size),
                 avgVelocity = summary.avgVelocity,
                 peakVelocity = summary.peakVelocity,
+                jumpHeight = summary.bestJumpHeight,
                 timestamp = System.currentTimeMillis(),
                 reps = setReps.toList()
             )
@@ -1384,7 +1406,8 @@ class WorkoutViewModel @Inject constructor(
             bestRepIndex = scores.indices.maxByOrNull { scores[it].totalScore } ?: 0,
             worstRepIndex = scores.indices.minByOrNull { scores[it].totalScore } ?: 0,
             aggregateFormIssues = aggregateFormIssues(scores),
-            repBarPaths = setBarPaths.toList()
+            repBarPaths = setBarPaths.toList(),
+            repJumpHeights = setJumpHeights.toList()
         )
     }
 
@@ -1599,6 +1622,7 @@ class WorkoutViewModel @Inject constructor(
             ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> 180
             ExerciseType.BENCH_PRESS -> 120
             ExerciseType.DEADLIFT -> 180
+            ExerciseType.VERTICAL_JUMP, ExerciseType.LOADED_JUMP -> 60
             else -> 90
         }
     }

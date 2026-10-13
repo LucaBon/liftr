@@ -38,6 +38,7 @@ import com.liftr.ui.theme.Brand
 import com.liftr.ui.theme.Spacing
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.liftr.ui.common.label
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -262,7 +263,7 @@ private fun LastWorkoutCard(workout: Workout) {
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
                 val exercises = workout.sets
-                    .map { it.exerciseType.getDisplayName() }
+                    .map { it.exerciseType.label() }
                     .distinct()
                     .joinToString(", ")
 

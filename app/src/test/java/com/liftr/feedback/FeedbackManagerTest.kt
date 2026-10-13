@@ -53,13 +53,15 @@ class FeedbackEventTest {
             FeedbackEvent.DepthAchieved,
             FeedbackEvent.DepthInsufficient,
             FeedbackEvent.PersonalRecord,
-            FeedbackEvent.RestComplete
+            FeedbackEvent.RestComplete,
+            FeedbackEvent.JumpMeasured(42)
         )
 
         // Exhaustive when — compiler enforces all branches
         events.forEach { event ->
             val label = when (event) {
                 is FeedbackEvent.RepCounted -> "rep"
+                is FeedbackEvent.JumpMeasured -> "jump"
                 is FeedbackEvent.SetComplete -> "set"
                 is FeedbackEvent.VelocityLossAlert -> "velocity"
                 is FeedbackEvent.FormWarning -> "warning"
@@ -75,7 +77,7 @@ class FeedbackEventTest {
             assertTrue(label.isNotEmpty())
         }
 
-        assertEquals(9, events.size)
+        assertEquals(10, events.size)
     }
 
     @Test

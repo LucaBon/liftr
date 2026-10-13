@@ -106,6 +106,14 @@ class FeedbackManager @Inject constructor(
                 speak("${event.repNumber}", TextToSpeech.QUEUE_FLUSH)
                 vibrateShort()
             }
+            is FeedbackEvent.JumpMeasured -> {
+                if (!throttleCategory("rep")) return
+                speak(
+                    localizedContext.getString(R.string.tts_jump_height, event.heightCm),
+                    TextToSpeech.QUEUE_FLUSH
+                )
+                vibrateShort()
+            }
             is FeedbackEvent.SetComplete -> {
                 if (!throttleCategory("set")) return
                 speakRes(R.string.tts_set_complete, TextToSpeech.QUEUE_FLUSH)

@@ -31,6 +31,7 @@ import com.liftr.R
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.ExportConfig
 import com.liftr.domain.model.ExportFormat
+import com.liftr.ui.common.label
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -178,7 +179,7 @@ private fun ExerciseFilterDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val allLabel = stringResource(R.string.export_exercise_all)
-    val label = current?.getDisplayName() ?: allLabel
+    val label = current?.label() ?: allLabel
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -206,7 +207,7 @@ private fun ExerciseFilterDropdown(
             )
             ExerciseType.entries.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(option.getDisplayName()) },
+                    text = { Text(option.label()) },
                     onClick = {
                         onChange(option)
                         expanded = false

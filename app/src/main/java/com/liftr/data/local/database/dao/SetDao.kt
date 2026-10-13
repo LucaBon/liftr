@@ -53,6 +53,13 @@ interface SetDao {
 
     @Query("""
         SELECT * FROM sets
+        WHERE exerciseType = :exerciseType AND jumpHeight IS NOT NULL
+        ORDER BY jumpHeight DESC LIMIT 1
+    """)
+    suspend fun getHighestJumpSet(exerciseType: ExerciseType): SetEntity?
+
+    @Query("""
+        SELECT * FROM sets
         WHERE exerciseType = :exerciseType AND isManual = 0
         ORDER BY (weight * completedReps) DESC LIMIT 1
     """)

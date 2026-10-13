@@ -15,5 +15,6 @@ enum class PersonalRecordType(val displayName: String) {
     BEST_QUALITY("Best Quality Score"),
     ESTIMATED_1RM("Estimated 1RM"),
     HIGHEST_VOLUME_SET("Highest Volume Set"),
-    MOST_TONNAGE_SESSION("Most Tonnage Session")
+    MOST_TONNAGE_SESSION("Most Tonnage Session"),
+    BEST_JUMP_HEIGHT("Best Jump")
 }

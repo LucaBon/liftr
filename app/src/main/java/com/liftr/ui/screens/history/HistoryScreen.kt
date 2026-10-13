@@ -24,6 +24,8 @@ import com.liftr.ui.components.common.StatItem
 import com.liftr.ui.theme.Spacing
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.liftr.ui.common.label
+import com.liftr.ui.common.trackedSummaryLine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -179,7 +181,7 @@ private fun WorkoutCard(
                 workout.sets.forEachIndexed { index, set ->
                     if (set.isManual) {
                         Text(
-                            text = "Set ${index + 1}: ${set.displayName} - " +
+                            text = "Set ${index + 1}: ${set.label()} - " +
                                     "${set.weight.value}kg x ${set.completedReps.value} reps" +
                                     if (set.notes.isNotBlank()) " \u00B7 ${set.notes}" else "",
                             style = MaterialTheme.typography.bodySmall,
@@ -187,9 +189,7 @@ private fun WorkoutCard(
                         )
                     } else {
                         Text(
-                            text = "Set ${index + 1}: ${set.displayName} - " +
-                                    "${set.weight.value}kg x ${set.completedReps.value} reps @ " +
-                                    "%.2f m/s avg".format(set.avgVelocity.value),
+                            text = set.trackedSummaryLine(index + 1),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

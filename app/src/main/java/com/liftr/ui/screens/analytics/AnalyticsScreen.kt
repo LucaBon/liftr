@@ -38,6 +38,8 @@ import com.liftr.ui.components.charts.VelocityTrendChart
 import com.liftr.ui.components.charts.VolumeTonnageChart
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.liftr.ui.common.label
+import com.liftr.ui.common.trackedSummaryLine
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -178,7 +180,8 @@ fun AnalyticsScreen(
                         }
 
                         // Estimated 1RM
-                        if (summary.estimated1RMTrend.isNotEmpty()) {
+                        val isJump = uiState.selectedExercise?.isJumpExercise() == true
+                        if (!isJump && summary.estimated1RMTrend.isNotEmpty()) {
                             item {
                                 SectionHeader(
                                 title = stringResource(R.string.analytics_estimated_1rm),
@@ -191,7 +194,7 @@ fun AnalyticsScreen(
                         }
 
                         // Quality Score
-                        if (summary.qualityScoreTrend.isNotEmpty()) {
+                        if (!isJump && summary.qualityScoreTrend.isNotEmpty()) {
                             item {
                                 SectionHeader(
                                 title = stringResource(R.string.analytics_quality_trend),
@@ -286,7 +289,7 @@ private fun ExerciseFilterRow(
     selectedExercise: ExerciseType?,
     onExerciseSelected: (ExerciseType?) -> Unit
 ) {
-    val exercises = ExerciseType.entries.filter { !it.isJumpExercise() }
+    val exercises = ExerciseType.entries
 
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -301,7 +304,7 @@ private fun ExerciseFilterRow(
             FilterChip(
                 selected = selectedExercise == exercise,
                 onClick = { onExerciseSelected(exercise) },
-                label = { Text(exercise.getDisplayName()) }
+                label = { Text(exercise.label()) }
             )
         }
     }
@@ -408,9 +411,7 @@ private fun RecentWorkoutCard(workout: Workout, modifier: Modifier = Modifier) {
 
                 workout.sets.forEachIndexed { index, set ->
                     Text(
-                        text = "Set ${index + 1}: ${set.exerciseType.getDisplayName()} - " +
-                                "${set.weight.value}kg x ${set.completedReps.value} reps @ " +
-                                "%.2f m/s avg".format(set.avgVelocity.value),
+                        text = set.trackedSummaryLine(index + 1),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

@@ -40,8 +40,26 @@ class AnalyticsRepositoryImpl @Inject constructor(
         val records = mutableListOf<PersonalRecord>()
 
         for (et in exerciseTypes) {
+            // Load-based records mean nothing for bodyweight jumps, and volume,
+            // 1RM and quality scores don't apply to jumps at all.
+            val isJump = et.isJumpExercise()
+            val hasLoad = et != ExerciseType.VERTICAL_JUMP
+
+            // Best jump
+            val bestJump = if (isJump) setDao.getHighestJumpSet(et) else null
+            bestJump?.jumpHeight?.let { height ->
+                records.add(PersonalRecord(
+                    type = PersonalRecordType.BEST_JUMP_HEIGHT,
+                    exerciseType = et,
+                    value = "%.0f cm".format(height * 100),
+                    numericValue = height,
+                    date = bestJump.timestamp,
+                    workoutId = bestJump.workoutId
+                ))
+            }
+
             // Heaviest set
-            setDao.getHeaviestSet(et)?.let { entity ->
+            if (hasLoad) setDao.getHeaviestSet(et)?.let { entity ->
                 records.add(PersonalRecord(
                     type = PersonalRecordType.HEAVIEST_SET,
                     exerciseType = et,
@@ -65,7 +83,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
             }
 
             // Best quality
-            repDao.getBestQualityRep(et)?.let { entity ->
+            if (!isJump) repDao.getBestQualityRep(et)?.let { entity ->
                 if (entity.qualityScore > 0) {
                     records.add(PersonalRecord(
                         type = PersonalRecordType.BEST_QUALITY,
@@ -79,7 +97,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
             }
 
             // Highest volume set
-            setDao.getHighestVolumeSet(et)?.let { entity ->
+            if (!isJump) setDao.getHighestVolumeSet(et)?.let { entity ->
                 val volume = entity.weight * entity.completedReps
                 records.add(PersonalRecord(
                     type = PersonalRecordType.HIGHEST_VOLUME_SET,
@@ -104,7 +122,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
                     meanVelocity = MetersPerSecond(it.avgVelocity),
                     timestamp = it.timestamp
                 ) }
-            if (lvPoints.size >= LoadVelocityProfile.MIN_DATA_POINTS) {
+            if (!isJump && lvPoints.size >= LoadVelocityProfile.MIN_DATA_POINTS) {
                 val profile = LoadVelocityProfile(
                     exerciseType = et,
                     dataPoints = lvPoints,
@@ -254,10 +272,28 @@ class AnalyticsRepositoryImpl @Inject constructor(
     ): List<PersonalRecord> {
         val now = System.currentTimeMillis()
         val newPRs = mutableListOf<PersonalRecord>()
+        val isJump = exerciseType.isJumpExercise()
+        val hasLoad = exerciseType != ExerciseType.VERTICAL_JUMP
+
+        // Check best jump
+        val jumpHeight = set.jumpHeight?.value
+        if (isJump && jumpHeight != null) {
+            val currentBest = setDao.getHighestJumpSet(exerciseType)?.jumpHeight
+            if (currentBest == null || jumpHeight > currentBest) {
+                newPRs.add(PersonalRecord(
+                    type = PersonalRecordType.BEST_JUMP_HEIGHT,
+                    exerciseType = exerciseType,
+                    value = "%.0f cm".format(jumpHeight * 100),
+                    numericValue = jumpHeight,
+                    date = now,
+                    workoutId = 0
+                ))
+            }
+        }
 
         // Check heaviest set
         val currentHeaviest = setDao.getHeaviestSet(exerciseType)
-        if (currentHeaviest == null || set.weight.value > currentHeaviest.weight) {
+        if (hasLoad && (currentHeaviest == null || set.weight.value > currentHeaviest.weight)) {
             newPRs.add(PersonalRecord(
                 type = PersonalRecordType.HEAVIEST_SET,
                 exerciseType = exerciseType,
@@ -288,7 +324,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
         val currentHighestVolumeValue = if (currentHighestVolume != null) {
             currentHighestVolume.weight * currentHighestVolume.completedReps
         } else 0f
-        if (setVolume > currentHighestVolumeValue) {
+        if (!isJump && setVolume > currentHighestVolumeValue) {
             newPRs.add(PersonalRecord(
                 type = PersonalRecordType.HIGHEST_VOLUME_SET,
                 exerciseType = exerciseType,

@@ -49,11 +49,6 @@ object Constants {
     const val TRANSITION_VELOCITY_THRESHOLD = 0.05f // m/s
     const val IDLE_VELOCITY_THRESHOLD = 0.02f // m/s
 
-    // Jump Detection
-    const val TAKEOFF_VELOCITY_THRESHOLD = 0.02f
-    const val MIN_FLIGHT_FRAMES = 5
-    const val STABILIZATION_WINDOW = 10
-
     // Physics
     const val GRAVITY = 9.81f // m/s²
 

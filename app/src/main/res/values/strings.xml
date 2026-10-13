@@ -109,6 +109,13 @@
     <string name="exercise_vertical_jump">Vertical Jump</string>
     <string name="exercise_loaded_jump">Loaded Jump</string>
 
+    <!-- Jumps -->
+    <string name="jump_height_cm">%1$.0f cm</string>
+    <string name="jump_last_label">Last jump</string>
+    <string name="set_summary_best_jump">Best Jump</string>
+    <string name="set_summary_avg_jump">Avg Jump</string>
+    <string name="set_summary_jump_number">Jump %1$d</string>
+
     <!-- Velocity Display -->
     <string name="velocity_label">Velocity</string>
     <string name="reps_label">Reps: %d</string>
@@ -202,6 +209,7 @@
     <string name="tts_tempo_slower">Slower</string>
     <string name="tts_tempo_faster">Faster</string>
     <string name="tts_depth_insufficient">Depth not reached</string>
+    <string name="tts_jump_height">%1$d centimeters</string>
 
     <!-- Bench Press Form Issues -->
     <string name="bench_bar_drift">Bar drifting horizontally</string>

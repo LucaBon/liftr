@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
+import com.liftr.ui.common.labelRes
 
 /**
  * Foreground service that runs post-exercise video analysis (Feature 17).
@@ -294,7 +295,7 @@ class VideoAnalysisService : LifecycleService() {
                 outputFile = outputFile,
                 annotations = annotations,
                 header = FrameCompositor.Header(
-                    exerciseLabel = exerciseType.getDisplayName(),
+                    exerciseLabel = getString(exerciseType.labelRes),
                     weightKg = weight.value,
                     targetReps = targetReps
                 )

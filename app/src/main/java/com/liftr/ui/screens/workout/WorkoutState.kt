@@ -14,6 +14,7 @@ import com.liftr.domain.exercise.TempoState
 import com.liftr.domain.model.VbtZone
 import com.liftr.domain.model.VelocityData
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.value.Meters
 import com.liftr.domain.value.RepCount
 import com.liftr.ui.common.UiError
 
@@ -43,6 +44,8 @@ data class WorkoutState(
     // validation (squats only). Drives the red flash on the rep counter badge
     // and is cleared to `null` when the next rep starts or after a short delay.
     val lastRepDepthOk: Boolean? = null,
+    // Height of the most recent jump this set (jumps only), shown on the HUD.
+    val lastJumpHeight: Meters? = null,
     val lastSetSummary: SetSummary? = null,
     val isSetSummaryVisible: Boolean = false,
     val completedSetCount: Int = 0,

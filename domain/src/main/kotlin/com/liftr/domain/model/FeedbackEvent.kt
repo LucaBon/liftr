@@ -13,6 +13,9 @@ sealed class FeedbackEvent {
     /** A rep was just completed. */
     data class RepCounted(val repNumber: Int) : FeedbackEvent()
 
+    /** A jump just landed; announced by height instead of rep number. */
+    data class JumpMeasured(val heightCm: Int) : FeedbackEvent()
+
     /** The lifter has reached the target number of reps for this set. */
     data object SetComplete : FeedbackEvent()
 

@@ -69,6 +69,10 @@ import com.liftr.util.isPortrait
 import com.liftr.util.rememberOrientation
 import com.liftr.vision.camera.CameraManager
 import javax.inject.Inject
+import com.liftr.domain.value.MetersPerSecond
+import com.liftr.domain.value.Meters
+import com.liftr.domain.model.ExerciseType
+import com.liftr.ui.common.label
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -232,7 +236,9 @@ fun WorkoutScreen(
                         ),
                         vbtZone = uiState.vbtZone,
                         vbtZonesEnabled = uiState.vbtZonesEnabled,
-                        lastRepDepthOk = uiState.lastRepDepthOk
+                        lastRepDepthOk = uiState.lastRepDepthOk,
+                        isJump = uiState.selectedExercise.isJumpExercise(),
+                        lastJumpHeight = uiState.lastJumpHeight
                     )
 
                     // Tempo progress bar overlay
@@ -440,7 +446,7 @@ fun WorkoutScreen(
 
                         // Compact info chip during recording
                         WorkoutInfoChip(
-                            exerciseName = uiState.selectedExercise.getDisplayName(),
+                            exerciseName = uiState.selectedExercise.label(),
                             weight = uiState.weight.value,
                             targetReps = uiState.targetReps.value
                         )
@@ -610,8 +616,11 @@ fun SetSummarySheet(
                 fontWeight = FontWeight.Bold
             )
 
+            val isJump = summary.exerciseType.isJumpExercise()
+            val showWeight = summary.exerciseType != ExerciseType.VERTICAL_JUMP
             Text(
-                text = "${summary.exerciseType.getDisplayName()} \u00B7 ${summary.weight.value.toInt()} kg \u00B7 " +
+                text = summary.exerciseType.label() +
+                    (if (showWeight) " \u00B7 ${summary.weight.value.toInt()} kg" else "") + " \u00B7 " +
                     stringResource(R.string.set_summary_reps_format, summary.completedReps.value, summary.targetReps.value),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -633,13 +642,19 @@ fun SetSummarySheet(
                 Spacer(modifier = Modifier.height(Spacing.md))
             }
 
-            // Overall score bar
-            ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
+            // Quality scoring rates depth, bar path and tempo, which don't
+            // apply to jumps; jumps list each height instead.
+            if (isJump) {
+                JumpHeightList(heights = summary.repJumpHeights, velocities = summary.repVelocities)
+            } else {
+                // Overall score bar
+                ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
 
-            Spacer(modifier = Modifier.height(Spacing.md))
+                Spacer(modifier = Modifier.height(Spacing.md))
+            }
 
             // Per-rep score table
-            if (summary.repScores.isNotEmpty()) {
+            if (!isJump && summary.repScores.isNotEmpty()) {
                 RepScoreTable(
                     scores = summary.repScores,
                     velocities = summary.repVelocities,
@@ -686,10 +701,21 @@ fun SetSummarySheet(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                StatItem(
-                    label = stringResource(R.string.set_summary_avg_velocity),
-                    value = "%.2f m/s".format(summary.avgVelocity.value)
-                )
+                if (isJump) {
+                    StatItem(
+                        label = stringResource(R.string.set_summary_best_jump),
+                        value = summary.bestJumpHeight?.let { stringResource(R.string.jump_height_cm, it.value * 100) } ?: "–"
+                    )
+                    StatItem(
+                        label = stringResource(R.string.set_summary_avg_jump),
+                        value = summary.avgJumpHeight?.let { stringResource(R.string.jump_height_cm, it.value * 100) } ?: "–"
+                    )
+                } else {
+                    StatItem(
+                        label = stringResource(R.string.set_summary_avg_velocity),
+                        value = "%.2f m/s".format(summary.avgVelocity.value)
+                    )
+                }
                 StatItem(
                     label = stringResource(R.string.set_summary_velocity_loss),
                     value = "${(summary.velocityLossPercent * 100).toInt()}%%"
@@ -707,6 +733,33 @@ fun SetSummarySheet(
             }
         }
     }
+}
+
+/** One row per jump: height and takeoff velocity. */
+@Composable
+private fun JumpHeightList(heights: List<Meters>, velocities: List<MetersPerSecond>) {
+    Column {
+        heights.forEachIndexed { index, height ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = Spacing.xs),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.set_summary_jump_number, index + 1),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.jump_height_cm, height.value * 100) +
+                        (velocities.getOrNull(index)?.let { "  \u00B7  %.2f m/s".format(it.value) } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(Spacing.md))
 }
 
 @Composable
@@ -913,7 +966,7 @@ fun ExerciseSelector(
         modifier = modifier
     ) {
         OutlinedTextField(
-            value = selectedExercise.getDisplayName(),
+            value = selectedExercise.label(),
             onValueChange = {},
             readOnly = true,
             label = { Text("Exercise") },
@@ -933,11 +986,9 @@ fun ExerciseSelector(
             expanded = expanded,
             onDismissRequest = { expanded = false }
         ) {
-            com.liftr.domain.model.ExerciseType.entries
-                .filter { !it.isJumpExercise() }
-                .forEach { exercise ->
+            ExerciseType.entries.forEach { exercise ->
                 DropdownMenuItem(
-                    text = { Text(exercise.getDisplayName()) },
+                    text = { Text(exercise.label()) },
                     onClick = {
                         onExerciseSelected(exercise)
                         expanded = false

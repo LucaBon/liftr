@@ -28,6 +28,7 @@ import com.liftr.domain.exercise.VelocityLossState
 import com.liftr.domain.model.VbtZone
 import com.liftr.domain.model.VelocityData
 import com.liftr.domain.model.VelocityZone
+import com.liftr.domain.value.Meters
 import com.liftr.domain.value.RepCount
 import com.liftr.ui.theme.*
 import com.liftr.util.OrientationMode
@@ -47,7 +48,9 @@ fun RealTimeFeedbackOverlay(
     modifier: Modifier = Modifier,
     vbtZone: VbtZone? = null,
     vbtZonesEnabled: Boolean = true,
-    lastRepDepthOk: Boolean? = null
+    lastRepDepthOk: Boolean? = null,
+    isJump: Boolean = false,
+    lastJumpHeight: Meters? = null
 ) {
     val orientation = rememberOrientation()
     val isPortrait = orientation == OrientationMode.PORTRAIT
@@ -65,7 +68,9 @@ fun RealTimeFeedbackOverlay(
             depthOk = lastRepDepthOk
         )
 
-        velocityData?.let { data ->
+        if (isJump) {
+            CompactJumpCard(heightMeters = lastJumpHeight?.value)
+        } else velocityData?.let { data ->
             val zoneColor = if (vbtZonesEnabled && vbtZone != null) {
                 Color(vbtZone.colorHex)
             } else {
@@ -92,6 +97,36 @@ fun RealTimeFeedbackOverlay(
         }
     }
 
+}
+
+/** Last jump height, in place of the velocity card while jumping. */
+@Composable
+fun CompactJumpCard(
+    heightMeters: Float?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .widthIn(min = 140.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.62f))
+            .border(1.5.dp, GradientVoltStart.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = heightMeters?.let { stringResource(R.string.jump_height_cm, it * 100) } ?: "–",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.headlineMedium
+        )
+        Text(
+            text = stringResource(R.string.jump_last_label),
+            color = GradientVoltStart,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
 }
 
 @Composable
