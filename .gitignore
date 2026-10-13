@@ -178,7 +178,7 @@ obj/
 apk-analyzer-results/
 
 # Gradle Wrapper
-# !gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.jar
 
 # Database files
 *.db
