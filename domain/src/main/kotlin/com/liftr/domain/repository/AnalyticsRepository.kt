@@ -1,6 +1,7 @@
 package com.liftr.domain.repository
 
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.JumpRepRecord
 import com.liftr.domain.model.PersonalRecord
 import com.liftr.domain.model.TimeRange
 import com.liftr.domain.model.TrendDataPoint
@@ -34,6 +35,9 @@ interface AnalyticsRepository {
     ): List<TrendDataPoint>
 
     suspend fun getRecentWorkouts(limit: Int = 10): List<Workout>
+
+    /** Every jump of [exerciseType] in [timeRange], oldest first. */
+    suspend fun getJumpReps(exerciseType: ExerciseType, timeRange: TimeRange): List<JumpRepRecord>
 
     suspend fun getAvailableWeights(exerciseType: ExerciseType): List<Kilograms>
 

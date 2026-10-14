@@ -157,6 +157,12 @@ fun BarPathReplayCard(
                         label = stringResource(R.string.jump_peak_rise),
                         value = "%.0f cm".format(excursion.peakRiseCm)
                     )
+                    excursion.flightRiseCm?.let {
+                        MetricItem(
+                            label = stringResource(R.string.jump_com_height),
+                            value = "%.0f cm".format(it)
+                        )
+                    }
                 }
                 Text(
                     text = stringResource(R.string.jump_from_standing),

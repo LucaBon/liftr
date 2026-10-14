@@ -2,6 +2,7 @@ package com.liftr.ui.screens.workout
 
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.model.JumpExcursion
+import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import android.content.Context
 import androidx.camera.core.ImageProxy
@@ -365,7 +366,7 @@ class WorkoutViewModel @Inject constructor(
             peakVelocity = summary.peakVelocity,
             jumpHeight = summary.bestJumpHeight,
             timestamp = now,
-            reps = reps
+            reps = withJumpData(reps, summary)
         )
         completedSets.add(completedSet)
         _uiState.update { it.copy(completedSetCount = completedSets.size) }
@@ -379,6 +380,18 @@ class WorkoutViewModel @Inject constructor(
         val state = _uiState.value
         if (restTimerEnabled && !state.isRecording && !state.isVideoRecording) {
             startRestTimer()
+        }
+    }
+
+    /**
+     * Attach each jump's measurements and center-of-mass path to its rep, so
+     * they are saved with the set; reps of other exercises are unchanged.
+     */
+    private fun withJumpData(reps: List<Rep>, summary: SetSummary): List<Rep> {
+        if (!summary.exerciseType.isJumpExercise()) return reps
+        return reps.mapIndexed { index, rep ->
+            val height = summary.repJumpHeights.getOrNull(index) ?: return@mapIndexed rep
+            rep.copy(jump = RepJumpData.from(height.value * 100f, summary.repBarPaths.getOrNull(index)))
         }
     }
 
@@ -1280,7 +1293,7 @@ class WorkoutViewModel @Inject constructor(
                 peakVelocity = summary.peakVelocity,
                 jumpHeight = summary.bestJumpHeight,
                 timestamp = System.currentTimeMillis(),
-                reps = setReps.toList()
+                reps = withJumpData(setReps.toList(), summary)
             )
             completedSets.add(completedSet)
             logger.i(TAG, "Set accumulated for persistence (${completedSets.size} sets in session)")

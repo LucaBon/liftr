@@ -35,7 +35,8 @@ class RepMapper @Inject constructor() {
             velocityProfile = entity.velocityProfile,
             positionProfile = entity.positionProfile,
             timestamp = entity.timestamp,
-            qualityScore = entity.qualityScore
+            qualityScore = entity.qualityScore,
+            jump = entity.jumpData
         )
     }
 
@@ -71,7 +72,8 @@ class RepMapper @Inject constructor() {
             velocityProfile = domain.velocityProfile,
             positionProfile = domain.positionProfile,
             timestamp = domain.timestamp,
-            qualityScore = domain.qualityScore
+            qualityScore = domain.qualityScore,
+            jumpData = domain.jump
         )
     }
 }

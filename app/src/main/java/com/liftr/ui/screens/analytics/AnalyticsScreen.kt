@@ -3,11 +3,9 @@ package com.liftr.ui.screens.analytics
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BarChart
@@ -151,8 +149,9 @@ fun AnalyticsScreen(
                         }
                     }
 
-                    // Weekly Volume chart (always shown)
-                    if (summary.weeklyVolumes.isNotEmpty()) {
+                    // Weekly Volume chart: tonnage means nothing for jumps
+                    val isJump = uiState.selectedExercise?.isJumpExercise() == true
+                    if (!isJump && summary.weeklyVolumes.isNotEmpty()) {
                         item {
                             SectionHeader(
                             title = stringResource(R.string.analytics_volume),
@@ -165,7 +164,14 @@ fun AnalyticsScreen(
                     }
 
                     // Exercise-specific charts
-                    if (uiState.selectedExercise != null) {
+                    if (isJump) {
+                        item {
+                            JumpAnalyticsSection(jumps = summary.jumpReps)
+                        }
+                    } else if (uiState.selectedExercise != null) {
+                        if (summary.velocityTrend.isEmpty()) {
+                            item { HintCard(stringResource(R.string.analytics_no_sets_for_exercise)) }
+                        }
                         // Velocity Trend
                         if (summary.velocityTrend.isNotEmpty()) {
                             item {
@@ -180,8 +186,7 @@ fun AnalyticsScreen(
                         }
 
                         // Estimated 1RM
-                        val isJump = uiState.selectedExercise?.isJumpExercise() == true
-                        if (!isJump && summary.estimated1RMTrend.isNotEmpty()) {
+                        if (summary.estimated1RMTrend.isNotEmpty()) {
                             item {
                                 SectionHeader(
                                 title = stringResource(R.string.analytics_estimated_1rm),
@@ -194,7 +199,7 @@ fun AnalyticsScreen(
                         }
 
                         // Quality Score
-                        if (!isJump && summary.qualityScoreTrend.isNotEmpty()) {
+                        if (summary.qualityScoreTrend.isNotEmpty()) {
                             item {
                                 SectionHeader(
                                 title = stringResource(R.string.analytics_quality_trend),
@@ -206,22 +211,7 @@ fun AnalyticsScreen(
                             }
                         }
                     } else {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            ) {
-                                Text(
-                                    text = stringResource(R.string.analytics_select_exercise),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    modifier = Modifier.padding(Spacing.md),
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        item { HintCard(stringResource(R.string.analytics_select_exercise)) }
                     }
 
                     // Recent Workouts
@@ -285,14 +275,35 @@ private fun EmptyAnalytics(paddingValues: PaddingValues) {
 }
 
 @Composable
+private fun HintCard(text: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** All exercises at once, wrapping onto more lines: a scrolling row hid the jumps off-screen. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
 private fun ExerciseFilterRow(
     selectedExercise: ExerciseType?,
     onExerciseSelected: (ExerciseType?) -> Unit
 ) {
     val exercises = ExerciseType.entries
 
-    Row(
-        modifier = Modifier.horizontalScroll(rememberScrollState()),
+    FlowRow(
         horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
         FilterChip(

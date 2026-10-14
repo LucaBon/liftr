@@ -32,5 +32,19 @@ data class AnalyticsSummary(
     val recentWorkouts: List<Workout>,
     val totalWorkouts: Int,
     val totalSets: Int,
-    val totalReps: Int
+    val totalReps: Int,
+    val jumpReps: List<JumpRepRecord> = emptyList()
+)
+
+/**
+ * One measured jump, in time order, for the jump trends and the latest set's paths.
+ *
+ * @property setId The set it belongs to
+ * @property repNumber 1-indexed jump number within the set
+ */
+data class JumpRepRecord(
+    val timestamp: Long,
+    val setId: Long,
+    val repNumber: Int,
+    val jump: RepJumpData
 )

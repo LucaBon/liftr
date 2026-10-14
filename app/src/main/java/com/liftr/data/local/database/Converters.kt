@@ -3,6 +3,7 @@ package com.liftr.data.local.database
 import androidx.room.TypeConverter
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PositionProfile
+import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.VelocityProfile
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -34,4 +35,10 @@ class Converters {
     fun toPositionProfileList(value: String): List<PositionProfile> {
         return Json.decodeFromString(value)
     }
+
+    @TypeConverter
+    fun fromRepJumpData(value: RepJumpData?): String? = value?.let { Json.encodeToString(it) }
+
+    @TypeConverter
+    fun toRepJumpData(value: String?): RepJumpData? = value?.let { Json.decodeFromString<RepJumpData>(it) }
 }

@@ -111,6 +111,8 @@ class JumpPathWindowTest {
         assertEquals(10f, excursion.countermovementCm, 0.3f)
         assertEquals(20f, excursion.peakRiseCm, 0.3f)
         assertEquals(150f, excursion.standingYCm, 0.5f)
+        // Takeoff at y=0.48, top of the flight at 0.40.
+        assertEquals(16f, excursion.flightRiseCm!!, 0.3f)
     }
 
     @Test

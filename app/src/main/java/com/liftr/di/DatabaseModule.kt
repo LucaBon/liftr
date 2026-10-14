@@ -25,7 +25,7 @@ object DatabaseModule {
             LiftDatabase::class.java,
             "liftr_db"
         )
-            .addMigrations(LiftDatabase.MIGRATION_1_2, LiftDatabase.MIGRATION_2_3)
+            .addMigrations(LiftDatabase.MIGRATION_1_2, LiftDatabase.MIGRATION_2_3, LiftDatabase.MIGRATION_3_4)
             .build()
     }
 

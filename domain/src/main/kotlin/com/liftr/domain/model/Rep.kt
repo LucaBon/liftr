@@ -25,6 +25,7 @@ import com.liftr.domain.value.Percentage
  * @property positionProfile Frame-by-frame position data
  * @property timestamp Timestamp when the rep was completed
  * @property qualityScore Quality score for this rep (0-100), 0 = not scored
+ * @property jump What a jump measured (jump exercises only)
  */
 data class Rep(
     val id: Long = 0,
@@ -41,7 +42,8 @@ data class Rep(
     val velocityProfile: List<VelocityProfile>,
     val positionProfile: List<PositionProfile>,
     val timestamp: Long,
-    val qualityScore: Int = 0
+    val qualityScore: Int = 0,
+    val jump: RepJumpData? = null
 ) {
     /**
      * Returns the total duration of the rep in seconds.

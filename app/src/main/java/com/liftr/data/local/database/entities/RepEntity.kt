@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.liftr.domain.model.PositionProfile
+import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.VelocityProfile
 
 @Entity(
@@ -35,5 +36,6 @@ data class RepEntity(
     val velocityProfile: List<VelocityProfile>, // Full frame-by-frame data
     val positionProfile: List<PositionProfile>, // Full position tracking
     val timestamp: Long,
-    val qualityScore: Int = 0 // Rep quality score (0-100), 0 = not scored
+    val qualityScore: Int = 0, // Rep quality score (0-100), 0 = not scored
+    val jumpData: RepJumpData? = null // Jump measurements and center-of-mass path
 )

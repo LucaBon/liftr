@@ -34,6 +34,10 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             analyticsRepository.getQualityScoreTrend(params.exerciseType, params.timeRange)
         } else emptyList()
 
+        val jumpReps = if (params.exerciseType?.isJumpExercise() == true) {
+            analyticsRepository.getJumpReps(params.exerciseType, params.timeRange)
+        } else emptyList()
+
         val recentWorkouts = analyticsRepository.getRecentWorkouts()
 
         return AnalyticsSummary(
@@ -45,7 +49,8 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             recentWorkouts = recentWorkouts,
             totalWorkouts = recentWorkouts.size,
             totalSets = recentWorkouts.sumOf { it.sets.size },
-            totalReps = recentWorkouts.sumOf { it.getTotalReps() }
+            totalReps = recentWorkouts.sumOf { it.getTotalReps() },
+            jumpReps = jumpReps
         )
     }
 }

@@ -18,7 +18,7 @@ import com.liftr.data.local.database.entities.WorkoutEntity
         SetEntity::class,
         RepEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -38,6 +38,12 @@ abstract class LiftDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE sets ADD COLUMN isManual INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE sets ADD COLUMN exerciseName TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reps ADD COLUMN jumpData TEXT DEFAULT NULL")
             }
         }
     }

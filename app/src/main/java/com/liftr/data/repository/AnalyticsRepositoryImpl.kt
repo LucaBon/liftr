@@ -8,6 +8,8 @@ import com.liftr.data.mapper.RepMapper
 import com.liftr.data.mapper.SetMapper
 import com.liftr.data.mapper.WorkoutMapper
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.JumpRepRecord
+import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.LoadVelocityPoint
 import com.liftr.domain.model.LoadVelocityProfile
 import com.liftr.domain.model.PersonalRecord
@@ -258,6 +260,22 @@ class AnalyticsRepositoryImpl @Inject constructor(
                 setMapper.toDomain(setEntity, reps)
             }
             workoutMapper.toDomain(workoutEntity, sets)
+        }
+    }
+
+    override suspend fun getJumpReps(exerciseType: ExerciseType, timeRange: TimeRange): List<JumpRepRecord> {
+        val sets = setDao.getSetsForExerciseInRange(exerciseType, getFromTimestamp(timeRange))
+            .filter { it.completedReps > 0 }
+            .sortedBy { it.timestamp }
+        return sets.flatMap { set ->
+            val jumps = repDao.getRepsForSetSync(set.id)
+                .filter { it.jumpData != null }
+                .sortedBy { it.repNumber }
+                .map { JumpRepRecord(set.timestamp, set.id, it.repNumber, it.jumpData!!) }
+            // Sets saved before per-jump data was kept still have their best height.
+            jumps.ifEmpty {
+                listOfNotNull(set.jumpHeight?.let { JumpRepRecord(set.timestamp, set.id, 1, RepJumpData(it * 100f)) })
+            }
         }
     }
 

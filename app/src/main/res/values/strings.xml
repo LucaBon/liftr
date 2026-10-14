@@ -290,7 +290,7 @@
     <string name="analytics_quality_trend">Quality Score</string>
     <string name="analytics_recent_workouts">Recent Workouts</string>
     <string name="analytics_no_data">No workout data yet. Complete a workout to see your analytics.</string>
-    <string name="analytics_select_exercise">Select an exercise to see velocity, 1RM, and quality trends.</string>
+    <string name="analytics_select_exercise">Select an exercise to see its trends: velocity, 1RM and quality for lifts, jump height and center of mass for jumps.</string>
     <string name="analytics_tonnage_format">%.0f kg</string>
     <string name="analytics_week_change">%+.0f%% vs last week</string>
 
@@ -411,4 +411,13 @@
     <string name="jump_peak_rise">Peak rise</string>
     <string name="jump_from_standing">Center of mass from standing</string>
     <string name="bodyweight_only">Bodyweight</string>
+    <string name="analytics_no_sets_for_exercise">No sets of this exercise in the selected period.</string>
+    <string name="analytics_no_jumps">No jumps in the selected period. Jumps are saved when you finish the workout.</string>
+    <string name="analytics_jump_height">Jump Height</string>
+    <string name="analytics_jump_flight_time">From flight time</string>
+    <string name="analytics_jump_com_displacement">From center of mass</string>
+    <string name="analytics_jump_averages">Averages over %d jumps</string>
+    <string name="analytics_jump_com_hint">Countermovement and peak rise are measured on jumps recorded from now on. Stand still for a moment before each jump.</string>
+    <string name="analytics_latest_com_paths">Latest Set: Center of Mass</string>
+    <string name="jump_com_height">Jump (center of mass)</string>
 </resources>

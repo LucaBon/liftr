@@ -82,11 +82,22 @@ class JumpPathWindow {
         val dipFrom = max(ref.atMs, takeoffMs - MAX_DIP_MS)
         val lowest = recent.filter { it.timestamp in dipFrom..takeoffMs }.maxOfOrNull { it.normalizedY } ?: ref.y
         val highest = flight.minOf { it.normalizedY }
+        val atTakeoff = yAt(takeoffMs)
         return JumpExcursion(
             countermovementCm = ((lowest - ref.y) * ref.cmPerUnitY).coerceAtLeast(0f),
             peakRiseCm = ((ref.y - highest) * ref.cmPerUnitY).coerceAtLeast(0f),
-            standingYCm = ref.y * ref.realWorldCmPerUnitY
+            standingYCm = ref.y * ref.realWorldCmPerUnitY,
+            flightRiseCm = atTakeoff?.let { ((it - highest) * ref.cmPerUnitY).coerceAtLeast(0f) }
         )
+    }
+
+    /** Center-of-mass y at [timeMs], interpolated between the frames around it. */
+    private fun yAt(timeMs: Long): Float? {
+        val after = recent.firstOrNull { it.timestamp >= timeMs } ?: return null
+        val before = recent.lastOrNull { it.timestamp <= timeMs } ?: return after.normalizedY
+        if (after.timestamp == before.timestamp) return after.normalizedY
+        val f = (timeMs - before.timestamp).toFloat() / (after.timestamp - before.timestamp)
+        return before.normalizedY + f * (after.normalizedY - before.normalizedY)
     }
 
     /** Standing is a stretch of [ExerciseThresholds.Jump.STILL_MS] on the ground with the center of mass at rest. */
