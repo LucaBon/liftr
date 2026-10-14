@@ -1,5 +1,7 @@
 package com.liftr.ui.screens.workout
 
+import com.liftr.domain.exercise.JumpPathWindow
+import com.liftr.domain.calculator.CenterOfMassCalculator
 import android.content.Context
 import androidx.camera.core.ImageProxy
 import androidx.camera.video.Recorder
@@ -147,6 +149,7 @@ class WorkoutViewModel @Inject constructor(
 
     // --- Rep Quality Scoring: per-rep accumulators ---
     private var currentRepBarPathPoints = mutableListOf<BarPathPoint>()
+    private var jumpPath = JumpPathWindow()
     private var currentRepFormIssues = mutableListOf<FormIssue>()
     // Buffered frames for the in-progress rep. Drained into AnalyzeRepUseCase
     // on rep completion so the heavy form/metric work never runs per-frame.
@@ -714,6 +717,19 @@ class WorkoutViewModel @Inject constructor(
             currentRepPoses.add(result.poseResult)
         }
 
+        // A jump's path runs from the dip through the flight, which the phases
+        // above leave out: keep every point and cut the window at landing.
+        if (_uiState.value.selectedExercise.isJumpExercise()) {
+            val point = extractBarPathPoint(result.poseResult, result.velocityData, _uiState.value.selectedExercise)
+            jumpPath.onFrame(point, newPhase, now)
+            val jump = result.phaseResult?.jump
+            if (repJustCounted && jump != null) {
+                currentRepBarPathPoints.clear()
+                currentRepBarPathPoints.addAll(jumpPath.pathForLanding(now, jump.flightTimeMs))
+                _currentBarPathPoints.value = currentRepBarPathPoints.toList()
+            }
+        }
+
         // Score the rep when it completes
         if (repJustCounted) {
             scoreCurrentRep(result, now)
@@ -859,6 +875,15 @@ class WorkoutViewModel @Inject constructor(
                 val right = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
                 averageXY(left, right) ?: return null
             }
+            ExerciseType.VERTICAL_JUMP ->
+                CenterOfMassCalculator.centerOfMass(poseResult) ?: return null
+            ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
+                poseResult,
+                CenterOfMassCalculator.loadFraction(
+                    _uiState.value.weight.value,
+                    calibrationData?.anthropometricData?.userWeight
+                )
+            ) ?: return null
             else -> return null
         }
 
@@ -1017,6 +1042,7 @@ class WorkoutViewModel @Inject constructor(
 
         // Reset rep quality scoring accumulators
         currentRepBarPathPoints.clear()
+        jumpPath = JumpPathWindow()
         _currentBarPathPoints.value = emptyList()
         currentRepFormIssues.clear()
         currentRepPoses.clear()

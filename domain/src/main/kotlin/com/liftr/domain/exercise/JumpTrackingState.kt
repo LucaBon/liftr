@@ -16,6 +16,9 @@ package com.liftr.domain.exercise
  *   fitting the flight parabola
  * @property previousFootY Toe height on the previous frame, for interpolation
  * @property previousTimestamp Timestamp of the previous frame (ms)
+ * @property stillFootY Toe height the feet have been resting at
+ * @property stillHipsY Hip height the hips have been resting at
+ * @property stillSinceMs When feet and hips came to rest at those heights
  */
 data class JumpTrackingState(
     val baselineFootY: Float,
@@ -26,7 +29,10 @@ data class JumpTrackingState(
     val takeoffMs: Double? = null,
     val flightSamples: List<Pair<Long, Float>> = emptyList(),
     val previousFootY: Float? = null,
-    val previousTimestamp: Long? = null
+    val previousTimestamp: Long? = null,
+    val stillFootY: Float? = null,
+    val stillHipsY: Float? = null,
+    val stillSinceMs: Long? = null
 ) {
     val isAirborne: Boolean get() = takeoffMs != null
 }

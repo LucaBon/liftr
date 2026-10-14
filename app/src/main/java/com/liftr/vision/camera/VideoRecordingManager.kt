@@ -2,6 +2,13 @@ package com.liftr.vision.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Range
+import androidx.camera.core.CameraInfo
+import androidx.camera.core.DynamicRange
+import androidx.camera.core.ExperimentalSessionConfig
+import androidx.camera.core.Preview
+import androidx.camera.video.ExperimentalHighSpeedVideo
+import androidx.camera.video.HighSpeedVideoSessionConfig
 import androidx.camera.video.FallbackStrategy
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
@@ -40,9 +47,11 @@ class VideoRecordingManager @Inject constructor(
 
     /**
      * Create a [VideoCapture] use case configured for workout recording.
-     * Prefers HD (720p), falling back to the nearest available quality.
+     * Prefers HD (720p), falling back to the nearest available quality, at
+     * the highest constant frame rate [cameraInfo] supports: fast movements
+     * (jump flight, snatch pulls) are timed from frames, so more is better.
      */
-    fun createVideoCaptureUseCase(): VideoCapture<Recorder> {
+    fun createVideoCaptureUseCase(cameraInfo: CameraInfo?): VideoCapture<Recorder> {
         val qualitySelector = QualitySelector.from(
             Quality.HD,
             FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
@@ -52,8 +61,72 @@ class VideoRecordingManager @Inject constructor(
             .setQualitySelector(qualitySelector)
             .build()
 
-        return VideoCapture.withOutput(recorder)
+        val builder = VideoCapture.Builder(recorder)
+        highestConstantFrameRate(cameraInfo)?.let { range ->
+            logger.i(TAG, "Recording at ${range.upper} fps")
+            builder.setTargetFrameRate(range)
+        }
+        return builder.build()
     }
+
+    /** A high-speed recording session: bind [config], record with [videoCapture]. */
+    @OptIn(ExperimentalSessionConfig::class, ExperimentalHighSpeedVideo::class)
+    class HighSpeedSession(
+        val videoCapture: VideoCapture<Recorder>,
+        val config: HighSpeedVideoSessionConfig,
+        val fps: Int
+    )
+
+    /**
+     * A high-speed (120/240 fps) session for [cameraInfo] at its highest frame
+     * rate, or null when the camera has no high-speed mode (e.g. most front
+     * cameras). Records real-time high-frame-rate video, not slow motion, so
+     * frame timestamps stay in real time for the analysis.
+     *
+     * A high-speed session binds only preview and video: no ImageAnalysis, so
+     * the live rep counter can't run alongside it.
+     */
+    @OptIn(ExperimentalSessionConfig::class, ExperimentalHighSpeedVideo::class)
+    fun createHighSpeedSession(cameraInfo: CameraInfo, preview: Preview): HighSpeedSession? {
+        val capabilities = Recorder.getHighSpeedVideoCapabilities(cameraInfo) ?: run {
+            logger.i(TAG, "No high-speed video on this camera")
+            return null
+        }
+        val qualities = capabilities.getSupportedQualities(DynamicRange.SDR)
+        // 720p first: it is where devices offer their highest rates (240 fps).
+        val quality = listOf(Quality.HD, Quality.FHD).firstOrNull { it in qualities }
+            ?: qualities.firstOrNull()
+            ?: run {
+                logger.i(TAG, "High-speed video has no SDR quality")
+                return null
+            }
+
+        val recorder = Recorder.Builder().setQualitySelector(QualitySelector.from(quality)).build()
+        val videoCapture = VideoCapture.withOutput(recorder)
+        val probe = HighSpeedVideoSessionConfig.Builder(videoCapture).setPreview(preview).build()
+        val ranges = cameraInfo.getSupportedFrameRateRanges(probe)
+        val range = ranges.maxByOrNull { it.upper } ?: run {
+            logger.i(TAG, "High-speed video at $quality has no frame rate range")
+            return null
+        }
+        logger.d(TAG, "High-speed qualities $qualities, ranges at $quality: $ranges")
+
+        val config = HighSpeedVideoSessionConfig.Builder(videoCapture)
+            .setPreview(preview)
+            .setFrameRateRange(range)
+            .build()
+        logger.i(TAG, "High-speed recording at ${range.upper} fps ($quality)")
+        return HighSpeedSession(videoCapture, config, range.upper)
+    }
+
+    /**
+     * The fastest fixed range (lower == upper), so frames stay evenly spaced
+     * and the camera can't drop the rate in dim light; null leaves the default.
+     */
+    private fun highestConstantFrameRate(cameraInfo: CameraInfo?): Range<Int>? =
+        cameraInfo?.supportedFrameRateRanges
+            ?.filter { it.lower == it.upper }
+            ?.maxByOrNull { it.upper }
 
     /**
      * Start recording to an auto-generated file.

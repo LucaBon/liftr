@@ -46,11 +46,16 @@ class JumpStrategyTest {
         return basePose.copy(landmarks = landmarks, timestamp = timestamp)
     }
 
-    /** Builds a frame sequence: stand, optional countermovement, ballistic flight of [flightS], land, stand. */
+    /**
+     * Builds a frame sequence: stand, optional countermovement, ballistic flight of [flightS], land, stand.
+     * [landingShift] (m) is how much higher the body appears after landing, e.g. a step farther from the
+     * camera; it builds up linearly during the flight.
+     */
     private fun jumpFrames(
         startMs: Long,
         flightS: Float,
-        countermovement: Boolean = true
+        countermovement: Boolean = true,
+        landingShift: Float = 0f
     ): List<PoseResult> {
         val frames = mutableListOf<PoseResult>()
         var t = startMs
@@ -69,9 +74,9 @@ class JumpStrategyTest {
         while (true) {
             val s = (t - t0) / 1000f
             if (s >= flightS) break
-            add(rise = maxOf(0f, v0 * s - g * s * s / 2f))
+            add(rise = maxOf(0f, v0 * s - g * s * s / 2f) + landingShift * s / flightS)
         }
-        repeat(15) { add() }                                   // land and stand
+        repeat(15) { add(rise = landingShift) }                // land and stand
         return frames
     }
 
@@ -130,6 +135,72 @@ class JumpStrategyTest {
             assertEquals("offset $offset ms", 1, run.reps)
             assertEquals("offset $offset ms", expectedHeight(0.45f), run.jumps.single().height.value, 0.01f)
         }
+    }
+
+    @Test
+    fun `landing farther from the camera is still counted and measured`() {
+        // The floor appears ~4 cm higher where the feet land: they never come
+        // back to the takeoff level.
+        val run = run(jumpFrames(1000, flightS = 0.5f, landingShift = 0.04f))
+
+        assertEquals(1, run.reps)
+        assertEquals(expectedHeight(0.5f), run.jumps.single().height.value, 0.015f)
+    }
+
+    @Test
+    fun `jumps after landing elsewhere are measured from the new spot`() {
+        val frames = jumpFrames(1000, flightS = 0.5f, landingShift = 0.04f) +
+            jumpFrames(3000, flightS = 0.45f).map { frame ->
+                // Second jump starts and ends at the shifted spot.
+                frame.copy(landmarks = frame.landmarks.map { it.copy(y = it.y - 0.04f * normPerMeter) })
+            }
+
+        val run = run(frames)
+
+        assertEquals(2, run.reps)
+        assertEquals(expectedHeight(0.45f), run.jumps[1].height.value, 0.01f)
+    }
+
+    @Test
+    fun `feet glitching up during the dip is not a jump`() {
+        var t = 1000L
+        val frames = buildList {
+            repeat(15) { add(pose(t)); t += frameMs }
+            for (i in 1..12) {
+                val dip = 0.20f * i / 12
+                // Frames 6-7: the feet (with the whole body) jump 6 cm while the hips keep sinking.
+                add(pose(t, dip = dip, rise = if (i in 6..7) 0.06f else 0f)); t += frameMs
+            }
+            for (i in 1..12) { add(pose(t, dip = 0.20f * (1f - i / 12f))); t += frameMs }
+            repeat(15) { add(pose(t)); t += frameMs }
+        }
+
+        assertEquals(0, run(frames).reps)
+    }
+
+    @Test
+    fun `jumps after landing closer to the camera are measured from the new spot`() {
+        // Landing closer shows the floor 4 cm lower: the feet settle below the takeoff level.
+        val frames = jumpFrames(1000, flightS = 0.5f, landingShift = -0.04f) +
+            jumpFrames(3000, flightS = 0.45f).map { frame ->
+                frame.copy(landmarks = frame.landmarks.map { it.copy(y = it.y + 0.04f * normPerMeter) })
+            }
+
+        val run = run(frames)
+
+        assertEquals(2, run.reps)
+        assertEquals(expectedHeight(0.45f), run.jumps[1].height.value, 0.01f)
+    }
+
+    @Test
+    fun `a first frame caught while walking into place does not block the jump`() {
+        // The first 3 frames are 8 cm higher (still stepping into position).
+        val walkIn = (0 until 3).map { i -> pose(500L + i * frameMs, rise = 0.08f) }
+
+        val run = run(walkIn + jumpFrames(1000, flightS = 0.45f))
+
+        assertEquals(1, run.reps)
+        assertEquals(expectedHeight(0.45f), run.jumps.single().height.value, 0.01f)
     }
 
     @Test

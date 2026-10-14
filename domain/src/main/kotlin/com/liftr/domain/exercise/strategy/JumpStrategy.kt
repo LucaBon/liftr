@@ -130,35 +130,53 @@ class JumpStrategy(
 
         val rise = tracking.baselineFootY - frame.footY
         val previousRise = tracking.previousFootY?.let { tracking.baselineFootY - it }
-        val previousTimestamp = tracking.previousTimestamp
-        val advanced = tracking.copy(previousFootY = frame.footY, previousTimestamp = timestamp)
 
-        if (rise > timingLevel) {
-            val sampled = advanced.copy(flightSamples = advanced.flightSamples + (timestamp to rise))
+        // Feet that stop coming down above the takeoff level have landed
+        // somewhere else: a step farther from the camera shows the floor
+        // higher in the image. Past the peak and no longer descending = landed.
+        val peak = tracking.flightSamples.maxOfOrNull { it.second } ?: rise
+        val settled = previousRise != null &&
+            rise < peak * Jump.SETTLED_FRACTION_OF_PEAK &&
+            previousRise - rise < Jump.SETTLED_DESCENT * tracking.bodySpan
+
+        if (rise > timingLevel && !settled) {
+            val sampled = tracking.copy(
+                previousFootY = frame.footY,
+                previousTimestamp = timestamp,
+                flightSamples = tracking.flightSamples + (timestamp to rise)
+            )
             return PhaseTransitionResult(
                 newState = state.copy(jump = sampled),
                 repCompleted = false,
-                debugInfo = "Airborne"
+                debugInfo = "Airborne rise=%.3f span=%.3f".format(rise, tracking.bodySpan)
             )
         }
-        val landingMs = if (previousRise != null && previousTimestamp != null) {
-            crossingTime(previousRise, previousTimestamp, rise, timestamp, timingLevel)
-        } else {
-            timestamp.toDouble()
-        }
+
+        // The ground the feet came back to, as a rise above the takeoff level.
+        val landingRise = if (rise > timingLevel) rise else 0f
+        val landingLevel = landingRise + timingLevel
+        val points = tracking.flightSamples + (timestamp to rise)
+        val landingMs = landingCrossingMs(points, landingLevel) ?: timestamp.toDouble()
         val crossingFlightMs = (landingMs - takeoffMs).toFloat()
+        // Landing elsewhere moves the ground: stand from there. Otherwise keep
+        // the standing baseline, which the landing crouch would distort.
         val grounded = state.copy(
             currentPhase = MovementPhase.IDLE,
-            jump = advanced.copy(
-                lowestHipsY = null, takeoffCandidateMs = null, takeoffMs = null, flightSamples = emptyList()
-            )
+            jump = if (landingRise > 0f) {
+                baselineFrom(frame, timestamp)
+            } else {
+                tracking.copy(
+                    lowestHipsY = null, takeoffCandidateMs = null, takeoffMs = null, flightSamples = emptyList(),
+                    previousFootY = frame.footY, previousTimestamp = timestamp
+                )
+            }
         )
 
         if (crossingFlightMs < Jump.MIN_FLIGHT_MS) {
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
         }
 
-        val fittedFlightMs = fitFlightMs(tracking.flightSamples)
+        val fittedFlightMs = fitFlightMs(airborneSamples(tracking.flightSamples, landingLevel), landingRise)
         val jump = if (fittedFlightMs != null && fittedFlightMs in Jump.MIN_FLIGHT_MS..Jump.MAX_FLIGHT_MS) {
             JumpData.fromFlightTime(fittedFlightMs)
         } else {
@@ -174,6 +192,23 @@ class JumpStrategy(
             debugInfo = "Landed: %.1f cm".format(jump.height.value * 100),
             jump = jump
         )
+    }
+
+    /** Flight samples up to the peak, then those still above [landingLevel]. */
+    private fun airborneSamples(samples: List<Pair<Long, Float>>, landingLevel: Float): List<Pair<Long, Float>> {
+        val peakIndex = samples.indices.maxByOrNull { samples[it].second } ?: return samples
+        return samples.filterIndexed { i, (_, rise) -> i <= peakIndex || rise > landingLevel }
+    }
+
+    /** Time the toes came down through [level] after the peak, interpolated between frames. */
+    private fun landingCrossingMs(points: List<Pair<Long, Float>>, level: Float): Double? {
+        val peakIndex = points.indices.maxByOrNull { points[it].second } ?: return null
+        for (i in peakIndex until points.lastIndex) {
+            val (t0, r0) = points[i]
+            val (t1, r1) = points[i + 1]
+            if (r0 > level && r1 <= level) return crossingTime(r0, t0, r1, t1, level)
+        }
+        return null
     }
 
     private fun detectGroundPhase(
@@ -202,7 +237,10 @@ class JumpStrategy(
             previousTimestamp = timestamp
         )
 
-        if (takeoffCandidate != null && rise > Jump.AIRBORNE_LEVEL * span) {
+        // A takeoff needs the hips driving up: feet "rising" while the hips are
+        // still sinking into the dip is a landmark glitch, not a flight.
+        val dipping = state.currentPhase == MovementPhase.ECCENTRIC
+        if (takeoffCandidate != null && rise > Jump.AIRBORNE_LEVEL * span && !dipping) {
             return PhaseTransitionResult(
                 newState = state.copy(
                     currentPhase = MovementPhase.TOP,
@@ -212,6 +250,18 @@ class JumpStrategy(
                 debugInfo = "Takeoff"
             )
         }
+
+        // Feet and hips resting in one place for a while are standing there,
+        // whatever the old baseline says: re-anchor and start over from IDLE.
+        val settled = settleOnStillBody(next, frame, timestamp)
+        if (settled.baselineFootY != next.baselineFootY) {
+            return PhaseTransitionResult(
+                newState = state.copy(currentPhase = MovementPhase.IDLE, jump = settled),
+                repCompleted = false,
+                debugInfo = "Re-anchored on still body"
+            )
+        }
+        next = settled
 
         val hipDrop = frame.hipsY - tracking.baselineHipsY
         val phase = state.currentPhase
@@ -244,8 +294,30 @@ class JumpStrategy(
         return PhaseTransitionResult(
             newState = state.copy(currentPhase = newPhase, jump = next),
             repCompleted = false,
-            debugInfo = "Ground: $newPhase"
+            debugInfo = "Ground: $newPhase rise=%.3f hipDrop=%.3f span=%.3f".format(rise, hipDrop, span)
         )
+    }
+
+    /**
+     * Re-anchors the baseline on feet and hips that have rested in one place
+     * for [Jump.STILL_MS], however far from the baseline: after landing closer
+     * to or farther from the camera, when the first frame caught the athlete
+     * still walking into place, or during a held squat. [reanchor] only
+     * follows small drifts while standing.
+     */
+    private fun settleOnStillBody(tracking: JumpTrackingState, frame: Frame, timestamp: Long): JumpTrackingState {
+        val tolerance = Jump.TIMING_LEVEL * tracking.bodySpan
+        val footAnchor = tracking.stillFootY
+        val hipsAnchor = tracking.stillHipsY
+        val since = tracking.stillSinceMs
+        val moved = footAnchor == null || hipsAnchor == null || since == null ||
+            kotlin.math.abs(frame.footY - footAnchor) > tolerance ||
+            kotlin.math.abs(frame.hipsY - hipsAnchor) > tolerance
+        if (moved) return tracking.copy(stillFootY = frame.footY, stillHipsY = frame.hipsY, stillSinceMs = timestamp)
+        if (timestamp - since!! < Jump.STILL_MS) return tracking
+        val atBaseline = kotlin.math.abs(frame.footY - tracking.baselineFootY) < tolerance &&
+            kotlin.math.abs(frame.hipsY - tracking.baselineHipsY) < tolerance
+        return if (atBaseline) tracking else baselineFrom(frame, timestamp)
     }
 
     /** Slowly follows the standing position so posture shifts don't trip thresholds. */
@@ -274,7 +346,7 @@ class JumpStrategy(
      * flight time is the distance between its roots. Null when there are too
      * few samples or the fit isn't a downward parabola.
      */
-    private fun fitFlightMs(samples: List<Pair<Long, Float>>): Float? {
+    private fun fitFlightMs(samples: List<Pair<Long, Float>>, landingRise: Float): Float? {
         if (samples.size < Jump.MIN_FIT_SAMPLES) return null
         val t0 = samples.first().first
         // Power sums for the normal equations, t in seconds from the first sample.
@@ -298,9 +370,13 @@ class JumpStrategy(
             r
         ) ?: return null
         if (c >= 0) return null
-        val discriminant = b * b - 4 * a * c
-        if (discriminant <= 0) return null
-        return (kotlin.math.sqrt(discriminant) / -c * 1000.0).toFloat()
+        // Takeoff is where the parabola rises through 0, landing where it comes
+        // down through landingRise (0 when landing where it took off).
+        val takeoffDiscriminant = b * b - 4 * a * c
+        val landingDiscriminant = b * b - 4 * (a - landingRise) * c
+        if (takeoffDiscriminant <= 0 || landingDiscriminant <= 0) return null
+        val flightS = (kotlin.math.sqrt(takeoffDiscriminant) + kotlin.math.sqrt(landingDiscriminant)) / (-2 * c)
+        return (flightS * 1000.0).toFloat()
     }
 
     /** Solves a 3x3 linear system by Cramer's rule; null if singular. */

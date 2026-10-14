@@ -196,18 +196,19 @@ class VideoAnalysisService : LifecycleService() {
         calibrationData: CalibrationData,
         tempoPrescription: TempoPrescription?
     ) {
-        var poseDetector: VideoFramePoseDetector? = null
         try {
             _analysisState.value = AnalysisState.Analyzing(
                 AnalyzeVideoUseCase.Progress(0, 1, 0f, 0)
             )
 
-            poseDetector = VideoFramePoseDetector(
+            // Each analysis pass creates its own detector; this one only checks
+            // that the pose model loads on this device.
+            val poseModelAvailable = VideoFramePoseDetector(
                 context = applicationContext,
                 logger = logger,
                 lensDistortionCorrector = lensDistortionCorrector
-            )
-            if (!poseDetector.isAvailable()) {
+            ).use { it.isAvailable() }
+            if (!poseModelAvailable) {
                 videoStorageRepository.deleteRecording(videoFile)
                 _analysisState.value = AnalysisState.Error("Pose analysis isn't available on this device.")
                 return
@@ -226,7 +227,17 @@ class VideoAnalysisService : LifecycleService() {
                     calibrationData = calibrationData,
                     tempoPrescription = tempoPrescription
                 ),
-                poseSource = VideoFilePoseSource(videoFile, poseDetector, logger),
+                poseSource = VideoFilePoseSource(
+                    videoFile,
+                    createPoseDetector = {
+                        VideoFramePoseDetector(
+                            context = applicationContext,
+                            logger = logger,
+                            lensDistortionCorrector = lensDistortionCorrector
+                        )
+                    },
+                    logger = logger
+                ),
                 onProgress = { progress ->
                     _analysisState.value = AnalysisState.Analyzing(progress)
                     updateNotification(
@@ -265,13 +276,11 @@ class VideoAnalysisService : LifecycleService() {
             videoStorageRepository.deleteRecording(videoFile)
             _analysisState.value = AnalysisState.Error(e.message ?: "Unexpected error")
             logger.e(TAG, "Analysis crashed", e)
-        } finally {
-            // Only per-run resources here. Clearing the shared calibration and
-            // tearing down the service is the worker loop's job, once the whole
-            // queue is drained — doing it per run cancelled analyses that were
-            // still waiting behind this one.
-            poseDetector?.close()
         }
+        // Per-run resources (pose detectors) are closed by each analysis pass.
+        // Clearing the shared calibration and tearing down the service is the
+        // worker loop's job, once the whole queue is drained — doing it per run
+        // cancelled analyses that were still waiting behind this one.
     }
 
     /**

@@ -12,12 +12,17 @@ interface VideoPoseSource {
     /** Number of frames in the video; populated once [poses] starts emitting. */
     val totalFrames: Int
 
-    /**
-     * Cold flow with one element per decoded frame, in presentation order:
-     * the detected pose, or null when no pose was found in that frame.
-     */
-    fun poses(): Flow<PoseResult?>
+    /** One decoded frame: its time, and its pose if it was analyzed and one was found. */
+    data class Frame(val timestampMs: Long, val pose: PoseResult?)
 
-    /** Releases the decoder. Does not close a pose model owned by the caller. */
+    /**
+     * Cold flow with one element per decoded frame, in presentation order.
+     * Pose detection runs only on frames [include] accepts; the others are
+     * emitted with a null pose. Each collection decodes the video again with a
+     * fresh pose model, so a video can be analyzed in several passes.
+     */
+    fun poses(include: (timestampMs: Long) -> Boolean = { true }): Flow<Frame>
+
+    /** Releases the decoder. */
     fun close()
 }

@@ -35,7 +35,8 @@ import kotlin.math.abs
 @Composable
 fun BarPathReplayCard(
     repBarPaths: List<BarPathData>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    title: String = stringResource(R.string.bar_path_title)
 ) {
     if (repBarPaths.isEmpty()) return
 
@@ -51,7 +52,7 @@ fun BarPathReplayCard(
         ) {
             // Title
             Text(
-                text = stringResource(R.string.bar_path_title),
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )

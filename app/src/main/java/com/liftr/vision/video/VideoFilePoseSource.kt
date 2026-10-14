@@ -1,20 +1,20 @@
 package com.liftr.vision.video
 
 import com.liftr.domain.logging.Logger
-import com.liftr.domain.model.PoseResult
 import com.liftr.domain.vision.VideoPoseSource
 import com.liftr.vision.pose.VideoFramePoseDetector
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
 import java.io.File
 
 /**
  * [VideoPoseSource] that decodes [videoFile] with [VideoFrameExtractor] and runs
- * [poseDetector] on each frame. The caller owns [poseDetector]'s lifecycle.
+ * a pose detector from [createPoseDetector] on the selected frames. Each pass
+ * gets its own detector: its VIDEO running mode needs increasing timestamps.
  */
 class VideoFilePoseSource(
     videoFile: File,
-    private val poseDetector: VideoFramePoseDetector,
+    private val createPoseDetector: () -> VideoFramePoseDetector,
     logger: Logger
 ) : VideoPoseSource {
 
@@ -22,11 +22,18 @@ class VideoFilePoseSource(
 
     override val totalFrames: Int get() = extractor.totalFrames
 
-    override fun poses(): Flow<PoseResult?> = extractor.extractFrames().map { frame ->
-        try {
-            poseDetector.detectPose(frame.bitmap, frame.timestampMs)
-        } finally {
-            frame.bitmap.recycle()
+    override fun poses(include: (timestampMs: Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
+        createPoseDetector().use { detector ->
+            extractor.extractFrames().collect { frame ->
+                try {
+                    val pose = if (include(frame.timestampMs)) {
+                        detector.detectPose(frame.bitmap, frame.timestampMs)
+                    } else null
+                    emit(VideoPoseSource.Frame(frame.timestampMs, pose))
+                } finally {
+                    frame.bitmap.recycle()
+                }
+            }
         }
     }
 

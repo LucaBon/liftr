@@ -1,5 +1,7 @@
 package com.liftr.domain.usecase
 
+import com.liftr.domain.exercise.JumpPathWindow
+import com.liftr.domain.calculator.CenterOfMassCalculator
 import com.liftr.domain.exercise.BarPathAnalyzer
 import com.liftr.domain.exercise.BidirectionalVelocityCalculator
 import com.liftr.domain.exercise.ExercisePhaseState
@@ -116,27 +118,33 @@ class AnalyzeVideoUseCase @Inject constructor(
             configureSquatDepth(params.exerciseType)
 
             // --- Phase 1: extract frames + detect poses ---
-            val poseResults = mutableListOf<PoseResult>()
-            var frameIndex = 0
-            try {
-                poseSource.poses().collect { pose ->
-                    if (pose != null) poseResults.add(pose)
-                    frameIndex++
-                    val total = poseSource.totalFrames.coerceAtLeast(1)
-                    onProgress(
-                        Progress(
-                            currentFrame = frameIndex,
-                            totalFrames = total,
-                            percentComplete = (frameIndex.toFloat() / total).coerceIn(0f, 1f),
-                            currentRep = 0
-                        )
+            // High-speed video (120/240 fps) has too many frames to run the pose
+            // model on all of them. Pass 1 analyzes a steady subset; for jumps,
+            // pass 2 then analyzes every frame around each takeoff and landing,
+            // where the flight timing comes from.
+            val poseResults = try {
+                val coarseShare = if (params.exerciseType.isJumpExercise()) COARSE_PASS_SHARE else 1f
+                val coarse = detectPoses(
+                    poseSource, everyMs(coarseIntervalMs(params.exerciseType)), onProgress, 0f, coarseShare
+                )
+                val windows = if (params.exerciseType.isJumpExercise()) jumpWindows(params, coarse.poses) else emptyList()
+                if (windows.isEmpty() || coarse.skippedFrames == 0) {
+                    coarse.poses
+                } else {
+                    val analyzed = coarse.poses.mapTo(HashSet()) { it.timestamp }
+                    val dense = detectPoses(
+                        poseSource,
+                        { t -> t !in analyzed && windows.any { t in it } },
+                        onProgress, COARSE_PASS_SHARE, 1f
                     )
+                    logger.i(TAG, "Dense pass: ${dense.poses.size} poses around ${windows.size} takeoffs/landings")
+                    (coarse.poses + dense.poses).sortedBy { it.timestamp }
                 }
             } finally {
                 poseSource.close()
             }
 
-            logger.i(TAG, "Pose detection complete: ${poseResults.size} poses from $frameIndex frames")
+            logger.i(TAG, "Pose detection complete: ${poseResults.size} poses")
             if (poseResults.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("No poses detected in video"))
             }
@@ -170,6 +178,69 @@ class AnalyzeVideoUseCase @Inject constructor(
         }
     }
 
+    private class PassResult(val poses: List<PoseResult>, val skippedFrames: Int)
+
+    /** Runs one decoding pass, analyzing the frames [include] accepts. */
+    private suspend fun detectPoses(
+        poseSource: VideoPoseSource,
+        include: (Long) -> Boolean,
+        onProgress: (Progress) -> Unit,
+        progressFrom: Float,
+        progressTo: Float
+    ): PassResult {
+        val poses = mutableListOf<PoseResult>()
+        var frameIndex = 0
+        var skipped = 0
+        poseSource.poses { t -> include(t).also { if (!it) skipped++ } }.collect { frame ->
+            frame.pose?.let { poses.add(it) }
+            frameIndex++
+            val total = poseSource.totalFrames.coerceAtLeast(1)
+            val passFraction = (frameIndex.toFloat() / total).coerceIn(0f, 1f)
+            onProgress(
+                Progress(
+                    currentFrame = frameIndex,
+                    totalFrames = total,
+                    percentComplete = progressFrom + (progressTo - progressFrom) * passFraction,
+                    currentRep = 0
+                )
+            )
+        }
+        return PassResult(poses, skipped)
+    }
+
+    /** Accepts frames at least [intervalMs] apart, thinning faster video to that rate. */
+    private fun everyMs(intervalMs: Long): (Long) -> Boolean {
+        var last = Long.MIN_VALUE / 2
+        return { t -> (t - last >= intervalMs).also { if (it) last = t } }
+    }
+
+    /**
+     * Pass 1 frame spacing: ~30 fps for jumps (pass 2 adds every frame around
+     * takeoff and landing), ~60 fps for other fast movements, ~30 fps for lifts.
+     * Slightly under the nominal interval so 30/60 fps video keeps every frame.
+     */
+    private fun coarseIntervalMs(exerciseType: ExerciseType): Long =
+        if (exerciseType.isFastMovement() && !exerciseType.isJumpExercise()) 15L else 30L
+
+    /** Time windows around each takeoff and landing found in the [coarse] poses. */
+    private fun jumpWindows(params: Params, coarse: List<PoseResult>): List<LongRange> {
+        val strategy = strategyFactory.getStrategy(params.exerciseType)
+        var state = ExercisePhaseState.initial()
+        val windows = mutableListOf<LongRange>()
+        for (pose in coarse) {
+            val transition = strategy.detectPhase(pose, params.calibrationData, state)
+            state = transition.newState
+            val jump = transition.jump
+            if (transition.repCompleted && jump != null) {
+                val landingMs = pose.timestamp
+                val takeoffMs = landingMs - jump.flightTimeMs.toLong()
+                windows += (takeoffMs - DENSE_WINDOW_MS)..(takeoffMs + DENSE_WINDOW_MS)
+                windows += (landingMs - DENSE_WINDOW_MS)..(landingMs + DENSE_WINDOW_MS)
+            }
+        }
+        return windows
+    }
+
     private suspend fun buildSummary(
         params: Params,
         poseResults: List<PoseResult>,
@@ -196,6 +267,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         var repVelocityCount = 0
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
+        val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
 
         for (i in poseResults.indices) {
             val pose = poseResults[i]
@@ -233,8 +305,10 @@ class AnalyzeVideoUseCase @Inject constructor(
                 }
             }
 
+            val pathPoint = extractBarPathPoint(pose, velocity, params)
+            jumpPath?.onFrame(pathPoint, newPhase, now)
             if (newPhase in ACTIVE_PHASES) {
-                extractBarPathPoint(pose, velocity, params)?.let { currentRepBarPoints.add(it) }
+                pathPoint?.let { currentRepBarPoints.add(it) }
                 currentRepPoses.add(pose)
             }
 
@@ -244,6 +318,10 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
 
             if (transition.repCompleted) {
+                // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
+                if (jumpPath != null) {
+                    transition.jump?.let { currentRepBarPoints = jumpPath.pathForLanding(now, it.flightTimeMs).toMutableList() }
+                }
                 val eccentricDuration = if (bottomTime > 0 && eccentricStart > 0) {
                     (bottomTime - eccentricStart) / 1000f
                 } else 0f
@@ -390,7 +468,7 @@ class AnalyzeVideoUseCase @Inject constructor(
      * missing measurement as position zero.
      */
     private fun trackingPositionMeters(pose: PoseResult, params: Params): Float? {
-        val xy = trackingNormalizedXY(pose, params.exerciseType) ?: return null
+        val xy = trackingNormalizedXY(pose, params) ?: return null
         val pixelY = xy.second * pose.imageHeight
         return positionCalculator.pixelsToMeters(pixelY, pose, params.calibrationData)
     }
@@ -400,7 +478,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         velocity: VelocityData?,
         params: Params
     ): BarPathPoint? {
-        val (nx, ny) = trackingNormalizedXY(pose, params.exerciseType) ?: return null
+        val (nx, ny) = trackingNormalizedXY(pose, params) ?: return null
         val ppm = params.calibrationData.pixelsPerMeter.takeIf { it > 0f } ?: 1f
         val imageWidth = pose.imageWidth.toFloat()
         val imageHeight = pose.imageHeight.toFloat()
@@ -414,9 +492,19 @@ class AnalyzeVideoUseCase @Inject constructor(
         )
     }
 
-    private fun trackingNormalizedXY(pose: PoseResult, exerciseType: ExerciseType): Pair<Float, Float>? {
+    private fun trackingNormalizedXY(pose: PoseResult, params: Params): Pair<Float, Float>? {
         val landmarks = pose.landmarks
-        return when (exerciseType) {
+        return when (params.exerciseType) {
+            // No bar to follow: track the whole body's center of mass, plus
+            // the bar on the shoulders for a loaded jump.
+            ExerciseType.VERTICAL_JUMP -> CenterOfMassCalculator.centerOfMass(pose)
+            ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
+                pose,
+                CenterOfMassCalculator.loadFraction(
+                    params.weight.value,
+                    params.calibrationData.anthropometricData?.userWeight
+                )
+            )
             ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT ->
                 averageXY(landmarks.getOrNull(PoseResult.LEFT_SHOULDER), landmarks.getOrNull(PoseResult.RIGHT_SHOULDER))
             ExerciseType.BENCH_PRESS, ExerciseType.DEADLIFT ->
@@ -462,6 +550,12 @@ class AnalyzeVideoUseCase @Inject constructor(
 
     companion object {
         private const val TAG = "AnalyzeVideoUseCase"
+
+        /** Share of the progress bar for pass 1 when a dense pass follows. */
+        private const val COARSE_PASS_SHARE = 0.8f
+
+        /** Half-width of the every-frame window around each takeoff and landing. */
+        private const val DENSE_WINDOW_MS = 150L
         private val ACTIVE_PHASES = setOf(
             MovementPhase.ECCENTRIC, MovementPhase.BOTTOM, MovementPhase.CONCENTRIC
         )

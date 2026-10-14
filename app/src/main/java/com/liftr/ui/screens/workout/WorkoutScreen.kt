@@ -198,7 +198,8 @@ fun WorkoutScreen(
                     recordingMode = postExerciseMode,
                     repCounterEnabled = uiState.repCounterEnabled,
                     isVideoRecording = uiState.isVideoRecording,
-                    videoRecordingManager = cameraViewModel.videoRecordingManager
+                    videoRecordingManager = cameraViewModel.videoRecordingManager,
+                    preferHighSpeed = uiState.selectedExercise.isFastMovement()
                 )
 
                 // Pose overlay
@@ -665,7 +666,11 @@ fun SetSummarySheet(
             // Bar path replay card
             if (summary.repBarPaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(Spacing.md))
-                BarPathReplayCard(repBarPaths = summary.repBarPaths)
+                BarPathReplayCard(
+                    repBarPaths = summary.repBarPaths,
+                    title = if (isJump) stringResource(R.string.center_of_mass_path_title)
+                    else stringResource(R.string.bar_path_title)
+                )
             }
 
             Spacer(modifier = Modifier.height(Spacing.md))
@@ -888,7 +893,8 @@ fun CameraPreview(
     recordingMode: Boolean = false,
     repCounterEnabled: Boolean = false,
     isVideoRecording: Boolean = false,
-    videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager? = null
+    videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager? = null,
+    preferHighSpeed: Boolean = false
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -917,7 +923,7 @@ fun CameraPreview(
     // (Re)bind the camera when the view is ready or the binding mode changes.
     // Never rebind mid-recording — that would tear down VideoCapture and corrupt
     // the in-progress MP4.
-    LaunchedEffect(previewView.value, cameraManager, lifecycleOwner, recordingMode, repCounterEnabled, isVideoRecording) {
+    LaunchedEffect(previewView.value, cameraManager, lifecycleOwner, recordingMode, repCounterEnabled, isVideoRecording, preferHighSpeed) {
         if (isVideoRecording) return@LaunchedEffect
         previewView.value?.let { view ->
             cameraManager.stopCamera()
@@ -928,7 +934,8 @@ fun CameraPreview(
                     previewView = view,
                     videoRecordingManager = videoRecordingManager,
                     withRepCounter = repCounterEnabled,
-                    onFrameAnalyzed = if (repCounterEnabled) onFrameAnalyzed else null
+                    onFrameAnalyzed = if (repCounterEnabled) onFrameAnalyzed else null,
+                    preferHighSpeed = preferHighSpeed
                 )
             } else {
                 Log.i(TAG_WORKOUT, "Starting camera in ANALYSIS_ONLY mode")

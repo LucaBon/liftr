@@ -297,6 +297,15 @@ object ExerciseThresholds {
         /** Nose height as a fraction of stature, to express the span in meters */
         const val NOSE_HEIGHT_RATIO = 0.92f
 
+        /** Past the peak, feet below this fraction of it may have landed */
+        const val SETTLED_FRACTION_OF_PEAK = 0.5f
+
+        /** Per-frame toe descent below which falling feet count as landed (~0.7 cm) */
+        const val SETTLED_DESCENT = 0.004f
+
+        /** Feet and hips resting this long mark the standing position, wherever they are */
+        const val STILL_MS = 300L
+
         /** Smoothing factor for re-anchoring the standing baseline */
         const val BASELINE_SMOOTHING = 0.2f
     }

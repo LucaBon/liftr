@@ -299,6 +299,7 @@
 
     <!-- Bar Path -->
     <string name="bar_path_title">Bar Path</string>
+    <string name="center_of_mass_path_title">Center of Mass</string>
     <string name="bar_path_max_drift">Max Drift</string>
     <string name="bar_path_linearity">Linearity</string>
     <string name="bar_path_drift_direction">Drift</string>

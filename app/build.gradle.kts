@@ -22,7 +22,7 @@ fun signingValue(key: String, env: String): String? =
 
 android {
     namespace = "com.liftr"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.liftr"
@@ -142,7 +142,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
 
     // CameraX
-    val cameraxVersion = "1.3.1"
+    val cameraxVersion = "1.5.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")

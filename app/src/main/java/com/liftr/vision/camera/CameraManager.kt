@@ -74,6 +74,7 @@ class CameraManager @Inject constructor(
     private var currentOnFrameAnalyzed: ((ImageProxy) -> Unit)? = null
     private var currentUseHighResolution: Boolean = false
     private var currentVideoRecordingManager: VideoRecordingManager? = null
+    private var currentPreferHighSpeed: Boolean = false
 
     fun startCamera(
         lifecycleOwner: LifecycleOwner,
@@ -270,7 +271,8 @@ class CameraManager @Inject constructor(
                 videoRecordingManager = recordingManager,
                 withRepCounter = withRepCounter,
                 onFrameAnalyzed = if (withRepCounter) currentOnFrameAnalyzed else null,
-                useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+                useFrontCamera = newCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA,
+                preferHighSpeed = currentPreferHighSpeed
             )
             return
         }
@@ -371,16 +373,19 @@ class CameraManager @Inject constructor(
      * @param onFrameAnalyzed Frame callback (only used if [withRepCounter] is true)
      * @param useFrontCamera Whether to use the front camera
      */
+    @OptIn(androidx.camera.core.ExperimentalSessionConfig::class, androidx.camera.video.ExperimentalHighSpeedVideo::class)
     fun startCameraForRecording(
         lifecycleOwner: LifecycleOwner,
         previewView: PreviewView,
         videoRecordingManager: VideoRecordingManager,
         withRepCounter: Boolean = false,
         onFrameAnalyzed: ((ImageProxy) -> Unit)? = null,
-        useFrontCamera: Boolean = false
+        useFrontCamera: Boolean = false,
+        preferHighSpeed: Boolean = false
     ) {
         currentMode = if (withRepCounter) CameraMode.RECORDING_WITH_COUNTER else CameraMode.RECORDING
         currentVideoRecordingManager = videoRecordingManager
+        currentPreferHighSpeed = preferHighSpeed
         currentCameraSelector = if (useFrontCamera) {
             CameraSelector.DEFAULT_FRONT_CAMERA
         } else {
@@ -417,7 +422,34 @@ class CameraManager @Inject constructor(
                     .also { it.setSurfaceProvider(previewView.surfaceProvider) }
                 preview = previewUseCase
 
-                val newVideoCapture = videoRecordingManager.createVideoCaptureUseCase()
+                val cameraInfo = cameraProvider?.availableCameraInfos
+                    ?.let { currentCameraSelector.filter(it).firstOrNull() }
+
+                // Fast movements: try a high-speed (120/240 fps) session first.
+                // It binds preview + video only, so not with the rep counter.
+                if (preferHighSpeed && !withRepCounter && cameraInfo != null) {
+                    runCatching {
+                        videoRecordingManager.createHighSpeedSession(cameraInfo, previewUseCase)?.let { session ->
+                            cameraProvider?.unbindAll()
+                            camera = cameraProvider?.bindToLifecycle(lifecycleOwner, currentCameraSelector, session.config)
+                            videoCapture = session.videoCapture
+                        }
+                    }.onFailure { e ->
+                        Log.w(TAG_CAMERA, "High-speed session failed, using normal recording", e)
+                        camera = null
+                        videoCapture = null
+                    }
+                }
+                if (camera != null) {
+                    isInitializing = false
+                    frameCount = 0
+                    lastLogTime = System.currentTimeMillis()
+                    Log.i(TAG_CAMERA, "✅ Camera started in ${currentMode.name} mode (high speed)")
+                    retrieveCameraIntrinsics(Constants.CAMERA_CALIBRATION_WIDTH, Constants.CAMERA_CALIBRATION_HEIGHT)
+                    return@addListener
+                }
+
+                val newVideoCapture = videoRecordingManager.createVideoCaptureUseCase(cameraInfo)
                 videoCapture = newVideoCapture
 
                 val useCases = mutableListOf<UseCase>(previewUseCase, newVideoCapture)
@@ -511,7 +543,8 @@ class CameraManager @Inject constructor(
             videoRecordingManager = videoRecordingManager,
             withRepCounter = withRepCounter,
             onFrameAnalyzed = if (withRepCounter) currentOnFrameAnalyzed else null,
-            useFrontCamera = currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+            useFrontCamera = currentCameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA,
+            preferHighSpeed = currentPreferHighSpeed
         )
         return true
     }

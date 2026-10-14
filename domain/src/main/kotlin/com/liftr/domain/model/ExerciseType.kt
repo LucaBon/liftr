@@ -12,6 +12,12 @@ enum class ExerciseType {
 
     fun isJumpExercise(): Boolean = this == VERTICAL_JUMP || this == LOADED_JUMP
 
+    /**
+     * Exercises timed from very fast movement (jump flight, the pull of a
+     * clean or snatch), which benefit from the highest recording frame rate.
+     */
+    fun isFastMovement(): Boolean = isJumpExercise() || this == CLEAN || this == SNATCH
+
     /** False for bodyweight exercises, which are performed without a weight. */
     fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP
 
