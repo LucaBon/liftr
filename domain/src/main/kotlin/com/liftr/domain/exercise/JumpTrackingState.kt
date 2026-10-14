@@ -14,6 +14,11 @@ package com.liftr.domain.exercise
  * @property takeoffMs Confirmed takeoff time while airborne, null on the ground
  * @property flightSamples (timestamp ms, toe rise) of the airborne frames, for
  *   fitting the flight parabola
+ * @property groundSamples (timestamp ms, toe rise) of the last few frames on
+ *   the ground, to find the first frame off it
+ * @property flightHipSamples (timestamp ms, hip rise) of the airborne frames,
+ *   for finding the top of the flight
+ * @property peakHeadRise Highest head rise above standing during the flight
  * @property previousFootY Toe height on the previous frame, for interpolation
  * @property previousTimestamp Timestamp of the previous frame (ms)
  * @property stillFootY Toe height the feet have been resting at
@@ -28,6 +33,9 @@ data class JumpTrackingState(
     val takeoffCandidateMs: Double? = null,
     val takeoffMs: Double? = null,
     val flightSamples: List<Pair<Long, Float>> = emptyList(),
+    val groundSamples: List<Pair<Long, Float>> = emptyList(),
+    val flightHipSamples: List<Pair<Long, Float>> = emptyList(),
+    val peakHeadRise: Float = 0f,
     val previousFootY: Float? = null,
     val previousTimestamp: Long? = null,
     val stillFootY: Float? = null,

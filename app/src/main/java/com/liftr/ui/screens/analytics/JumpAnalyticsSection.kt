@@ -27,6 +27,7 @@ import java.util.Date
 import java.util.Locale
 
 private val ComColor = Color(0xFFFF9800)
+private val ApexColor = Color(0xFF4CAF50)
 private val DipColor = Color(0xFF2196F3)
 private val PeakColor = Color(0xFFE91E63)
 
@@ -51,6 +52,7 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
         MultiLineTrendChart(
             series = listOf(
                 ChartSeries(stringResource(R.string.analytics_jump_flight_time), ChartPrimary, jumps.map { it.jump.flightHeightCm }),
+                ChartSeries(stringResource(R.string.analytics_jump_takeoff_to_apex), ApexColor, jumps.map { it.jump.apexHeightCm }),
                 ChartSeries(stringResource(R.string.analytics_jump_com_displacement), ComColor, jumps.map { it.jump.comFlightRiseCm })
             ),
             xLabels = xLabels,
@@ -77,8 +79,7 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
         if (paths.isNotEmpty()) {
             BarPathReplayCard(
                 repBarPaths = paths,
-                title = stringResource(R.string.analytics_latest_com_paths),
-                frontView = true
+                title = stringResource(R.string.analytics_latest_com_paths)
             )
         }
     }
@@ -102,6 +103,7 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 StatItem(label = stringResource(R.string.analytics_jump_flight_time), value = avg(jumps.map { it.jump.flightHeightCm }))
+                StatItem(label = stringResource(R.string.analytics_jump_takeoff_to_apex), value = avg(jumps.map { it.jump.apexHeightCm }))
                 StatItem(label = stringResource(R.string.analytics_jump_com_displacement), value = avg(jumps.map { it.jump.comFlightRiseCm }))
             }
             Row(

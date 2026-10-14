@@ -66,6 +66,9 @@ import com.liftr.ui.theme.VbtStopAlert
 import com.liftr.util.Constants.TAG_WORKOUT
 import com.liftr.util.getRotationDegrees
 import com.liftr.util.findActivity
+import com.liftr.vision.pose.PreviewPoseSampler
+import com.liftr.domain.model.PoseResult
+import com.liftr.domain.calculator.CameraView
 import com.liftr.util.isPortrait
 import com.liftr.util.preferredScreenOrientation
 import com.liftr.util.rememberOrientation
@@ -210,7 +213,16 @@ fun WorkoutScreen(
                     repCounterEnabled = uiState.repCounterEnabled,
                     isVideoRecording = uiState.isVideoRecording,
                     videoRecordingManager = cameraViewModel.videoRecordingManager,
-                    preferHighSpeed = uiState.selectedExercise.isFastMovement()
+                    preferHighSpeed = uiState.selectedExercise.isFastMovement(),
+                    // Jumps must be filmed side-on. With no live pose stream
+                    // (high-speed recording), check snapshots of the preview.
+                    previewPoseSampler = cameraViewModel.previewPoseSampler,
+                    onPreviewPose = if (
+                        uiState.selectedExercise.isJumpExercise() && postExerciseMode &&
+                        !uiState.repCounterEnabled && !uiState.isVideoRecording
+                    ) {
+                        { pose -> viewModel.onViewSample(pose) }
+                    } else null
                 )
 
                 // Pose overlay
@@ -408,6 +420,10 @@ fun WorkoutScreen(
                             // Analysis-mode hint — helps a new user understand
                             // what happens after they hit record.
                             AnalysisModeHint(mode = uiState.analysisMode)
+
+                            if (uiState.selectedExercise.isJumpExercise()) {
+                                CameraViewHint(frontViewDetected = uiState.cameraViewWarning)
+                            }
 
                             val startInteractionSource = remember { MutableInteractionSource() }
                             Button(
@@ -655,8 +671,24 @@ fun SetSummarySheet(
 
             // Quality scoring rates depth, bar path and tempo, which don't
             // apply to jumps; jumps list each height instead.
+            if (isJump && summary.cameraView == CameraView.FRONT) {
+                Text(
+                    text = stringResource(R.string.jump_filmed_from_front),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.sm)
+                        .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
             if (isJump) {
-                JumpHeightList(heights = summary.repJumpHeights, velocities = summary.repVelocities)
+                JumpHeightList(
+                    heights = summary.repJumpHeights,
+                    apexHeights = summary.repApexHeights,
+                    velocities = summary.repVelocities
+                )
             } else {
                 // Overall score bar
                 ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
@@ -681,7 +713,6 @@ fun SetSummarySheet(
                     repBarPaths = summary.repBarPaths,
                     title = if (isJump) stringResource(R.string.center_of_mass_path_title)
                     else stringResource(R.string.bar_path_title),
-                    frontView = isJump
                 )
             }
 
@@ -720,11 +751,11 @@ fun SetSummarySheet(
                 if (isJump) {
                     StatItem(
                         label = stringResource(R.string.set_summary_best_jump),
-                        value = summary.bestJumpHeight?.let { stringResource(R.string.jump_height_cm, it.value * 100) } ?: "–"
+                        value = summary.bestJumpHeight?.let { jumpHeights(it, summary.bestApexHeight) } ?: "–"
                     )
                     StatItem(
                         label = stringResource(R.string.set_summary_avg_jump),
-                        value = summary.avgJumpHeight?.let { stringResource(R.string.jump_height_cm, it.value * 100) } ?: "–"
+                        value = summary.avgJumpHeight?.let { jumpHeights(it, summary.avgApexHeight) } ?: "–"
                     )
                 } else {
                     StatItem(
@@ -753,8 +784,15 @@ fun SetSummarySheet(
 
 /** One row per jump: height and takeoff velocity. */
 @Composable
-private fun JumpHeightList(heights: List<Meters>, velocities: List<MetersPerSecond>) {
+private fun JumpHeightList(heights: List<Meters>, apexHeights: List<Meters?>, velocities: List<MetersPerSecond>) {
     Column {
+        if (apexHeights.any { it != null }) {
+            Text(
+                text = stringResource(R.string.jump_heights_legend),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         heights.forEachIndexed { index, height ->
             Row(
                 modifier = Modifier
@@ -767,7 +805,7 @@ private fun JumpHeightList(heights: List<Meters>, velocities: List<MetersPerSeco
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
-                    text = stringResource(R.string.jump_height_cm, height.value * 100) +
+                    text = jumpHeights(height, apexHeights.getOrNull(index)) +
                         (velocities.getOrNull(index)?.let { "  \u00B7  %.2f m/s".format(it.value) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
@@ -777,6 +815,12 @@ private fun JumpHeightList(heights: List<Meters>, velocities: List<MetersPerSeco
     }
     Spacer(modifier = Modifier.height(Spacing.md))
 }
+
+/** Flight-time height, then the takeoff-to-apex one when measured: "42 / 40 cm". */
+@Composable
+private fun jumpHeights(flight: Meters, apex: Meters?): String =
+    if (apex != null) stringResource(R.string.jump_heights_cm, flight.value * 100, apex.value * 100)
+    else stringResource(R.string.jump_height_cm, flight.value * 100)
 
 @Composable
 fun ScoreBar(score: Int, grade: ScoreGrade) {
@@ -906,7 +950,9 @@ fun CameraPreview(
     repCounterEnabled: Boolean = false,
     isVideoRecording: Boolean = false,
     videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager? = null,
-    preferHighSpeed: Boolean = false
+    preferHighSpeed: Boolean = false,
+    previewPoseSampler: PreviewPoseSampler? = null,
+    onPreviewPose: ((PoseResult) -> Unit)? = null
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -958,6 +1004,14 @@ fun CameraPreview(
                 )
             }
         } ?: Log.w(TAG_WORKOUT, "LaunchedEffect: PreviewView is null")
+    }
+
+    val sampling = onPreviewPose != null
+    val currentOnPreviewPose by rememberUpdatedState(onPreviewPose)
+    LaunchedEffect(previewView.value, previewPoseSampler, sampling) {
+        val view = previewView.value ?: return@LaunchedEffect
+        if (!sampling || previewPoseSampler == null) return@LaunchedEffect
+        previewPoseSampler.sample(view) { pose -> currentOnPreviewPose?.invoke(pose) }
     }
 
     DisposableEffect(Unit) {
@@ -1189,9 +1243,38 @@ fun AnalysisModeHint(
     }
 }
 
+/**
+ * Jumps are measured correctly only when filmed side-on: says so, and turns
+ * into a warning while the camera sees the athlete from the front.
+ */
+@Composable
+fun CameraViewHint(
+    frontViewDetected: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val (background, content) = if (frontViewDetected) {
+        MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Text(
+        text = stringResource(
+            if (frontViewDetected) R.string.jump_front_view_warning else R.string.jump_side_view_hint
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (frontViewDetected) FontWeight.SemiBold else FontWeight.Normal,
+        color = content,
+        modifier = modifier
+            .fillMaxWidth()
+            .background(background.copy(alpha = 0.92f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    )
+}
+
 // Helper ViewModel to inject CameraManager + VideoRecordingManager
 @dagger.hilt.android.lifecycle.HiltViewModel
 class WorkoutCameraViewModel @Inject constructor(
     val cameraManager: CameraManager,
-    val videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager
+    val videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager,
+    val previewPoseSampler: PreviewPoseSampler
 ) : androidx.lifecycle.ViewModel()

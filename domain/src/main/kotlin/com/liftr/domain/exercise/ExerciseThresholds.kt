@@ -306,6 +306,9 @@ object ExerciseThresholds {
         /** Feet and hips resting this long mark the standing position, wherever they are */
         const val STILL_MS = 300L
 
+        /** A flight whose head rises less than this fraction of the height it implies is not a jump */
+        const val MIN_HEAD_RISE_FRACTION = 0.5f
+
         /** Landmark visibility accepted for head, hips and feet (feet drop to 0.4-0.5 in the air) */
         const val MIN_VISIBILITY = 0.3f
 

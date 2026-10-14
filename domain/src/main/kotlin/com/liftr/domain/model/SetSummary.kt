@@ -1,5 +1,6 @@
 package com.liftr.domain.model
 
+import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
@@ -25,6 +26,9 @@ import com.liftr.domain.model.BarPathData
  * @property bestRepIndex Index of the highest-scoring rep
  * @property worstRepIndex Index of the lowest-scoring rep
  * @property aggregateFormIssues Form issues grouped with which reps they occurred in
+ * @property repApexHeights Per-jump height from takeoff to the top of the flight
+ *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
+ * @property cameraView How a jump set was filmed (jumps should be filmed side-on); UNKNOWN for other exercises
  */
 data class SetSummary(
     val exerciseType: ExerciseType,
@@ -41,11 +45,19 @@ data class SetSummary(
     val worstRepIndex: Int,
     val aggregateFormIssues: List<AggregateFormIssue>,
     val repBarPaths: List<BarPathData> = emptyList(),
-    val repJumpHeights: List<Meters> = emptyList()
+    val repJumpHeights: List<Meters> = emptyList(),
+    val repApexHeights: List<Meters?> = emptyList(),
+    val cameraView: CameraView = CameraView.UNKNOWN
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
     val bestJumpHeight: Meters? get() = repJumpHeights.maxByOrNull { it.value }
+
+    val bestApexHeight: Meters? get() = repApexHeights.filterNotNull().maxByOrNull { it.value }
+
+    val avgApexHeight: Meters?
+        get() = repApexHeights.filterNotNull().takeIf { it.isNotEmpty() }
+            ?.let { heights -> Meters(heights.map { it.value }.average().toFloat()) }
 
     val avgJumpHeight: Meters?
         get() = if (repJumpHeights.isEmpty()) null

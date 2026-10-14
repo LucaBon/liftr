@@ -87,7 +87,9 @@ data class WorkoutState(
      * the summary is actually viewed. The sets themselves are always persisted
      * regardless of whether this is ever acted on.
      */
-    val unseenAnalysisCount: Int = 0
+    val unseenAnalysisCount: Int = 0,
+    /** Before a jump set: the camera sees the athlete from the front instead of side-on. */
+    val cameraViewWarning: Boolean = false
 )
 
 /**

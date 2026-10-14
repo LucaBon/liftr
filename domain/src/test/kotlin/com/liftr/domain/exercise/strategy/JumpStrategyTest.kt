@@ -179,6 +179,138 @@ class JumpStrategyTest {
     }
 
     @Test
+    fun `landing closer to the camera is measured to the lower floor`() {
+        // Jumping toward the camera: the floor where the feet land appears
+        // lower than the takeoff level, so they touch down below it.
+        for (shift in listOf(0.04f, 0.10f)) {
+            val run = run(jumpFrames(1000, flightS = 0.5f, landingShift = -shift))
+
+            assertEquals("shift $shift m", 1, run.reps)
+            assertEquals("shift $shift m", expectedHeight(0.5f), run.jumps.single().height.value, 0.015f)
+        }
+    }
+
+    @Test
+    fun `takeoff to apex height matches the flight on a clean jump whatever the frame phase`() {
+        for (offset in 0L until frameMs step 4) {
+            val apex = run(jumpFrames(1000 + offset, flightS = 0.5f)).jumps.single().apexHeight
+            assertEquals("offset $offset ms", expectedHeight(0.5f), apex!!.value, 0.01f)
+        }
+    }
+
+    @Test
+    fun `folding the legs before landing stretches flight time but not takeoff to apex`() {
+        // Seen on real side-on jumps: on the way down the feet are pulled up
+        // [tuck] toward the body, so the body falls that much below its takeoff
+        // level before the toes touch, and the flight time grows.
+        val flightS = 0.5f
+        val tuck = 0.08f
+        val feet = setOf(
+            PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE, PoseResult.LEFT_HEEL, PoseResult.RIGHT_HEEL,
+            PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX
+        )
+        val frames = mutableListOf<PoseResult>()
+        var t = 1000L
+        fun add(rise: Float, feetUp: Float = 0f) {
+            val body = pose(t, rise = rise)
+            frames += body.copy(landmarks = body.landmarks.mapIndexed { i, lm ->
+                if (i in feet) lm.copy(y = lm.y - feetUp * normPerMeter) else lm
+            })
+            t += frameMs
+        }
+        repeat(15) { add(0f) }
+        val t0 = t - frameMs / 2
+        val v0 = g * flightS / 2f
+        while (true) {
+            val s = (t - t0) / 1000f
+            val rise = v0 * s - g * s * s / 2f
+            val descending = s > flightS / 2
+            // Feet fold up through the descent; contact once they reach the floor.
+            val feetUp = if (descending) tuck * ((s - flightS / 2) / (flightS / 2)).coerceAtMost(1f) else 0f
+            if (rise + feetUp <= 0f) break
+            add(rise, feetUp)
+        }
+        for (i in 1..10) add(-tuck * (1f - i / 10f))   // land in a crouch and stand up
+        repeat(15) { add(0f) }
+
+        val jump = run(frames).jumps.single()
+
+        assertEquals(expectedHeight(flightS), jump.apexHeight!!.value, 0.015f)
+        assertTrue("flight time should overestimate: ${jump.height.value}", jump.height.value > expectedHeight(flightS) + 0.02f)
+    }
+
+    /** [frames] standing frames with [edit] applied to the landmarks of frame i. */
+    private fun standing(frames: Int, edit: (Int, List<com.liftr.domain.model.PoseKeypoint>) -> List<com.liftr.domain.model.PoseKeypoint>) =
+        (0 until frames).map { i ->
+            val p = pose(1000L + i * frameMs)
+            p.copy(landmarks = edit(i, p.landmarks))
+        }
+
+    @Test
+    fun `toes rising on their own while standing is not a jump`() {
+        // Seen on a real recording: the foot rocks onto the heel (or the toe
+        // landmark drifts) by 6 cm for ~0.8 s while the body stays put.
+        val toes = setOf(PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX)
+        val frames = standing(60) { i, lms ->
+            if (i in 25..48) lms.mapIndexed { idx, lm -> if (idx in toes) lm.copy(y = lm.y - 0.06f * normPerMeter) else lm }
+            else lms
+        }
+
+        assertEquals(0, run(frames).reps)
+    }
+
+    @Test
+    fun `far foot flickering in and out of view side-on is not a jump`() {
+        // Side-on the far foot sits ~11 cm higher in the image, and its
+        // visibility hovers around the threshold.
+        val far = setOf(PoseResult.LEFT_FOOT_INDEX, PoseResult.LEFT_ANKLE)
+        val frames = standing(90) { i, lms ->
+            val shown = (i / 8) % 2 == 1
+            lms.mapIndexed { idx, lm ->
+                if (idx in far) lm.copy(y = lm.y - 0.11f * normPerMeter, visibility = if (shown) 0.4f else 0.2f) else lm
+            }
+        }
+
+        assertEquals(0, run(frames).reps)
+    }
+
+    @Test
+    fun `walking back to the takeoff spot after landing closer is not a jump`() {
+        for (footLift in listOf(0.10f, 0.15f)) {
+            // Jump toward the camera, landing 10 cm lower in the image.
+            val frames = jumpFrames(1000, flightS = 0.5f, landingShift = -0.10f).toMutableList()
+            var t = frames.last().timestamp + frameMs
+            // Two steps back, one foot at a time: the swinging foot rises
+            // [footLift] while the body climbs back to the takeoff level.
+            val stepFrames = 14
+            for (step in 0 until 2) {
+                val feet = if (step == 0) {
+                    setOf(PoseResult.LEFT_ANKLE, PoseResult.LEFT_HEEL, PoseResult.LEFT_FOOT_INDEX)
+                } else {
+                    setOf(PoseResult.RIGHT_ANKLE, PoseResult.RIGHT_HEEL, PoseResult.RIGHT_FOOT_INDEX)
+                }
+                for (i in 1..stepFrames) {
+                    val progress = (step * stepFrames + i).toFloat() / (2 * stepFrames)
+                    val body = pose(t, rise = -0.10f * (1f - progress))
+                    val lift = footLift * kotlin.math.sin(Math.PI * i / stepFrames).toFloat() * normPerMeter
+                    frames += body.copy(
+                        landmarks = body.landmarks.mapIndexed { index, lm ->
+                            if (index in feet) lm.copy(y = lm.y - lift) else lm
+                        }
+                    )
+                    t += frameMs
+                }
+            }
+            repeat(30) { frames += pose(t); t += frameMs }   // stand 1 s back at the takeoff spot
+
+            val run = run(frames + jumpFrames(t, flightS = 0.45f))
+
+            assertEquals("foot lift $footLift m", 2, run.reps)
+            assertEquals("foot lift $footLift m", expectedHeight(0.45f), run.jumps[1].height.value, 0.01f)
+        }
+    }
+
+    @Test
     fun `jumps after landing closer to the camera are measured from the new spot`() {
         // Landing closer shows the floor 4 cm lower: the feet settle below the takeoff level.
         val frames = jumpFrames(1000, flightS = 0.5f, landingShift = -0.04f) +

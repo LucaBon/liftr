@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
  * it after the set summary is gone.
  *
  * @property flightHeightCm Jump height from flight time
+ * @property apexHeightCm Jump height from the time between takeoff and the top of the flight
  * @property comFlightRiseCm Center-of-mass rise from takeoff to the top of the flight
  * @property countermovementCm Dip of the center of mass below standing before takeoff
  * @property peakRiseCm Top of the flight above standing
@@ -18,6 +19,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class RepJumpData(
     val flightHeightCm: Float,
+    val apexHeightCm: Float? = null,
     val comFlightRiseCm: Float? = null,
     val countermovementCm: Float? = null,
     val peakRiseCm: Float? = null,
@@ -36,10 +38,11 @@ data class RepJumpData(
     }
 
     companion object {
-        fun from(flightHeightCm: Float, barPath: BarPathData?): RepJumpData {
+        fun from(flightHeightCm: Float, apexHeightCm: Float?, barPath: BarPathData?): RepJumpData {
             val excursion = barPath?.excursion
             return RepJumpData(
                 flightHeightCm = flightHeightCm,
+                apexHeightCm = apexHeightCm,
                 comFlightRiseCm = excursion?.flightRiseCm,
                 countermovementCm = excursion?.countermovementCm,
                 peakRiseCm = excursion?.peakRiseCm,

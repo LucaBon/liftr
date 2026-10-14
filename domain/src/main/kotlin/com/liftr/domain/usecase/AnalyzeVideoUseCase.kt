@@ -1,5 +1,7 @@
 package com.liftr.domain.usecase
 
+import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.CameraViewClassifier
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import com.liftr.domain.exercise.BarPathAnalyzer
@@ -257,6 +259,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repVelocities = mutableListOf<MetersPerSecond>()
         val repBarPaths = mutableListOf<BarPathData>()
         val repJumpHeights = mutableListOf<Meters>()
+        val repApexHeights = mutableListOf<Meters?>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -269,6 +272,8 @@ class AnalyzeVideoUseCase @Inject constructor(
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
+        // Shoulder width while standing tells whether jumps were filmed side-on.
+        val standingShoulderRatios = mutableListOf<Float>()
 
         for (i in poseResults.indices) {
             val pose = poseResults[i]
@@ -278,6 +283,9 @@ class AnalyzeVideoUseCase @Inject constructor(
             val transition = strategy.detectPhase(pose, params.calibrationData, phaseState)
             val newPhase = transition.newState.currentPhase
             phaseState = transition.newState
+            if (jumpPath != null && newPhase == MovementPhase.IDLE) {
+                CameraViewClassifier.shoulderWidthRatio(pose)?.let { standingShoulderRatios += it }
+            }
 
             if (newPhase != previousPhase) {
                 when (newPhase) {
@@ -388,7 +396,10 @@ class AnalyzeVideoUseCase @Inject constructor(
                     else -> MetersPerSecond(0f)
                 }
                 repVelocities.add(avgRepVelocity)
-                jump?.let { repJumpHeights.add(it.height) }
+                jump?.let {
+                    repJumpHeights.add(it.height)
+                    repApexHeights.add(it.apexHeight)
+                }
 
                 onProgress(
                     Progress(
@@ -418,7 +429,9 @@ class AnalyzeVideoUseCase @Inject constructor(
             previousPhase = newPhase
         }
 
+        val cameraView = if (jumpPath != null) CameraViewClassifier.classify(standingShoulderRatios) else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repBarPaths, repJumpHeights)
+            .copy(cameraView = cameraView, repApexHeights = repApexHeights)
     }
 
     private fun assembleSummary(

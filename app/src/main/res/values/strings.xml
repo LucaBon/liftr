@@ -416,8 +416,14 @@
     <string name="analytics_jump_height">Jump Height</string>
     <string name="analytics_jump_flight_time">From flight time</string>
     <string name="analytics_jump_com_displacement">From center of mass</string>
+    <string name="analytics_jump_takeoff_to_apex">Takeoff to peak</string>
+    <string name="jump_heights_legend">Flight time / takeoff to peak</string>
+    <string name="jump_heights_cm">%1$.0f / %2$.0f cm</string>
     <string name="analytics_jump_averages">Averages over %d jumps</string>
     <string name="analytics_jump_com_hint">Countermovement and peak rise are measured on jumps recorded from now on. Stand still for a moment before each jump.</string>
     <string name="analytics_latest_com_paths">Latest Set: Center of Mass</string>
     <string name="jump_com_height">Jump (center of mass)</string>
+    <string name="jump_side_view_hint">Film jumps from the side: stand side-on to the camera, whole body in frame.</string>
+    <string name="jump_front_view_warning">The camera sees you from the front. Turn side-on for accurate jump heights.</string>
+    <string name="jump_filmed_from_front">Filmed from the front: heights may be off if you moved toward or away from the camera. Film jumps from the side.</string>
 </resources>

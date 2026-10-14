@@ -72,6 +72,8 @@ class JumpStrategy(
 
     companion object {
         private const val TAG = "JumpStrategy"
+        private const val GRAVITY = 9.81
+        private const val GROUND_SAMPLES = 5
     }
 
     /** Head, hip and toe heights, oriented so that larger = lower. */
@@ -131,19 +133,24 @@ class JumpStrategy(
         val rise = tracking.baselineFootY - frame.footY
         val previousRise = tracking.previousFootY?.let { tracking.baselineFootY - it }
 
-        // Feet that stop coming down above the takeoff level have landed
-        // somewhere else: a step farther from the camera shows the floor
-        // higher in the image. Past the peak and no longer descending = landed.
+        // Feet land where they stop coming down, which is not always the
+        // takeoff level: a step farther from the camera shows the floor higher
+        // in the image, a step closer shows it lower. Past the peak and no
+        // longer descending = landed.
         val peak = tracking.flightSamples.maxOfOrNull { it.second } ?: rise
         val settled = previousRise != null &&
             rise < peak * Jump.SETTLED_FRACTION_OF_PEAK &&
             previousRise - rise < Jump.SETTLED_DESCENT * tracking.bodySpan
 
-        if (rise > timingLevel && !settled) {
+        // Below the takeoff level, feet still falling are landing closer to
+        // the camera: keep sampling until they settle.
+        if (!settled) {
             val sampled = tracking.copy(
                 previousFootY = frame.footY,
                 previousTimestamp = timestamp,
-                flightSamples = tracking.flightSamples + (timestamp to rise)
+                flightSamples = tracking.flightSamples + (timestamp to rise),
+                flightHipSamples = tracking.flightHipSamples + (timestamp to tracking.baselineHipsY - frame.hipsY),
+                peakHeadRise = maxOf(tracking.peakHeadRise, headRise(tracking, frame))
             )
             return PhaseTransitionResult(
                 newState = state.copy(jump = sampled),
@@ -152,8 +159,9 @@ class JumpStrategy(
             )
         }
 
-        // The ground the feet came back to, as a rise above the takeoff level.
-        val landingRise = if (rise > timingLevel) rise else 0f
+        // The ground the feet came back to, as a rise above (or drop below)
+        // the takeoff level; within the timing level it is the same ground.
+        val landingRise = if (kotlin.math.abs(rise) > timingLevel) rise else 0f
         val landingLevel = landingRise + timingLevel
         val points = tracking.flightSamples + (timestamp to rise)
         val landingMs = landingCrossingMs(points, landingLevel) ?: timestamp.toDouble()
@@ -162,7 +170,7 @@ class JumpStrategy(
         // the standing baseline, which the landing crouch would distort.
         val grounded = state.copy(
             currentPhase = MovementPhase.IDLE,
-            jump = if (landingRise > 0f) {
+            jump = if (landingRise != 0f) {
                 baselineFrom(frame, timestamp)
             } else {
                 tracking.copy(
@@ -176,16 +184,44 @@ class JumpStrategy(
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
         }
 
+        // The timing level in meters: a fraction of the nose-to-toe span.
+        val timingLevelMeters = Jump.TIMING_LEVEL * Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight
         val fittedFlightMs = fitFlightMs(airborneSamples(tracking.flightSamples, landingLevel), landingRise)
-        val jump = if (fittedFlightMs != null && fittedFlightMs in Jump.MIN_FLIGHT_MS..Jump.MAX_FLIGHT_MS) {
+        val fromFlight = if (fittedFlightMs != null && fittedFlightMs in Jump.MIN_FLIGHT_MS..Jump.MAX_FLIGHT_MS) {
             JumpData.fromFlightTime(fittedFlightMs)
         } else {
-            // The timing level in meters: a fraction of the nose-to-toe span.
-            val timingLevelMeters = Jump.TIMING_LEVEL * Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight
             JumpData.fromFlightTime(crossingFlightMs, timingLevelMeters)
         }
+        // Second estimate from the rising half alone, which landing posture
+        // can't stretch: the time from takeoff to the top of the flight.
+        val spanPerMeter = tracking.bodySpan / (Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight)
+        val apexHeight = fitApexMs(tracking.flightHipSamples)
+            ?.takeIf { it > takeoffMs && it < landingMs }
+            ?.let { apexMs ->
+                val toes = (tracking.groundSamples + tracking.flightSamples).filter { it.first < apexMs }
+                // The toes leave the floor between the last frame still on it
+                // and the next one; right after, the foot flicks up faster than
+                // the body, so later frames would project takeoff too early.
+                val onFloor = toes.indexOfLast { it.second <= timingLevel }
+                val firstOff = toes.getOrNull(onFloor + 1) ?: tracking.flightSamples.first()
+                heightFromTakeoffToApex(firstOff, toes.getOrNull(onFloor)?.first, apexMs, spanPerMeter)
+            }
+        val jump = fromFlight.copy(apexHeight = apexHeight)
         val flightMs = jump.flightTimeMs
-        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm".format(flightMs, jump.height.value * 100))
+
+        // A real flight lifts the whole body: toes "rising" on their own (the
+        // foot rocking onto the heel, a far foot flickering in and out of view)
+        // leave the head where it was.
+        val expectedHeadRise = jump.height.value * spanPerMeter
+        val headRise = maxOf(tracking.peakHeadRise, headRise(tracking, frame))
+        if (headRise < Jump.MIN_HEAD_RISE_FRACTION * expectedHeadRise) {
+            logger.d(TAG, "Feet-only flight of %.0f ms, head rose %.0f%% of a jump: not a jump"
+                .format(flightMs, 100 * headRise / expectedHeadRise))
+            return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Head did not rise")
+        }
+        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s".format(
+            flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a"
+        ))
         return PhaseTransitionResult(
             newState = grounded,
             repCompleted = true,
@@ -234,7 +270,8 @@ class JumpStrategy(
         var next = tracking.copy(
             takeoffCandidateMs = takeoffCandidate,
             previousFootY = frame.footY,
-            previousTimestamp = timestamp
+            previousTimestamp = timestamp,
+            groundSamples = (tracking.groundSamples + (timestamp to rise)).takeLast(GROUND_SAMPLES)
         )
 
         // A takeoff needs the hips driving up: feet "rising" while the hips are
@@ -244,7 +281,12 @@ class JumpStrategy(
             return PhaseTransitionResult(
                 newState = state.copy(
                     currentPhase = MovementPhase.TOP,
-                    jump = next.copy(takeoffMs = takeoffCandidate, flightSamples = listOf(timestamp to rise))
+                    jump = next.copy(
+                        takeoffMs = takeoffCandidate,
+                        flightSamples = listOf(timestamp to rise),
+                        flightHipSamples = listOf(timestamp to tracking.baselineHipsY - frame.hipsY),
+                        peakHeadRise = headRise(tracking, frame)
+                    )
                 ),
                 repCompleted = false,
                 debugInfo = "Takeoff"
@@ -346,10 +388,15 @@ class JumpStrategy(
      * flight time is the distance between its roots. Null when there are too
      * few samples or the fit isn't a downward parabola.
      */
-    private fun fitFlightMs(samples: List<Pair<Long, Float>>, landingRise: Float): Float? {
+    /**
+     * Least-squares parabola a + b·t + c·t² through (timestamp, rise) samples,
+     * t in seconds from the first sample; null if too few samples or not
+     * curving downward like a flight.
+     */
+    private fun fitParabola(samples: List<Pair<Long, Float>>): Triple<Double, Double, Double>? {
         if (samples.size < Jump.MIN_FIT_SAMPLES) return null
         val t0 = samples.first().first
-        // Power sums for the normal equations, t in seconds from the first sample.
+        // Power sums for the normal equations.
         val s = DoubleArray(5)
         val r = DoubleArray(3)
         for ((timestamp, rise) in samples) {
@@ -369,7 +416,21 @@ class JumpStrategy(
             ),
             r
         ) ?: return null
-        if (c >= 0) return null
+        return if (c < 0) Triple(a, b, c) else null
+    }
+
+    /**
+     * Time of the top of the flight, from a parabola through the hips: the
+     * trunk follows the center of mass, while the legs fold before landing.
+     */
+    private fun fitApexMs(hipSamples: List<Pair<Long, Float>>): Double? {
+        val (_, b, c) = fitParabola(hipSamples) ?: return null
+        return hipSamples.first().first + (-b / (2 * c)) * 1000.0
+    }
+
+    private fun fitFlightMs(samples: List<Pair<Long, Float>>, landingRise: Float): Float? {
+        val t0 = samples.firstOrNull()?.first ?: return null
+        val (a, b, c) = fitParabola(samples) ?: return null
         // Takeoff is where the parabola rises through 0, landing where it comes
         // down through landingRise (0 when landing where it took off).
         val takeoffDiscriminant = b * b - 4 * a * c
@@ -398,6 +459,36 @@ class JumpStrategy(
         return t0 + fraction.toDouble() * (t1 - t0)
     }
 
+    /**
+     * Jump height from the time between takeoff and [apexMs]: h = g·t² / 2.
+     *
+     * Takeoff isn't interpolated between frames (the frame before it shows
+     * the toes still on the ground, which biases a linear crossing early).
+     * Instead, the first airborne frame says how high the toes already are,
+     * the time left to the apex how fast they rise (v = g·Δt), and projectile
+     * motion how long ago they left the ground.
+     */
+    private fun heightFromTakeoffToApex(
+        firstOff: Pair<Long, Float>,
+        lastOnFloorMs: Long?,
+        apexMs: Double,
+        spanPerMeter: Float
+    ): Meters? {
+        val (frameMs, rise) = firstOff
+        val toApexS = (apexMs - frameMs) / 1000.0
+        if (toApexS <= 0) return null
+        val heightM = rise / spanPerMeter
+        val velocity = GRAVITY * toApexS
+        val sinceTakeoffS = (kotlin.math.sqrt(velocity * velocity + 2 * GRAVITY * heightM) - velocity) / GRAVITY
+        // Not before the last frame that still showed the toes on the floor.
+        val takeoffMs = maxOf(frameMs - sinceTakeoffS * 1000, lastOnFloorMs?.toDouble() ?: Double.NEGATIVE_INFINITY)
+        return JumpData.heightFromRiseTime((apexMs - takeoffMs).toFloat())
+    }
+
+    /** Head height above where it stood, from the standing toe level and span. */
+    private fun headRise(tracking: JumpTrackingState, frame: Frame): Float =
+        (tracking.baselineFootY - tracking.bodySpan) - frame.headY
+
     private fun readFrame(poseResult: PoseResult): Frame? {
         val landmarks = poseResult.landmarks
         // Lower than the usual threshold: in mid-air the feet and knees drop to
@@ -405,23 +496,26 @@ class JumpStrategy(
         // them breaks the flight apart or hides it entirely.
         fun visible(index: Int): PoseKeypoint? =
             landmarks.getOrNull(index)?.takeIf { it.visibility >= Jump.MIN_VISIBILITY }
-        fun midY(left: Int, right: Int): Float? {
-            val l = visible(left)
-            val r = visible(right)
-            return when {
-                l != null && r != null -> (l.y + r.y) / 2f
-                else -> (l ?: r)?.y
-            }
-        }
+        fun bothVisible(left: Int, right: Int) = listOfNotNull(visible(left), visible(right))
 
         val head = visible(PoseResult.NOSE)?.y ?: return null
-        val hips = midY(PoseResult.LEFT_HIP, PoseResult.RIGHT_HIP) ?: return null
-        val feet = midY(PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX)
-            ?: midY(PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE)
-            ?: return null
+        val feetPoints = bothVisible(PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX)
+            .ifEmpty { bothVisible(PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE) }
+            .ifEmpty { return null }
+        val hipPoints = bothVisible(PoseResult.LEFT_HIP, PoseResult.RIGHT_HIP).ifEmpty { return null }
 
-        // Camera upside down: flip so that larger Y is always lower.
-        return if (head > feet) Frame(1f - head, 1f - hips, 1f - feet) else Frame(head, hips, feet)
+        // Track the lowest foot and hip, not the average: side-on the far one
+        // sits higher in the image and its visibility flickers, so averaging
+        // it in and out makes the feet jump by centimeters. The lowest toe is
+        // also the last to leave the ground and the first to touch it.
+        // Camera upside down: "lowest" is the smallest y, then flip so that
+        // larger y is always lower.
+        val upsideDown = head > feetPoints.map { it.y }.average()
+        fun lowest(points: List<PoseKeypoint>) =
+            if (upsideDown) 1f - points.minOf { it.y } else points.maxOf { it.y }
+        val feet = lowest(feetPoints)
+        val hips = lowest(hipPoints)
+        return Frame(if (upsideDown) 1f - head else head, hips, feet)
     }
 
     override fun calculateMetrics(

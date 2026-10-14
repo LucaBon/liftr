@@ -3,6 +3,8 @@ package com.liftr.ui.screens.workout
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.model.RepJumpData
+import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.CameraViewClassifier
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import android.content.Context
 import androidx.camera.core.ImageProxy
@@ -100,6 +102,8 @@ class WorkoutViewModel @Inject constructor(
         private const val KEY_EXERCISE = "exercise_type"
         private const val KEY_WEIGHT = "weight"
         private const val KEY_TARGET_REPS = "target_reps"
+        // Camera view check: judge the last few seconds (enough preview snapshots at 2/s)
+        private const val VIEW_WINDOW_MS = 3000L
         // Self-heal: how long to wait for an async camera rebind to produce a
         // VideoCapture before giving up, and how often to poll for it.
         private const val REBIND_TIMEOUT_MS = 2500L
@@ -155,6 +159,9 @@ class WorkoutViewModel @Inject constructor(
     // --- Rep Quality Scoring: per-rep accumulators ---
     private var currentRepBarPathPoints = mutableListOf<BarPathPoint>()
     private var jumpPath = JumpPathWindow()
+
+    /** Recent shoulder width ratios (time, ratio) for the pre-set camera view check. */
+    private val viewSamples = ArrayDeque<Pair<Long, Float>>()
     private var currentJumpExcursion: JumpExcursion? = null
     private var currentRepFormIssues = mutableListOf<FormIssue>()
     // Buffered frames for the in-progress rep. Drained into AnalyzeRepUseCase
@@ -173,6 +180,7 @@ class WorkoutViewModel @Inject constructor(
     private var setRepScores = mutableListOf<RepQualityScore>()
     private var setRepVelocities = mutableListOf<MetersPerSecond>()
     private var setJumpHeights = mutableListOf<Meters>()
+    private var setApexHeights = mutableListOf<Meters?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -283,16 +291,20 @@ class WorkoutViewModel @Inject constructor(
                         val isAnnotated = state.annotatedVideoPath != null &&
                             playbackFile?.absolutePath == state.annotatedVideoPath
                         _uiState.update { current ->
-                            val dismissed = current.analysisProgressDismissed
+                            // The athlete may already be recording the next set:
+                            // leave the recording alone (clearing its flag rebinds
+                            // the camera and kills it) and keep the summary out
+                            // of the way, counted as unseen.
+                            val recordingNext = current.isVideoRecording || current.isRecording
+                            val dismissed = current.analysisProgressDismissed || recordingNext
                             current.copy(
                                 analysisProgress = null,
                                 analysisProgressDismissed = false,
-                                isVideoRecording = false,
                                 lastSetSummary = state.summary,
                                 isSetSummaryVisible = !dismissed,
                                 annotatedVideo = playbackInfo,
                                 playbackIsAnnotated = isAnnotated,
-                                analysisCompleteMessage = if (dismissed) {
+                                analysisCompleteMessage = if (dismissed && !recordingNext) {
                                     context.getString(R.string.analysis_complete_snackbar)
                                 } else {
                                     null
@@ -316,7 +328,6 @@ class WorkoutViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 analysisProgress = null,
-                                isVideoRecording = false,
                                 analysisError = state.message
                             )
                         }
@@ -391,7 +402,13 @@ class WorkoutViewModel @Inject constructor(
         if (!summary.exerciseType.isJumpExercise()) return reps
         return reps.mapIndexed { index, rep ->
             val height = summary.repJumpHeights.getOrNull(index) ?: return@mapIndexed rep
-            rep.copy(jump = RepJumpData.from(height.value * 100f, summary.repBarPaths.getOrNull(index)))
+            rep.copy(
+                jump = RepJumpData.from(
+                    flightHeightCm = height.value * 100f,
+                    apexHeightCm = summary.repApexHeights.getOrNull(index)?.let { it.value * 100f },
+                    barPath = summary.repBarPaths.getOrNull(index)
+                )
+            )
         }
     }
 
@@ -585,6 +602,8 @@ class WorkoutViewModel @Inject constructor(
                 if (_uiState.value.isRecording) {
                     collectRepQualityData(result, newPhase, repJustCounted)
                 }
+
+                onViewSample(result.poseResult)
 
                 _uiState.update { state ->
                     var updatedState = state.copy(
@@ -840,7 +859,10 @@ class WorkoutViewModel @Inject constructor(
             ?: result.velocityData?.instantaneous
             ?: MetersPerSecond(0f)
         repVelocityOf(result)?.let { setRepVelocities.add(it) }
-        jump?.let { setJumpHeights.add(it.height) }
+        jump?.let {
+            setJumpHeights.add(it.height)
+            setApexHeights.add(it.apexHeight)
+        }
 
         // Build Rep domain object for persistence
         val rep = Rep(
@@ -1079,6 +1101,7 @@ class WorkoutViewModel @Inject constructor(
         setRepScores.clear()
         setRepVelocities.clear()
         setJumpHeights.clear()
+        setApexHeights.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1456,7 +1479,8 @@ class WorkoutViewModel @Inject constructor(
             worstRepIndex = scores.indices.minByOrNull { scores[it].totalScore } ?: 0,
             aggregateFormIssues = aggregateFormIssues(scores),
             repBarPaths = setBarPaths.toList(),
-            repJumpHeights = setJumpHeights.toList()
+            repJumpHeights = setJumpHeights.toList(),
+            repApexHeights = setApexHeights.toList()
         )
     }
 
@@ -1562,7 +1586,32 @@ class WorkoutViewModel @Inject constructor(
         savedStateHandle[KEY_EXERCISE] = exercise.name
         // Clear rest timer when exercise changes
         skipRest()
-        _uiState.update { it.copy(selectedExercise = exercise, weight = weightFor(exercise)) }
+        viewSamples.clear()
+        _uiState.update {
+            it.copy(selectedExercise = exercise, weight = weightFor(exercise), cameraViewWarning = false)
+        }
+    }
+
+    /**
+     * Checks, before a jump set, that the camera sees the athlete side-on: fed
+     * by the live pose stream or by preview snapshots when there is none.
+     */
+    fun onViewSample(pose: PoseResult) {
+        val state = _uiState.value
+        if (!state.selectedExercise.isJumpExercise() || state.isRecording || state.isVideoRecording) {
+            viewSamples.clear()
+            return
+        }
+        val now = System.currentTimeMillis()
+        CameraViewClassifier.shoulderWidthRatio(pose)?.let { viewSamples.addLast(now to it) }
+        while (viewSamples.isNotEmpty() && now - viewSamples.first().first > VIEW_WINDOW_MS) {
+            viewSamples.removeFirst()
+        }
+        val frontView = CameraViewClassifier.classify(viewSamples.map { it.second }) == CameraView.FRONT
+        if (frontView != state.cameraViewWarning) {
+            logger.i(TAG, if (frontView) "Jump camera view: front" else "Jump camera view: no longer front")
+            _uiState.update { it.copy(cameraViewWarning = frontView) }
+        }
     }
 
     /**

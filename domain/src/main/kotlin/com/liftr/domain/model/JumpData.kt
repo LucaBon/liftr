@@ -11,14 +11,21 @@ import com.liftr.domain.value.MetersPerSecond
  * feet leave and touch the ground — not distances, so it is immune to the
  * per-frame scale drift of pixel-to-meter conversion.
  *
+ * Folding the legs before landing makes the toes touch down later than the
+ * flight's arc implies, stretching the flight time and the height from it.
+ * [apexHeight] uses only the rising half (takeoff to the top of the flight),
+ * which landing posture can't affect.
+ *
  * @property flightTimeMs Time between toe-off and toe-contact
  * @property height Rise of the center of mass: h = g·t² / 8
  * @property takeoffVelocity Vertical velocity at toe-off: v = g·t / 2
+ * @property apexHeight Rise from the time between toe-off and the top of the flight: h = g·t² / 2
  */
 data class JumpData(
     val flightTimeMs: Float,
     val height: Meters,
-    val takeoffVelocity: MetersPerSecond
+    val takeoffVelocity: MetersPerSecond,
+    val apexHeight: Meters? = null
 ) {
     companion object {
         private const val GRAVITY = 9.81f
@@ -30,6 +37,16 @@ data class JumpData(
          *   flight; for a ballistic path the true flight T satisfies
          *   T² = T'² + 8L/g, which this corrects for exactly.
          */
+        /**
+         * Height from the rise time: [riseTimeMs] from the takeoff crossing at
+         * [timingLevel] (m) above the ground to the top of the flight, which
+         * covers the remaining g·t²/2.
+         */
+        fun heightFromRiseTime(riseTimeMs: Float, timingLevel: Float = 0f): Meters {
+            val t = riseTimeMs / 1000f
+            return Meters(GRAVITY * t * t / 2f + timingLevel)
+        }
+
         fun fromFlightTime(flightTimeMs: Float, timingLevel: Float = 0f): JumpData {
             val measured = flightTimeMs / 1000f
             val t = kotlin.math.sqrt(measured * measured + 8f * timingLevel / GRAVITY)
