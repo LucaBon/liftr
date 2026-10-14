@@ -400,8 +400,11 @@ class JumpStrategy(
 
     private fun readFrame(poseResult: PoseResult): Frame? {
         val landmarks = poseResult.landmarks
+        // Lower than the usual threshold: in mid-air the feet and knees drop to
+        // 0.4-0.5 visibility while their positions stay accurate, and losing
+        // them breaks the flight apart or hides it entirely.
         fun visible(index: Int): PoseKeypoint? =
-            landmarks.getOrNull(index)?.takeIf { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
+            landmarks.getOrNull(index)?.takeIf { it.visibility >= Jump.MIN_VISIBILITY }
         fun midY(left: Int, right: Int): Float? {
             val l = visible(left)
             val r = visible(right)

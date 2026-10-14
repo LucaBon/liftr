@@ -306,6 +306,9 @@ object ExerciseThresholds {
         /** Feet and hips resting this long mark the standing position, wherever they are */
         const val STILL_MS = 300L
 
+        /** Landmark visibility accepted for head, hips and feet (feet drop to 0.4-0.5 in the air) */
+        const val MIN_VISIBILITY = 0.3f
+
         /** Smoothing factor for re-anchoring the standing baseline */
         const val BASELINE_SMOOTHING = 0.2f
     }
