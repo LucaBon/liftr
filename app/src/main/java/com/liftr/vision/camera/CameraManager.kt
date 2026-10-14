@@ -246,6 +246,7 @@ class CameraManager @Inject constructor(
         Log.d(TAG_CAMERA, "updateTargetRotation($displayRotation)")
         preview?.targetRotation = displayRotation
         imageAnalysis?.targetRotation = displayRotation
+        videoCapture?.targetRotation = displayRotation
     }
 
     fun switchCamera() {

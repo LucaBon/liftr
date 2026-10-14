@@ -271,10 +271,7 @@
     <string name="score_bad">Bad</string>
 
     <!-- Orientation Info -->
-    <string name="orientation_portrait_only">Portrait mode only (for consistent measurements)</string>
-    <string name="orientation_landscape_only">Landscape mode only (for consistent measurements)</string>
-    <string name="orientation_both">Portrait and landscape supported</string>
-    <string name="orientation_inverted_blocked">Inverted orientations are blocked to ensure accuracy</string>
+    <string name="orientation_per_exercise">Portrait for standing lifts and jumps, landscape for bench press</string>
 
     <!-- Save Workout -->
     <string name="save_workout_title">Save Workout</string>

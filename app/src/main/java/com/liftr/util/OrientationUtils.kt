@@ -1,8 +1,13 @@
 package com.liftr.util
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
+import com.liftr.domain.model.ExerciseType
 
 /**
  * Represents the device orientation state
@@ -44,3 +49,24 @@ fun OrientationMode.isPortrait(): Boolean = this == OrientationMode.PORTRAIT
  * Check if the device is in landscape mode
  */
 fun OrientationMode.isLandscape(): Boolean = this == OrientationMode.LANDSCAPE
+
+/**
+ * Screen orientation to record an exercise in. Standing lifts and jumps are
+ * tall, so portrait fills the frame and gives the vertical axis more pixels;
+ * a bench press lifter lies horizontally and only fits well in landscape.
+ */
+fun ExerciseType.preferredScreenOrientation(): Int =
+    if (this == ExerciseType.BENCH_PRESS) {
+        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+    } else {
+        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
+fun Context.findActivity(): ComponentActivity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is ComponentActivity) return context
+        context = context.baseContext
+    }
+    return null
+}

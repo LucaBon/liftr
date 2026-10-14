@@ -105,20 +105,14 @@ fun AccuracyInfoDialog(
 
                 // Orientation info
                 Text(
-                    text = "Supported Orientations",
+                    text = "Orientation",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = stringResource(R.string.orientation_both),
+                    text = stringResource(R.string.orientation_per_exercise),
                     style = MaterialTheme.typography.bodySmall
-                )
-
-                Text(
-                    text = stringResource(R.string.orientation_inverted_blocked),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Divider(modifier = Modifier.padding(vertical = 8.dp))

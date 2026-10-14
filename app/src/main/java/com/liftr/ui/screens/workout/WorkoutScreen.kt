@@ -65,7 +65,9 @@ import com.liftr.ui.theme.Spacing
 import com.liftr.ui.theme.VbtStopAlert
 import com.liftr.util.Constants.TAG_WORKOUT
 import com.liftr.util.getRotationDegrees
+import com.liftr.util.findActivity
 import com.liftr.util.isPortrait
+import com.liftr.util.preferredScreenOrientation
 import com.liftr.util.rememberOrientation
 import com.liftr.vision.camera.CameraManager
 import javax.inject.Inject
@@ -88,6 +90,15 @@ fun WorkoutScreen(
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val orientation = rememberOrientation()
     val view = androidx.compose.ui.platform.LocalView.current
+    // The app is locked to portrait; only the workout screen rotates, and only
+    // for exercises that frame better in landscape (bench press).
+    val activity = LocalContext.current.findActivity()
+    DisposableEffect(uiState.selectedExercise) {
+        activity?.requestedOrientation = uiState.selectedExercise.preferredScreenOrientation()
+        onDispose {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
     // BUG-F fix: the Activity uses configChanges="orientation|screenSize" so
     // CameraX is never re-bound with the new display rotation. Push the new
     // rotation into CameraX whenever the orientation flips — otherwise frames
