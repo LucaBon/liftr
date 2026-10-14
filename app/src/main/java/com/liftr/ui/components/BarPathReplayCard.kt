@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.liftr.R
 import com.liftr.domain.exercise.BarPathAnalyzer
@@ -36,7 +37,12 @@ import kotlin.math.abs
 fun BarPathReplayCard(
     repBarPaths: List<BarPathData>,
     modifier: Modifier = Modifier,
-    title: String = stringResource(R.string.bar_path_title)
+    title: String = stringResource(R.string.bar_path_title),
+    /**
+     * Drift seen from the front (jumps): sideways, named from the athlete's
+     * point of view. Recordings aren't mirrored, so image right is their left.
+     */
+    frontView: Boolean = false
 ) {
     if (repBarPaths.isEmpty()) return
 
@@ -126,10 +132,38 @@ fun BarPathReplayCard(
                 MetricItem(
                     label = stringResource(R.string.bar_path_drift_direction),
                     value = when (currentPath.driftDirection) {
-                        DriftDirection.FORWARD -> stringResource(R.string.bar_path_drift_forward)
-                        DriftDirection.BACKWARD -> stringResource(R.string.bar_path_drift_backward)
+                        DriftDirection.FORWARD -> stringResource(
+                            if (frontView) R.string.drift_your_left else R.string.bar_path_drift_forward
+                        )
+                        DriftDirection.BACKWARD -> stringResource(
+                            if (frontView) R.string.drift_your_right else R.string.bar_path_drift_backward
+                        )
                         DriftDirection.NONE -> stringResource(R.string.bar_path_drift_centered)
                     }
+                )
+            }
+
+            currentPath.excursion?.let { excursion ->
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    MetricItem(
+                        label = stringResource(R.string.jump_countermovement),
+                        value = "%.0f cm".format(excursion.countermovementCm)
+                    )
+                    MetricItem(
+                        label = stringResource(R.string.jump_peak_rise),
+                        value = "%.0f cm".format(excursion.peakRiseCm)
+                    )
+                }
+                Text(
+                    text = stringResource(R.string.jump_from_standing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    textAlign = TextAlign.Center
                 )
             }
         }
@@ -164,8 +198,9 @@ private fun BarPathCanvas(
         val padding = 24f
 
         // Calculate bounds from real-world coordinates
+        val standingY = barPathData.excursion?.standingYCm
         val xValues = points.map { it.realWorldXCm }
-        val yValues = points.map { it.realWorldYCm }
+        val yValues = points.map { it.realWorldYCm } + listOfNotNull(standingY)
 
         val minX = xValues.min()
         val maxX = xValues.max()
@@ -187,10 +222,22 @@ private fun BarPathCanvas(
         val centerOffsetX = (size.width - rangeX * scale) / 2f
         val centerOffsetY = (size.height - rangeY * scale) / 2f
 
+        // Image y grows downward, like the canvas: no flip.
         fun toCanvas(xCm: Float, yCm: Float): Offset {
             return Offset(
                 x = (xCm - minX) * scale + centerOffsetX,
-                y = size.height - ((yCm - minY) * scale + centerOffsetY) // flip Y (up = higher)
+                y = (yCm - minY) * scale + centerOffsetY
+            )
+        }
+
+        // Standing height of the center of mass (jumps)
+        if (standingY != null) {
+            drawLine(
+                color = Color.White.copy(alpha = 0.5f),
+                start = Offset(padding, toCanvas(minX, standingY).y),
+                end = Offset(size.width - padding, toCanvas(minX, standingY).y),
+                strokeWidth = 1.5f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 6f))
             )
         }
 

@@ -669,7 +669,8 @@ fun SetSummarySheet(
                 BarPathReplayCard(
                     repBarPaths = summary.repBarPaths,
                     title = if (isJump) stringResource(R.string.center_of_mass_path_title)
-                    else stringResource(R.string.bar_path_title)
+                    else stringResource(R.string.bar_path_title),
+                    frontView = isJump
                 )
             }
 
@@ -1042,13 +1043,16 @@ fun WorkoutSetupPanel(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
+            // Bodyweight exercises (vertical jump) take no weight.
+            val hasLoad = selectedExercise.hasExternalLoad()
             OutlinedTextField(
-                value = weightText,
+                value = if (hasLoad) weightText else "",
                 onValueChange = { text ->
                     weightText = text
                     text.toFloatOrNull()?.let { onWeightChanged(it) }
                 },
-                label = { Text(stringResource(R.string.weight_label)) },
+                enabled = hasLoad,
+                label = { Text(stringResource(if (hasLoad) R.string.weight_label else R.string.bodyweight_only)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.weight(1f),

@@ -96,10 +96,22 @@ class CenterOfMassCalculatorTest {
     }
 
     @Test
-    fun `load on the shoulders moves the center of mass toward them`() {
+    fun `load held in the hands moves the center of mass toward them`() {
         val (_, body) = CenterOfMassCalculator.centerOfMass(standing())!!
         val (_, loaded) = CenterOfMassCalculator.centerOfMass(standing(), extraMassFraction = 0.5f)!!
-        // Weighted average of body COM (mass 1) and shoulders at 0.25 (mass 0.5).
+        // Dumbbells hang at the grip: halfway from the wrist (0.52) to the knuckles (0.56).
+        val grip = 0.52f + 0.506f * 0.04f
+        assertEquals((body + 0.5f * grip) / 1.5f, loaded, 1e-5f)
+    }
+
+    @Test
+    fun `load falls back to the shoulders when no hand is visible`() {
+        val hidden = setOf(
+            PoseResult.LEFT_WRIST, PoseResult.RIGHT_WRIST, PoseResult.LEFT_INDEX, PoseResult.RIGHT_INDEX,
+            PoseResult.LEFT_PINKY, PoseResult.RIGHT_PINKY
+        )
+        val (_, body) = CenterOfMassCalculator.centerOfMass(standing(hidden = hidden))!!
+        val (_, loaded) = CenterOfMassCalculator.centerOfMass(standing(hidden = hidden), extraMassFraction = 0.5f)!!
         assertEquals((body + 0.5f * 0.25f) / 1.5f, loaded, 1e-5f)
     }
 

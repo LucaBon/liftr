@@ -17,6 +17,13 @@ object CenterOfMassCalculator {
     /** One body segment: mass fraction and COM position from proximal to distal. */
     private class Segment(val massFraction: Float, val comRatio: Float)
 
+    /**
+     * Lower than [PoseKeypoint.VISIBILITY_THRESHOLD]: in mid-air, knees and
+     * ankles drop to 0.3-0.5 visibility while their positions stay accurate,
+     * and losing them would drop the center of mass at the top of the flight.
+     */
+    private const val MIN_VISIBILITY = 0.3f
+
     private val HEAD = Segment(0.081f, 0f)
     private val TRUNK = Segment(0.497f, 0.50f)
     private val UPPER_ARM = Segment(0.028f, 0.436f)
@@ -33,13 +40,15 @@ object CenterOfMassCalculator {
      * Hands and feet fall back to the wrist and ankle when their landmarks are
      * not visible; a whole arm falls back to the shoulder when the elbow is not.
      *
-     * @param extraMassFraction Load carried at the shoulder midpoint (e.g. a
-     *   barbell on the back), as a fraction of body mass.
+     * @param extraMassFraction External load as a fraction of body mass. It is
+     *   placed in the hands, which hold any implement: dumbbells hang there, and
+     *   a barbell on the back or in the rack is gripped at its own height. With
+     *   no hand visible it falls back to the shoulder midpoint.
      */
     fun centerOfMass(pose: PoseResult, extraMassFraction: Float = 0f): Pair<Float, Float>? {
         val lm = pose.landmarks
         fun visible(index: Int): PoseKeypoint? =
-            lm.getOrNull(index)?.takeIf { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
+            lm.getOrNull(index)?.takeIf { it.visibility >= MIN_VISIBILITY }
         fun mid(a: PoseKeypoint, b: PoseKeypoint) = Point((a.x + b.x) / 2f, (a.y + b.y) / 2f)
         fun point(k: PoseKeypoint) = Point(k.x, k.y)
 
@@ -84,7 +93,7 @@ object CenterOfMassCalculator {
             }
         }
 
-        if (extraMassFraction > 0f) acc.add(shoulders, extraMassFraction)
+        if (extraMassFraction > 0f) acc.add(loadPosition(::visible) ?: shoulders, extraMassFraction)
         return acc.result()
     }
 
@@ -94,6 +103,25 @@ object CenterOfMassCalculator {
      */
     fun loadFraction(loadKg: Float, bodyWeightKg: Float?): Float =
         if (bodyWeightKg != null && bodyWeightKg > 0f && loadKg > 0f) loadKg / bodyWeightKg else 0f
+
+    /** Where the hands hold the load: between both hands, or the one visible hand. */
+    private fun loadPosition(visible: (Int) -> PoseKeypoint?): Point? {
+        val hands = Side.entries.mapNotNull { side -> handPosition(side, visible) }
+        if (hands.isEmpty()) return null
+        return Point(hands.map { it.x }.average().toFloat(), hands.map { it.y }.average().toFloat())
+    }
+
+    /** The grip: halfway from the wrist to the knuckles, or the wrist alone. */
+    private fun handPosition(side: Side, visible: (Int) -> PoseKeypoint?): Point? {
+        val wrist = visible(side.wrist) ?: return null
+        val index = visible(side.index)
+        val pinky = visible(side.pinky)
+        if (index == null || pinky == null) return Point(wrist.x, wrist.y)
+        return Point(
+            wrist.x + HAND.comRatio * ((index.x + pinky.x) / 2f - wrist.x),
+            wrist.y + HAND.comRatio * ((index.y + pinky.y) / 2f - wrist.y)
+        )
+    }
 
     private fun addArm(
         acc: Accumulator,

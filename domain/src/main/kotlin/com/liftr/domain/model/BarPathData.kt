@@ -29,16 +29,31 @@ data class BarPathPoint(
  * @property maxDriftCm Maximum horizontal drift from the starting X position (cm)
  * @property linearityScore Path linearity score (0-100, 100 = perfectly vertical)
  * @property driftDirection Which direction the bar drifted on average
+ * @property excursion For jumps, how far the center of mass travelled from standing
  */
 data class BarPathData(
     val repNumber: Int,
     val points: List<BarPathPoint>,
     val maxDriftCm: Float,
     val linearityScore: Int,
-    val driftDirection: DriftDirection
+    val driftDirection: DriftDirection,
+    val excursion: JumpExcursion? = null
 ) {
     val isValid: Boolean get() = points.size >= 3
 }
+
+/**
+ * A jump's center-of-mass travel relative to the athlete standing still.
+ *
+ * @property countermovementCm Depth of the dip below standing before takeoff
+ * @property peakRiseCm Highest point of the flight above standing
+ * @property standingYCm Standing height in the same units as [BarPathPoint.realWorldYCm]
+ */
+data class JumpExcursion(
+    val countermovementCm: Float,
+    val peakRiseCm: Float,
+    val standingYCm: Float
+)
 
 enum class DriftDirection(val label: String) {
     FORWARD("Forward"),

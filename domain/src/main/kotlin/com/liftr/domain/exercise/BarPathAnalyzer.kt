@@ -3,6 +3,7 @@ package com.liftr.domain.exercise
 import com.liftr.domain.model.BarPathData
 import com.liftr.domain.model.BarPathPoint
 import com.liftr.domain.model.DriftDirection
+import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.value.MetersPerSecond
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -32,14 +33,15 @@ object BarPathAnalyzer {
     /**
      * Analyzes a rep's bar path points and produces an analyzed [BarPathData].
      */
-    fun analyze(repNumber: Int, points: List<BarPathPoint>): BarPathData {
+    fun analyze(repNumber: Int, points: List<BarPathPoint>, excursion: JumpExcursion? = null): BarPathData {
         if (points.size < MIN_POINTS) {
             return BarPathData(
                 repNumber = repNumber,
                 points = points,
                 maxDriftCm = 0f,
                 linearityScore = 0,
-                driftDirection = DriftDirection.NONE
+                driftDirection = DriftDirection.NONE,
+                excursion = excursion
             )
         }
 
@@ -48,7 +50,8 @@ object BarPathAnalyzer {
             points = points,
             maxDriftCm = calculateMaxDriftCm(points),
             linearityScore = calculateLinearityScore(points),
-            driftDirection = calculateDriftDirection(points)
+            driftDirection = calculateDriftDirection(points),
+            excursion = excursion
         )
     }
 

@@ -1,6 +1,7 @@
 package com.liftr.ui.screens.workout
 
 import com.liftr.domain.exercise.JumpPathWindow
+import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import android.content.Context
 import androidx.camera.core.ImageProxy
@@ -105,13 +106,16 @@ class WorkoutViewModel @Inject constructor(
     }
 
     // IMPROVE-7: Restore user selections after process death
-    private val _uiState = MutableStateFlow(WorkoutState(
-        selectedExercise = savedStateHandle.get<String>(KEY_EXERCISE)
+    private val _uiState = MutableStateFlow(
+        (savedStateHandle.get<String>(KEY_EXERCISE)
             ?.let { name -> ExerciseType.entries.find { it.name == name } }
-            ?: ExerciseType.FRONT_SQUAT,
-        weight = Kilograms(savedStateHandle.get<Float>(KEY_WEIGHT) ?: 0f),
+            ?: ExerciseType.FRONT_SQUAT).let { exercise ->
+        WorkoutState(
+        selectedExercise = exercise,
+        weight = weightFor(exercise),
         targetReps = RepCount(savedStateHandle.get<Int>(KEY_TARGET_REPS) ?: 5)
-    ))
+        )
+    })
     val uiState: StateFlow<WorkoutState> = _uiState.asStateFlow()
 
     private var calibrationData: CalibrationData? = null
@@ -150,6 +154,7 @@ class WorkoutViewModel @Inject constructor(
     // --- Rep Quality Scoring: per-rep accumulators ---
     private var currentRepBarPathPoints = mutableListOf<BarPathPoint>()
     private var jumpPath = JumpPathWindow()
+    private var currentJumpExcursion: JumpExcursion? = null
     private var currentRepFormIssues = mutableListOf<FormIssue>()
     // Buffered frames for the in-progress rep. Drained into AnalyzeRepUseCase
     // on rep completion so the heavy form/metric work never runs per-frame.
@@ -721,11 +726,17 @@ class WorkoutViewModel @Inject constructor(
         // above leave out: keep every point and cut the window at landing.
         if (_uiState.value.selectedExercise.isJumpExercise()) {
             val point = extractBarPathPoint(result.poseResult, result.velocityData, _uiState.value.selectedExercise)
-            jumpPath.onFrame(point, newPhase, now)
+            val scale = calibrationData?.let { JumpPathWindow.cmPerUnitY(result.poseResult, it.userHeight) }
+            jumpPath.onFrame(point, newPhase, now, scale)
             val jump = result.phaseResult?.jump
             if (repJustCounted && jump != null) {
+                val window = jumpPath.pathForLanding(now, jump.flightTimeMs)
                 currentRepBarPathPoints.clear()
-                currentRepBarPathPoints.addAll(jumpPath.pathForLanding(now, jump.flightTimeMs))
+                currentRepBarPathPoints.addAll(window.points)
+                currentJumpExcursion = window.excursion
+                window.excursion?.let {
+                    logger.i(TAG, "Jump: dip %.1f cm, peak %.1f cm above standing".format(it.countermovementCm, it.peakRiseCm))
+                }
                 _currentBarPathPoints.value = currentRepBarPathPoints.toList()
             }
         }
@@ -800,8 +811,10 @@ class WorkoutViewModel @Inject constructor(
         // Analyze bar path for this rep
         val barPathData = BarPathAnalyzer.analyze(
             repNumber = setRepScores.size + 1,
-            points = currentRepBarPathPoints.toList()
+            points = currentRepBarPathPoints.toList(),
+            excursion = currentJumpExcursion
         )
+        currentJumpExcursion = null
         setBarPaths.add(barPathData)
 
         setRepScores.add(score)
@@ -1043,6 +1056,7 @@ class WorkoutViewModel @Inject constructor(
         // Reset rep quality scoring accumulators
         currentRepBarPathPoints.clear()
         jumpPath = JumpPathWindow()
+        currentJumpExcursion = null
         _currentBarPathPoints.value = emptyList()
         currentRepFormIssues.clear()
         currentRepPoses.clear()
@@ -1535,8 +1549,15 @@ class WorkoutViewModel @Inject constructor(
         savedStateHandle[KEY_EXERCISE] = exercise.name
         // Clear rest timer when exercise changes
         skipRest()
-        _uiState.update { it.copy(selectedExercise = exercise) }
+        _uiState.update { it.copy(selectedExercise = exercise, weight = weightFor(exercise)) }
     }
+
+    /**
+     * The entered weight, or none for a bodyweight exercise. The entered value
+     * is kept, so it comes back when switching to a loaded exercise.
+     */
+    private fun weightFor(exercise: ExerciseType): Kilograms =
+        Kilograms(if (exercise.hasExternalLoad()) savedStateHandle.get<Float>(KEY_WEIGHT) ?: 0f else 0f)
 
     // ── Manual Entry ─────────────────────────────────────────────────
 

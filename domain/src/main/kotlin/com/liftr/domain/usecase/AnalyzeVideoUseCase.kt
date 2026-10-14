@@ -198,7 +198,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             val passFraction = (frameIndex.toFloat() / total).coerceIn(0f, 1f)
             onProgress(
                 Progress(
-                    currentFrame = frameIndex,
+                    // A later pass revisits frames already counted: hold the counter at the total.
+                    currentFrame = if (progressFrom > 0f) total else frameIndex.coerceAtMost(total),
                     totalFrames = total,
                     percentComplete = progressFrom + (progressTo - progressFrom) * passFraction,
                     currentRep = 0
@@ -306,7 +307,10 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
 
             val pathPoint = extractBarPathPoint(pose, velocity, params)
-            jumpPath?.onFrame(pathPoint, newPhase, now)
+            jumpPath?.onFrame(
+                pathPoint, newPhase, now,
+                JumpPathWindow.cmPerUnitY(pose, params.calibrationData.userHeight)
+            )
             if (newPhase in ACTIVE_PHASES) {
                 pathPoint?.let { currentRepBarPoints.add(it) }
                 currentRepPoses.add(pose)
@@ -319,8 +323,16 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             if (transition.repCompleted) {
                 // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
-                if (jumpPath != null) {
-                    transition.jump?.let { currentRepBarPoints = jumpPath.pathForLanding(now, it.flightTimeMs).toMutableList() }
+                val jumpWindow = transition.jump?.let { jumpPath?.pathForLanding(now, it.flightTimeMs) }
+                jumpWindow?.let { window ->
+                    currentRepBarPoints = window.points.toMutableList()
+                    window.excursion?.let {
+                        logger.i(
+                            TAG,
+                            "Jump ${repScores.size + 1}: dip %.1f cm, peak %.1f cm above standing"
+                                .format(it.countermovementCm, it.peakRiseCm)
+                        )
+                    }
                 }
                 val eccentricDuration = if (bottomTime > 0 && eccentricStart > 0) {
                     (bottomTime - eccentricStart) / 1000f
@@ -360,7 +372,11 @@ class AnalyzeVideoUseCase @Inject constructor(
                 previousConcentricDurations.add(concentricDuration)
 
                 repBarPaths.add(
-                    BarPathAnalyzer.analyze(repNumber = repScores.size, points = currentRepBarPoints.toList())
+                    BarPathAnalyzer.analyze(
+                        repNumber = repScores.size,
+                        points = currentRepBarPoints.toList(),
+                        excursion = jumpWindow?.excursion
+                    )
                 )
 
                 // A jump's takeoff velocity (from flight time) is its rep velocity,

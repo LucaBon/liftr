@@ -12,6 +12,7 @@ import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
+import kotlin.math.roundToInt
 
 /**
  * Decodes an MP4 file frame-by-frame, emitting each frame as an upright ARGB
@@ -85,9 +86,16 @@ class VideoFrameExtractor(
             durationMs = retriever.extractMetadata(
                 MediaMetadataRetriever.METADATA_KEY_DURATION
             )?.toLongOrNull() ?: 0L
-            fps = retriever.extractMetadata(
-                MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE
-            )?.toFloatOrNull()?.takeIf { it > 0f } ?: DEFAULT_FPS
+            // CameraX writes no capture frame rate; the container's frame
+            // count gives the real one (60 fps recordings were read as 30).
+            val frameCount = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull()
+            } else null
+            fps = when {
+                frameCount != null && frameCount > 0 && durationMs > 0 -> frameCount * 1_000f / durationMs
+                else -> retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)
+                    ?.toFloatOrNull()?.takeIf { it > 0f } ?: DEFAULT_FPS
+            }
         } finally {
             runCatching { retriever.release() }
         }
@@ -95,8 +103,8 @@ class VideoFrameExtractor(
         if (durationMs <= 0L) {
             throw IllegalStateException("Video has zero duration: ${videoFile.name}")
         }
-        // Estimate for progress reporting until the real count is known.
-        totalFrames = (durationMs * fps / 1_000f).toInt().coerceAtLeast(1)
+        // Exact when the container has a frame count; replaced once decoding ends.
+        totalFrames = (durationMs * fps / 1_000f).roundToInt().coerceAtLeast(1)
         logger.i(TAG, "Video: ${fps}fps, ${durationMs}ms, ~$totalFrames frames")
     }
 

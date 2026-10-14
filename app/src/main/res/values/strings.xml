@@ -300,6 +300,8 @@
     <!-- Bar Path -->
     <string name="bar_path_title">Bar Path</string>
     <string name="center_of_mass_path_title">Center of Mass</string>
+    <string name="drift_your_left">Your left</string>
+    <string name="drift_your_right">Your right</string>
     <string name="bar_path_max_drift">Max Drift</string>
     <string name="bar_path_linearity">Linearity</string>
     <string name="bar_path_drift_direction">Drift</string>
@@ -408,4 +410,8 @@
     <string name="settings_replay_tutorial_desc">Walk through the setup guide again</string>
     <string name="analysis_results_ready_one">Set analysis ready — tap to view</string>
     <string name="analysis_results_ready_many">%1$d set analyses ready — tap to view</string>
+    <string name="jump_countermovement">Countermovement</string>
+    <string name="jump_peak_rise">Peak rise</string>
+    <string name="jump_from_standing">Center of mass from standing</string>
+    <string name="bodyweight_only">Bodyweight</string>
 </resources>
