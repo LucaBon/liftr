@@ -33,12 +33,16 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import com.liftr.ui.common.labelRes
@@ -49,7 +53,7 @@ import com.liftr.ui.common.labelRes
  * Runs in the foreground so analysis survives the user navigating away or
  * locking the screen. Progress is published through the companion
  * [analysisState] StateFlow, and each finished analysis through [results],
- * which keeps it until a screen collects it.
+ * which keeps it until the screen that started it collects it.
  *
  * Analyses wait while a set is being recorded (see [setRecordingActive]), so
  * the recording never competes with them for the CPU and GPU.
@@ -91,13 +95,12 @@ class VideoAnalysisService : LifecycleService() {
     }
 
     /**
-     * One queued analysis. Calibration and tempo are captured here rather than
-     * read from the companion fields inside the worker: those are cleared when a
-     * run finishes, which would otherwise wipe the inputs of a run that is still
-     * queued behind it.
+     * One queued analysis, with the calibration and tempo [createIntent] handed
+     * over for it, and the [owner] its result goes back to.
      */
     private data class AnalysisRequest(
         val startId: Int,
+        val owner: String,
         val videoFile: File,
         val exerciseType: ExerciseType,
         val weight: Kilograms,
@@ -125,6 +128,7 @@ class VideoAnalysisService : LifecycleService() {
                     // ANRs. Service lifecycle calls below stay on Main.
                     withContext(Dispatchers.Default) {
                         runAnalysis(
+                            owner = request.owner,
                             videoFile = request.videoFile,
                             exerciseType = request.exerciseType,
                             weight = request.weight,
@@ -136,7 +140,6 @@ class VideoAnalysisService : LifecycleService() {
                 } finally {
                     if (pendingRequests.decrementAndGet() == 0) {
                         _analysisState.value = AnalysisState.Idle
-                        clearPendingInputs()
                         stopForegroundCompat()
                     }
                     // Matching startId: the framework keeps the service alive
@@ -150,15 +153,15 @@ class VideoAnalysisService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
+        val owner = intent?.getStringExtra(EXTRA_OWNER)
         val videoPath = intent?.getStringExtra(EXTRA_VIDEO_PATH)
         val exerciseTypeName = intent?.getStringExtra(EXTRA_EXERCISE_TYPE)
-        val calibration = calibrationData
-        if (videoPath == null || exerciseTypeName == null || calibration == null) {
-            // Must publish an error: analysisState is the only channel the UI
-            // observes, so returning silently leaves it waiting on "analyzing"
-            // forever.
+        val inputs = intent?.getStringExtra(EXTRA_INPUTS_KEY)?.let { pendingInputs.remove(it) }
+        if (owner == null || videoPath == null || exerciseTypeName == null || inputs == null) {
+            // Must publish an error: the screen is waiting on this recording's
+            // result, and returning silently leaves it waiting forever.
             logger.w(TAG, "Missing analysis params, stopping service")
-            finish(AnalysisState.Error("Analysis could not be started."))
+            if (owner != null) finish(owner, AnalysisState.Error("Analysis could not be started."))
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -168,7 +171,7 @@ class VideoAnalysisService : LifecycleService() {
         val videoFile = File(videoPath)
         if (!videoFile.exists() || videoFile.length() <= 0L) {
             logger.e(TAG, "Recording file missing or empty: $videoPath")
-            finish(AnalysisState.Error("Recording file not found or empty."))
+            finish(owner, AnalysisState.Error("Recording file not found or empty."))
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -179,24 +182,23 @@ class VideoAnalysisService : LifecycleService() {
         val queued = requests.trySend(
             AnalysisRequest(
                 startId = startId,
+                owner = owner,
                 videoFile = videoFile,
                 exerciseType = runCatching { ExerciseType.valueOf(exerciseTypeName) }
                     .getOrDefault(ExerciseType.BACK_SQUAT),
                 weight = Kilograms(weight.coerceAtLeast(0f)),
                 targetReps = targetReps,
-                calibrationData = calibration,
-                tempoPrescription = tempoPrescription
+                calibrationData = inputs.calibrationData,
+                tempoPrescription = inputs.tempoPrescription
             )
         ).isSuccess
 
         if (queued) {
             // The analysis already running shows how many wait behind it.
-            _analysisState.update {
-                if (it is AnalysisState.Analyzing) it.copy(queued = pendingRequests.get() - 1) else it
-            }
+            updateAnalyzing { it.copy(queued = pendingRequests.get() - 1) }
         } else {
             logger.e(TAG, "Could not queue analysis request")
-            finish(AnalysisState.Error("Analysis could not be started."))
+            finish(owner, AnalysisState.Error("Analysis could not be started."))
             if (pendingRequests.decrementAndGet() == 0) {
                 stopForegroundCompat()
             }
@@ -211,6 +213,7 @@ class VideoAnalysisService : LifecycleService() {
     }
 
     private suspend fun runAnalysis(
+        owner: String,
         videoFile: File,
         exerciseType: ExerciseType,
         weight: Kilograms,
@@ -231,7 +234,7 @@ class VideoAnalysisService : LifecycleService() {
             ).use { it.isAvailable() }
             if (!poseModelAvailable) {
                 videoStorageRepository.deleteRecording(videoFile)
-                finish(AnalysisState.Error("Pose analysis isn't available on this device."))
+                finish(owner, AnalysisState.Error("Pose analysis isn't available on this device."))
                 return
             }
 
@@ -274,7 +277,6 @@ class VideoAnalysisService : LifecycleService() {
             result.fold(
                 onSuccess = { summary ->
                     val annotatedPath = if (saveAnnotated && !annotations.isNullOrEmpty()) {
-                        waitWhileRecording()
                         generateAnnotatedVideo(videoFile, exerciseType, weight, targetReps, annotations)
                     } else null
                     // Keep the raw recording for in-app replay. If an annotated
@@ -284,6 +286,7 @@ class VideoAnalysisService : LifecycleService() {
                     }
                     val playbackPath = annotatedPath ?: videoFile.absolutePath
                     finish(
+                        owner,
                         AnalysisState.Complete(
                             summary = summary,
                             recordedVideoPath = playbackPath,
@@ -294,28 +297,31 @@ class VideoAnalysisService : LifecycleService() {
                 },
                 onFailure = { error ->
                     videoStorageRepository.deleteRecording(videoFile)
-                    finish(AnalysisState.Error(error.message ?: "Analysis failed"))
+                    finish(owner, AnalysisState.Error(error.message ?: "Analysis failed"))
                     logger.e(TAG, "Analysis failed", error)
                 }
             )
         } catch (e: Throwable) {
             videoStorageRepository.deleteRecording(videoFile)
-            finish(AnalysisState.Error(e.message ?: "Unexpected error"))
+            finish(owner, AnalysisState.Error(e.message ?: "Unexpected error"))
             logger.e(TAG, "Analysis crashed", e)
         }
         // Per-run resources (pose detectors) are closed by each analysis pass.
-        // Clearing the shared calibration and tearing down the service is the
-        // worker loop's job, once the whole queue is drained — doing it per run
-        // cancelled analyses that were still waiting behind this one.
+        // Tearing down the service is the worker loop's job, once the whole
+        // queue is drained — doing it per run cancelled analyses that were
+        // still waiting behind this one.
     }
 
     private fun showProgress(progress: AnalyzeVideoUseCase.Progress) {
-        _analysisState.value = AnalysisState.Analyzing(progress, queued = pendingRequests.get() - 1)
+        _analysisState.value = AnalysisState.Analyzing(
+            progress,
+            queued = pendingRequests.get() - 1,
+            paused = recordingActive.value
+        )
     }
 
-    /** Hands a finished analysis (Complete or Error) to whoever collects [results]. */
-    private fun finish(result: AnalysisState) {
-        _results.trySend(result)
+    private fun updateAnalyzing(change: (AnalysisState.Analyzing) -> AnalysisState.Analyzing) {
+        _analysisState.update { if (it is AnalysisState.Analyzing) change(it) else it }
     }
 
     /**
@@ -326,16 +332,20 @@ class VideoAnalysisService : LifecycleService() {
     private suspend fun waitWhileRecording() {
         if (!recordingActive.value) return
         logger.i(TAG, "Recording in progress, analysis paused")
-        _analysisState.update { if (it is AnalysisState.Analyzing) it.copy(paused = true) else it }
+        updateAnalyzing { it.copy(paused = true) }
         updateNotificationIndeterminate("Paused while recording")
         recordingActive.first { !it }
-        _analysisState.update { if (it is AnalysisState.Analyzing) it.copy(paused = false) else it }
+        updateAnalyzing { it.copy(paused = false) }
         logger.i(TAG, "Recording ended, analysis resumed")
     }
 
     /**
      * Second pass: burn the skeleton + HUD into a shareable MP4 (Feature 09).
      * Returns the annotated file path, or null on failure (never throws).
+     *
+     * A set recorded meanwhile stops the render, which starts over once the
+     * recording ends: pausing it instead would keep a hardware encoder the
+     * camera needs.
      */
     private suspend fun generateAnnotatedVideo(
         videoFile: File,
@@ -344,31 +354,28 @@ class VideoAnalysisService : LifecycleService() {
         targetReps: Int,
         annotations: List<FrameAnnotation>
     ): String? {
-        updateNotificationIndeterminate("Rendering annotated video…")
-        val outputFile = videoStorageRepository.getAnnotatedFile(
-            exerciseType, System.currentTimeMillis()
-        )
-        return annotatedVideoGenerator.generate(
-            AnnotatedVideoGenerator.Params(
-                sourceVideo = videoFile,
-                outputFile = outputFile,
-                annotations = annotations,
-                header = FrameCompositor.Header(
-                    exerciseLabel = getString(exerciseType.labelRes),
-                    weightKg = weight.value,
-                    targetReps = targetReps
-                )
+        while (true) {
+            waitWhileRecording()
+            updateNotificationIndeterminate("Rendering annotated video…")
+            val outputFile = videoStorageRepository.getAnnotatedFile(
+                exerciseType, System.currentTimeMillis()
             )
-        )?.absolutePath
-    }
-
-    /**
-     * Releases the out-of-band inputs once no analysis is queued or running.
-     * Each queued request already holds its own copy.
-     */
-    private fun clearPendingInputs() {
-        calibrationData = null
-        tempoPrescription = null
+            val rendered = annotatedVideoGenerator.generate(
+                AnnotatedVideoGenerator.Params(
+                    sourceVideo = videoFile,
+                    outputFile = outputFile,
+                    annotations = annotations,
+                    header = FrameCompositor.Header(
+                        exerciseLabel = getString(exerciseType.labelRes),
+                        weightKg = weight.value,
+                        targetReps = targetReps
+                    )
+                ),
+                abortIf = { recordingActive.value }
+            )
+            if (rendered != null || !recordingActive.value) return rendered?.absolutePath
+            logger.i(TAG, "Recording started, annotated video will render again after it")
+        }
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -432,21 +439,62 @@ class VideoAnalysisService : LifecycleService() {
         private const val EXTRA_EXERCISE_TYPE = "exercise_type"
         private const val EXTRA_WEIGHT = "weight"
         private const val EXTRA_TARGET_REPS = "target_reps"
+        private const val EXTRA_OWNER = "owner"
+        private const val EXTRA_INPUTS_KEY = "inputs_key"
 
         private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
 
         /** Progress of the queue: [AnalysisState.Analyzing] while it runs, else [AnalysisState.Idle]. */
         val analysisState: StateFlow<AnalysisState> = _analysisState.asStateFlow()
 
-        private val _results = Channel<AnalysisState>(Channel.UNLIMITED)
+        /** A finished analysis waiting for the screen that started it. */
+        private class Finished(val owner: String, val state: AnalysisState)
+
+        private val finished = MutableStateFlow<List<Finished>>(emptyList())
+        private val releasedOwners = ConcurrentHashMap.newKeySet<String>()
 
         /**
-         * Each finished analysis, [AnalysisState.Complete] or [AnalysisState.Error],
-         * in queue order and delivered once. Results wait here until collected,
-         * so none is lost while no screen is listening, and none overwrites
-         * another that finished just before it.
+         * Each finished analysis [owner] started, [AnalysisState.Complete] or
+         * [AnalysisState.Error], in queue order and delivered once. Results wait
+         * until collected, so none is lost while the screen isn't listening,
+         * none overwrites another that finished just before it, and none
+         * reaches a different workout.
          */
-        val results: Flow<AnalysisState> = _results.receiveAsFlow()
+        fun results(owner: String): Flow<AnalysisState> = finished
+            .map { all -> all.filter { it.owner == owner } }
+            .filter { it.isNotEmpty() }
+            .transform { mine ->
+                finished.update { all -> all.filterNot { it in mine } }
+                mine.forEach { emit(it.state) }
+            }
+
+        /**
+         * [owner] is gone (its screen closed): drop its results, now and for
+         * analyses still queued, with their videos, which nobody can open.
+         */
+        fun release(owner: String) {
+            releasedOwners.add(owner)
+            var dropped = emptyList<Finished>()
+            finished.update { all ->
+                dropped = all.filter { it.owner == owner }
+                all - dropped.toSet()
+            }
+            dropped.forEach { deleteVideos(it.state) }
+        }
+
+        private fun finish(owner: String, result: AnalysisState) {
+            if (owner in releasedOwners) {
+                deleteVideos(result)
+            } else {
+                finished.update { it + Finished(owner, result) }
+            }
+        }
+
+        private fun deleteVideos(result: AnalysisState) {
+            if (result is AnalysisState.Complete) {
+                runCatching { File(result.recordedVideoPath).delete() }
+            }
+        }
 
         private val recordingActive = MutableStateFlow(false)
 
@@ -455,16 +503,20 @@ class VideoAnalysisService : LifecycleService() {
             recordingActive.value = active
         }
 
+        private class Inputs(
+            val calibrationData: CalibrationData,
+            val tempoPrescription: TempoPrescription?
+        )
+
         // Passed out-of-band because CalibrationData/TempoPrescription are
-        // awkward to marshal through Intent extras.
-        @Volatile
-        private var calibrationData: CalibrationData? = null
+        // awkward to marshal through Intent extras. Keyed per request, so a
+        // queue draining between createIntent and onStartCommand can't drop them.
+        private val pendingInputs = ConcurrentHashMap<String, Inputs>()
 
-        @Volatile
-        private var tempoPrescription: TempoPrescription? = null
-
+        /** @param owner Who [results] hands this analysis' result back to. */
         fun createIntent(
             context: Context,
+            owner: String,
             videoFile: File,
             exerciseType: ExerciseType,
             weight: Kilograms,
@@ -472,9 +524,11 @@ class VideoAnalysisService : LifecycleService() {
             calibrationData: CalibrationData,
             tempoPrescription: TempoPrescription? = null
         ): Intent {
-            this.calibrationData = calibrationData
-            this.tempoPrescription = tempoPrescription
+            val inputsKey = UUID.randomUUID().toString()
+            pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription)
             return Intent(context, VideoAnalysisService::class.java).apply {
+                putExtra(EXTRA_OWNER, owner)
+                putExtra(EXTRA_INPUTS_KEY, inputsKey)
                 putExtra(EXTRA_VIDEO_PATH, videoFile.absolutePath)
                 putExtra(EXTRA_EXERCISE_TYPE, exerciseType.name)
                 putExtra(EXTRA_WEIGHT, weight.value)

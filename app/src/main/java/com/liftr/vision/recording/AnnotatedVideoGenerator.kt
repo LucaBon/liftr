@@ -35,19 +35,20 @@ class AnnotatedVideoGenerator @Inject constructor(
     )
 
     /**
-     * Generate the annotated video. Returns the output file on success, or null
-     * if decoding/encoding failed (the partial output is cleaned up). Never
+     * Re-encodes the recording with the skeleton and HUD burned in. Returns the
+     * output file on success, or null if decoding/encoding failed or [abortIf]
+     * returned true before a frame (the partial output is cleaned up). Never
      * throws — the caller's analysis result must not be lost over a video error.
-     */
-    /**
-     * Re-encodes the recording with the skeleton and HUD burned in.
      *
      * Pinned to [Dispatchers.Default] for the same reason as
      * [com.liftr.domain.usecase.AnalyzeVideoUseCase]: frame decode, bitmap
      * compositing and MediaCodec encoding must never run on the caller's thread,
      * which for the analysis service is the process main thread.
      */
-    suspend fun generate(params: Params): File? = withContext(Dispatchers.Default) {
+    suspend fun generate(
+        params: Params,
+        abortIf: () -> Boolean = { false }
+    ): File? = withContext(Dispatchers.Default) {
         val timeline = AnnotationTimeline(params.annotations)
         val extractor = VideoFrameExtractor(params.sourceVideo, logger)
 
@@ -57,6 +58,10 @@ class AnnotatedVideoGenerator @Inject constructor(
 
         try {
             extractor.extractFrames().collect { frame ->
+                if (abortIf()) {
+                    frame.bitmap.recycle()
+                    throw Aborted()
+                }
                 if (encoder == null) {
                     val w = (extractor.width.coerceAtLeast(2)) and 1.inv()
                     val h = (extractor.height.coerceAtLeast(2)) and 1.inv()
@@ -88,6 +93,10 @@ class AnnotatedVideoGenerator @Inject constructor(
             logger.i(TAG, "Annotated video written: ${params.outputFile.name} " +
                 "($frameCount frames, ${params.outputFile.length()} bytes)")
             params.outputFile.takeIf { it.exists() && it.length() > 0 }
+        } catch (e: Aborted) {
+            logger.i(TAG, "Annotated video generation aborted after $frameCount frames")
+            runCatching { params.outputFile.delete() }
+            null
         } catch (e: Exception) {
             logger.e(TAG, "Annotated video generation failed", e)
             runCatching { params.outputFile.delete() }
@@ -100,6 +109,9 @@ class AnnotatedVideoGenerator @Inject constructor(
 
     private fun bitRateFor(width: Int, height: Int): Int =
         (width * height * 4).coerceIn(2_000_000, 8_000_000)
+
+    /** Thrown out of the frame loop when [generate]'s abortIf asks it to stop. */
+    private class Aborted : Exception()
 
     companion object {
         private const val TAG = "AnnotatedVideoGenerator"

@@ -10,6 +10,7 @@ import android.content.Context
 import androidx.camera.core.ImageProxy
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -261,6 +262,12 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
+    /** Identifies this workout's analyses, so their results come back here and nowhere else. */
+    private val analysisOwner = java.util.UUID.randomUUID().toString()
+
+    /** A stopped recording CameraX is still writing out; analyses keep waiting. */
+    private val recordingFinalizing = MutableStateFlow(false)
+
     /**
      * Observes the global analysis service state and folds it into UI state.
      * On completion the analyzed set is persisted exactly like a real-time set.
@@ -291,20 +298,39 @@ class WorkoutViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            VideoAnalysisService.results.collect { result ->
+            VideoAnalysisService.results(analysisOwner).collect { result ->
                 when (result) {
                     is VideoAnalysisService.AnalysisState.Complete -> onAnalysisComplete(result)
                     is VideoAnalysisService.AnalysisState.Error -> {
                         logger.e(TAG, "Analysis error: ${result.message}")
-                        _uiState.update { it.copy(analysisError = result.message) }
+                        // An analysis that failed to start never ran, so no
+                        // Idle follows to drop its banner: drop it here unless
+                        // another analysis is still running.
+                        val running = VideoAnalysisService.analysisState.value !is
+                            VideoAnalysisService.AnalysisState.Idle
+                        _uiState.update {
+                            if (running) {
+                                it.copy(analysisError = result.message)
+                            } else {
+                                it.copy(
+                                    analysisError = result.message,
+                                    analysisProgress = null,
+                                    analysisProgressDismissed = false
+                                )
+                            }
+                        }
                     }
                     else -> Unit
                 }
             }
         }
-        // Analyses wait while a set is recorded, so they never compete with it.
+        // Analyses wait while a set is recorded, and until its file is
+        // written out, so they never compete with it.
         viewModelScope.launch {
-            _uiState.map { it.isRecording || it.isVideoRecording }
+            combine(
+                _uiState.map { it.isRecording || it.isVideoRecording },
+                recordingFinalizing
+            ) { recording, finalizing -> recording || finalizing }
                 .distinctUntilChanged()
                 .collect { VideoAnalysisService.setRecordingActive(it) }
         }
@@ -325,10 +351,12 @@ class WorkoutViewModel @Inject constructor(
             // it). Never pop a summary over it, nor replace one being read:
             // queue it, oldest first, to be opened from the chip.
             val recordingNext = current.isVideoRecording || current.isRecording
-            if (recordingNext || current.isSetSummaryVisible || current.analysisProgressDismissed) {
+            if (recordingNext || current.isSummaryOpen || current.analysisProgressDismissed) {
                 current.copy(
                     pendingResults = current.pendingResults + result,
-                    analysisCompleteMessage = if (!recordingNext) {
+                    // Its "View results" can only open it once nothing is in
+                    // the way; otherwise the chip is the notice.
+                    analysisCompleteMessage = if (!recordingNext && !current.isSummaryOpen) {
                         context.getString(R.string.analysis_complete_snackbar)
                     } else {
                         null
@@ -433,7 +461,7 @@ class WorkoutViewModel @Inject constructor(
     fun showPendingAnalysisResults() {
         _uiState.update {
             val next = it.pendingResults.firstOrNull()
-            if (it.isSetSummaryVisible || next == null) {
+            if (it.isSummaryOpen || next == null) {
                 it.copy(analysisCompleteMessage = null)
             } else {
                 it.copy(analysisCompleteMessage = null, pendingResults = it.pendingResults.drop(1)).showing(next)
@@ -1064,7 +1092,16 @@ class WorkoutViewModel @Inject constructor(
         val started = videoRecordingManager.startRecording(
             videoCapture = videoCapture,
             exerciseType = _uiState.value.selectedExercise
-        ) { /* CameraX recording events handled internally / logged */ }
+        ) { event ->
+            // A recording that dies on its own (storage full, camera taken)
+            // never gets a Stop; without this the set looks like it is still
+            // being recorded and every queued analysis stays paused.
+            if (event is VideoRecordEvent.Finalize && event.hasError() &&
+                _uiState.value.isVideoRecording
+            ) {
+                onRecordingFailed(event.error)
+            }
+        }
         if (!started) {
             logger.e(TAG, "VideoRecordingManager refused to start recording")
             _uiState.update {
@@ -1084,10 +1121,26 @@ class WorkoutViewModel @Inject constructor(
                 error = null,
                 analysisError = null,
                 lastSetSummary = null,
+                isSetSummaryVisible = false,
                 currentRepScore = null
             )
         }
         startRecordingTimer()
+    }
+
+    private fun onRecordingFailed(error: Int) {
+        logger.e(TAG, "Recording failed on its own (error=$error)")
+        setGeneration++
+        stopRecordingTimer()
+        _currentBarPathPoints.value = emptyList()
+        videoRecordingManager.abandonRecording()
+        _uiState.update {
+            it.copy(
+                isVideoRecording = false,
+                isRecording = false,
+                analysisError = "Recording failed — nothing to analyze."
+            )
+        }
     }
 
     private fun startRealTimeRecording() {
@@ -1277,8 +1330,13 @@ class WorkoutViewModel @Inject constructor(
             )
         }
 
+        recordingFinalizing.value = true
         viewModelScope.launch {
-            val videoFile = videoRecordingManager.stopRecording()
+            val videoFile = try {
+                videoRecordingManager.stopRecording()
+            } finally {
+                recordingFinalizing.value = false
+            }
             if (videoFile == null) {
                 logger.e(TAG, "Cannot analyze: recording file missing after finalize")
                 _uiState.update {
@@ -1293,6 +1351,7 @@ class WorkoutViewModel @Inject constructor(
             val state = _uiState.value
             val intent = VideoAnalysisService.createIntent(
                 context = context,
+                owner = analysisOwner,
                 videoFile = videoFile,
                 exerciseType = state.selectedExercise,
                 weight = state.weight,
@@ -1815,8 +1874,10 @@ class WorkoutViewModel @Inject constructor(
         _uiState.value.pendingResults.forEach { result ->
             result.annotatedVideo?.let { runCatching { java.io.File(it.path).delete() } }
         }
-        // No set is being recorded once this screen is gone.
+        // No set is being recorded once this screen is gone, and nobody is
+        // left to open the summaries of analyses still queued.
         VideoAnalysisService.setRecordingActive(false)
+        VideoAnalysisService.release(analysisOwner)
         feedbackEmitter.stopCurrentSpeech()
     }
 }

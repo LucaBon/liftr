@@ -95,6 +95,9 @@ data class WorkoutState(
     /** Finished analyses whose summary has not been opened yet. */
     val unseenAnalysisCount: Int get() = pendingResults.size
 
+    /** A summary sheet is actually on screen. */
+    val isSummaryOpen: Boolean get() = isSetSummaryVisible && lastSetSummary != null
+
     /** This state with [result]'s summary open. */
     fun showing(result: PendingSetResult) = copy(
         lastSetSummary = result.summary,
