@@ -14,8 +14,8 @@ package com.liftr.domain.exercise
  * @property takeoffMs Confirmed takeoff time while airborne, null on the ground
  * @property flightSamples (timestamp ms, toe rise) of the airborne frames, for
  *   fitting the flight parabola
- * @property groundSamples (timestamp ms, toe rise) of the last few frames on
- *   the ground, to find the first frame off it
+ * @property groundSamples (timestamp ms, toe rise) of the frames on the ground
+ *   in the last 300 ms, to find the first frame off it and the floor level
  * @property flightHipSamples (timestamp ms, hip rise) of the airborne frames,
  *   for finding the top of the flight
  * @property peakHeadRise Highest head rise above standing during the flight

@@ -73,7 +73,10 @@ class JumpStrategy(
     companion object {
         private const val TAG = "JumpStrategy"
         private const val GRAVITY = 9.81
-        private const val GROUND_SAMPLES = 5
+        /** Frames on the ground kept, by age: enough to see the toes resting before takeoff. */
+        private const val GROUND_WINDOW_MS = 300L
+        /** The toes start to peel off this long before they cross the timing level. */
+        private const val TOE_OFF_LEAD_MS = 60L
     }
 
     /** Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet. */
@@ -214,7 +217,14 @@ class JumpStrategy(
 
         // The timing level in meters: a fraction of the nose-to-toe span.
         val timingLevelMeters = Jump.TIMING_LEVEL * Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight
-        val fittedFlightMs = fitFlightMs(airborneSamples(tracking.flightSamples, landingLevel), landingRise)
+        // The parabola's roots sit where the toes rest on the floor, which may
+        // be off the standing baseline by more than the timing level (the
+        // baseline only follows the feet while they stay within it); a root at
+        // the baseline instead would cut or stretch the flight. The feet may
+        // come down elsewhere: compare the landing with the takeoff floor.
+        val takeoffGround = restingToeRise(tracking.groundSamples, takeoffMs)
+        val landingGround = if (kotlin.math.abs(rise - takeoffGround) > timingLevel) rise else takeoffGround
+        val fittedFlightMs = fitFlightMs(airborneSamples(tracking.flightSamples, landingLevel), takeoffGround, landingGround)
         val fromFlight = if (fittedFlightMs != null && fittedFlightMs in Jump.MIN_FLIGHT_MS..Jump.MAX_FLIGHT_MS) {
             JumpData.fromFlightTime(fittedFlightMs)
         } else {
@@ -251,8 +261,9 @@ class JumpStrategy(
                 .format(flightMs, 100 * headRise / expectedHeadRise))
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Head did not rise")
         }
-        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s".format(
-            flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a"
+        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f".format(
+            flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a",
+            takeoffGround, landingGround
         ))
         return PhaseTransitionResult(
             newState = grounded,
@@ -303,7 +314,8 @@ class JumpStrategy(
             takeoffCandidateMs = takeoffCandidate,
             previousFootY = frame.footY,
             previousTimestamp = timestamp,
-            groundSamples = (tracking.groundSamples + (timestamp to rise)).takeLast(GROUND_SAMPLES)
+            groundSamples = (tracking.groundSamples + (timestamp to rise))
+                .filter { timestamp - it.first <= GROUND_WINDOW_MS }
         )
 
         // A takeoff needs the hips driving up: feet "rising" while the hips are
@@ -485,12 +497,21 @@ class JumpStrategy(
         return kept
     }
 
-    private fun fitFlightMs(samples: List<Pair<Long, Float>>, landingRise: Float): Float? {
-        val t0 = samples.firstOrNull()?.first ?: return null
+    /**
+     * Toe rise while resting on the floor before a takeoff at [takeoffMs]: the
+     * median of the ground frames before the toes started to peel off; 0 (the
+     * baseline) when there are none.
+     */
+    private fun restingToeRise(groundSamples: List<Pair<Long, Float>>, takeoffMs: Double): Float {
+        val resting = groundSamples.filter { it.first <= takeoffMs - TOE_OFF_LEAD_MS }.map { it.second }.sorted()
+        return if (resting.isEmpty()) 0f else resting[resting.size / 2]
+    }
+
+    private fun fitFlightMs(samples: List<Pair<Long, Float>>, takeoffRise: Float, landingRise: Float): Float? {
         val (a, b, c) = fitParabola(samples) ?: return null
-        // Takeoff is where the parabola rises through 0, landing where it comes
-        // down through landingRise (0 when landing where it took off).
-        val takeoffDiscriminant = b * b - 4 * a * c
+        // Takeoff is where the parabola rises through takeoffRise, landing
+        // where it comes down through landingRise: the floor at each end.
+        val takeoffDiscriminant = b * b - 4 * (a - takeoffRise) * c
         val landingDiscriminant = b * b - 4 * (a - landingRise) * c
         if (takeoffDiscriminant <= 0 || landingDiscriminant <= 0) return null
         val flightS = (kotlin.math.sqrt(takeoffDiscriminant) + kotlin.math.sqrt(landingDiscriminant)) / (-2 * c)
