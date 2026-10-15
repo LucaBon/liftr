@@ -344,6 +344,11 @@ class WorkoutViewModel @Inject constructor(
      * real-time [stopRecording] (accumulate set, PR check, rest timer).
      */
     private fun saveAnalyzedSet(summary: SetSummary) {
+        // A recording started and stopped by mistake: nothing to keep.
+        if (summary.completedReps.value == 0) {
+            logger.i(TAG, "Analyzed set has no reps, not saved")
+            return
+        }
         if (completedSets.isEmpty() && workoutStartTime == 0L) {
             workoutStartTime = System.currentTimeMillis()
         }
@@ -762,12 +767,19 @@ class WorkoutViewModel @Inject constructor(
             jumpPath.onFrame(point, newPhase, now, scale)
             val jump = result.phaseResult?.jump
             if (repJustCounted && jump != null) {
-                val window = jumpPath.pathForLanding(now, jump.flightTimeMs)
+                // Path points carry the wall clock, the jump's times the pose clock.
+                val toWallClock = now - result.poseResult.timestamp
+                val window = jumpPath.pathForLanding(
+                    now, jump.flightTimeMs,
+                    jump.takeoffAtMs?.let { it.toLong() + toWallClock },
+                    jump.landingAtMs?.let { it.toLong() + toWallClock }
+                )
                 currentRepBarPathPoints.clear()
                 currentRepBarPathPoints.addAll(window.points)
                 currentJumpExcursion = window.excursion
                 window.excursion?.let {
                     logger.i(TAG, "Jump: dip %.1f cm, peak %.1f cm above standing".format(it.countermovementCm, it.peakRiseCm))
+                    logger.i(TAG, "Jump fit check: ${it.fitCheck?.describe() ?: "n/a"}")
                 }
                 _currentBarPathPoints.value = currentRepBarPathPoints.toList()
             }

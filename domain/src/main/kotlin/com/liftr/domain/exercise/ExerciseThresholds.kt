@@ -285,14 +285,41 @@ object ExerciseThresholds {
         /** Hip rise from the lowest point that marks the turnaround (~2 cm) */
         const val TURNAROUND_LEVEL = 0.01f
 
-        /** Shorter flights are tracking noise (h < 1.2 cm) */
-        const val MIN_FLIGHT_MS = 100f
+        /** Shorter flights are a step or tracking noise, not a jump (h < 4.9 cm) */
+        const val MIN_FLIGHT_MS = 200f
 
         /** Longer flights mean tracking was lost (h > 1.2 m) */
         const val MAX_FLIGHT_MS = 1000f
 
         /** Airborne frames needed to fit the flight parabola (~100 ms at 30 fps) */
         const val MIN_FIT_SAMPLES = 4
+
+        /** Airborne frames needed to check the flight against free fall (~200 ms at 30 fps) */
+        const val MIN_CHECK_SAMPLES = 6
+
+        /** Gravity fitted to the flight may differ from 9.81 by this much, in m/s² */
+        const val GRAVITY_TOLERANCE = 0.3
+
+        /** Durbin-Watson below this: residuals follow a trend, not noise */
+        const val DURBIN_WATSON_MIN = 1.0
+
+        /** Residual change between frames that is a step regardless of the noise, in m */
+        const val RESIDUAL_STEP_MIN_M = 0.02f
+
+        /** Residual change between frames, in robust standard deviations, that is a step */
+        const val RESIDUAL_STEP_SIGMAS = 5.0
+
+        /** Flight frames that may be left out of the fit for making a step in its residuals */
+        const val MAX_DROPPED_FRAMES = 2
+
+        /** A frame this far off its parabola, in robust standard deviations, is mistracked */
+        const val OUTLIER_SIGMAS = 5.0
+
+        /** ...and at least this far, as a fraction of the body span (~2 cm), so jitter never is */
+        const val OUTLIER_FLOOR = 0.012f
+
+        /** Landing drop from the flight's timing may differ from the measured one by this much, in cm (under a frame) */
+        const val TIMING_TOLERANCE_CM = 3.5f
 
         /** Nose height as a fraction of stature, to express the span in meters */
         const val NOSE_HEIGHT_RATIO = 0.92f

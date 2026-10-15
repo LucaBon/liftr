@@ -199,6 +199,46 @@ class JumpStrategyTest {
     }
 
     @Test
+    fun `one frame with the hips mistracked does not bend takeoff to apex`() {
+        val frames = jumpFrames(1000, flightS = 0.5f).toMutableList()
+        // Fourth airborne frame: stand 15 + countermovement 15 + 3.
+        val glitched = frames[33]
+        frames[33] = glitched.copy(landmarks = glitched.landmarks.mapIndexed { i, lm ->
+            if (i == PoseResult.LEFT_HIP || i == PoseResult.RIGHT_HIP) lm.copy(y = lm.y + 0.10f * normPerMeter) else lm
+        })
+
+        val apex = run(frames).jumps.single().apexHeight
+
+        assertEquals(expectedHeight(0.5f), apex!!.value, 0.01f)
+    }
+
+    @Test
+    fun `one frame detected upside down mid-flight is skipped`() {
+        val frames = jumpFrames(1000, flightS = 0.5f).toMutableList()
+        // As seen on a real per-frame detection: head and feet swapped, hips in place.
+        val flipped = frames[33]
+        val feet = setOf(
+            PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE, PoseResult.LEFT_HEEL, PoseResult.RIGHT_HEEL,
+            PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX
+        )
+        val noseY = flipped.landmarks[PoseResult.NOSE].y
+        val toeY = flipped.landmarks[PoseResult.LEFT_FOOT_INDEX].y
+        frames[33] = flipped.copy(landmarks = flipped.landmarks.mapIndexed { i, lm ->
+            when {
+                i == PoseResult.NOSE -> lm.copy(y = toeY)
+                i in feet -> lm.copy(y = noseY)
+                else -> lm
+            }
+        })
+
+        val run = run(frames)
+
+        assertEquals(1, run.reps)
+        assertEquals(expectedHeight(0.5f), run.jumps.single().apexHeight!!.value, 0.01f)
+        assertEquals(expectedHeight(0.5f), run.jumps.single().height.value, 0.01f)
+    }
+
+    @Test
     fun `folding the legs before landing stretches flight time but not takeoff to apex`() {
         // Seen on real side-on jumps: on the way down the feet are pulled up
         // [tuck] toward the body, so the body falls that much below its takeoff

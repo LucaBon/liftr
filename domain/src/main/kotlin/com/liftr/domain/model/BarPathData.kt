@@ -50,12 +50,18 @@ data class BarPathData(
  * @property standingYCm Standing height in the same units as [BarPathPoint.realWorldYCm]
  * @property flightRiseCm Rise from takeoff to the top of the flight: the jump
  *   height measured from center-of-mass displacement instead of flight time
+ * @property takeoffVelocity Upward center-of-mass velocity at takeoff, in m/s
+ * @property velocityHeightCm Jump height from [takeoffVelocity]: v² / 2g
+ * @property fitCheck Whether the flight looked like free fall
  */
 data class JumpExcursion(
     val countermovementCm: Float,
     val peakRiseCm: Float,
     val standingYCm: Float,
-    val flightRiseCm: Float? = null
+    val flightRiseCm: Float? = null,
+    val takeoffVelocity: Float? = null,
+    val velocityHeightCm: Float? = null,
+    val fitCheck: JumpFitCheck? = null
 )
 
 enum class DriftDirection(val label: String) {

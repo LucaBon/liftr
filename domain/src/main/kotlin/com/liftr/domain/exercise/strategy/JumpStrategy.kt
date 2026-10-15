@@ -76,8 +76,8 @@ class JumpStrategy(
         private const val GROUND_SAMPLES = 5
     }
 
-    /** Head, hip and toe heights, oriented so that larger = lower. */
-    private data class Frame(val headY: Float, val hipsY: Float, val footY: Float)
+    /** Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet. */
+    private data class Frame(val headY: Float, val hipsY: Float, val footY: Float, val upsideDown: Boolean = false)
 
     override fun detectPhase(
         poseResult: PoseResult,
@@ -86,15 +86,17 @@ class JumpStrategy(
     ): PhaseTransitionResult {
         val frame = readFrame(poseResult)
             ?: return PhaseTransitionResult(
-                // Drop the previous sample so timing never interpolates across a gap.
+                // Drop the previous sample so timing never interpolates across a
+                // gap, and end any run of upside-down frames: a turned camera
+                // shows them back to back.
                 newState = currentState.copy(
-                    jump = currentState.jump?.copy(previousFootY = null, previousTimestamp = null)
+                    jump = currentState.jump?.copy(previousFootY = null, previousTimestamp = null, flippedSinceMs = null)
                 ),
                 repCompleted = false,
                 debugInfo = "Feet, hips or head not visible"
             )
 
-        val tracking = currentState.jump
+        val stored = currentState.jump
             ?: return PhaseTransitionResult(
                 newState = currentState.copy(
                     currentPhase = MovementPhase.IDLE,
@@ -103,6 +105,32 @@ class JumpStrategy(
                 repCompleted = false,
                 debugInfo = "Standing baseline set"
             )
+
+        // A pose the other way up from the baseline is mistracked (seen on
+        // single frames mid-flight when every frame is detected on its own):
+        // read as is, it puts the feet back on the floor. Skip it like a frame
+        // with nothing visible, unless it lasts: then the camera was turned.
+        if (frame.upsideDown != stored.upsideDown) {
+            val since = stored.flippedSinceMs ?: poseResult.timestamp
+            if (stored.isAirborne || poseResult.timestamp - since < Jump.STILL_MS) {
+                return PhaseTransitionResult(
+                    newState = currentState.copy(
+                        jump = stored.copy(previousFootY = null, previousTimestamp = null, flippedSinceMs = since)
+                    ),
+                    repCompleted = false,
+                    debugInfo = "Pose upside down, skipped"
+                )
+            }
+            return PhaseTransitionResult(
+                newState = currentState.copy(
+                    currentPhase = MovementPhase.IDLE,
+                    jump = baselineFrom(frame, poseResult.timestamp)
+                ),
+                repCompleted = false,
+                debugInfo = "Camera turned, standing baseline set"
+            )
+        }
+        val tracking = if (stored.flippedSinceMs != null) stored.copy(flippedSinceMs = null) else stored
 
         return if (tracking.isAirborne) {
             detectLanding(currentState, tracking, frame, poseResult.timestamp, calibrationData)
@@ -195,7 +223,7 @@ class JumpStrategy(
         // Second estimate from the rising half alone, which landing posture
         // can't stretch: the time from takeoff to the top of the flight.
         val spanPerMeter = tracking.bodySpan / (Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight)
-        val apexHeight = fitApexMs(tracking.flightHipSamples)
+        val apexHeight = fitApexMs(tracking.flightHipSamples, Jump.OUTLIER_FLOOR * tracking.bodySpan)
             ?.takeIf { it > takeoffMs && it < landingMs }
             ?.let { apexMs ->
                 val toes = (tracking.groundSamples + tracking.flightSamples).filter { it.first < apexMs }
@@ -206,8 +234,12 @@ class JumpStrategy(
                 val firstOff = toes.getOrNull(onFloor + 1) ?: tracking.flightSamples.first()
                 heightFromTakeoffToApex(firstOff, toes.getOrNull(onFloor)?.first, apexMs, spanPerMeter)
             }
-        val jump = fromFlight.copy(apexHeight = apexHeight)
+        val jump = fromFlight.copy(apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs)
         val flightMs = jump.flightTimeMs
+        if (flightMs < Jump.MIN_FLIGHT_MS) {
+            logger.d(TAG, "Flight of %.0f ms is too short for a jump".format(flightMs))
+            return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
+        }
 
         // A real flight lifts the whole body: toes "rising" on their own (the
         // foot rocking onto the heel, a far foot flickering in and out of view)
@@ -380,7 +412,8 @@ class JumpStrategy(
         baselineHipsY = frame.hipsY,
         bodySpan = frame.footY - frame.headY,
         previousFootY = frame.footY,
-        previousTimestamp = timestamp
+        previousTimestamp = timestamp,
+        upsideDown = frame.upsideDown
     )
 
     /**
@@ -423,9 +456,33 @@ class JumpStrategy(
      * Time of the top of the flight, from a parabola through the hips: the
      * trunk follows the center of mass, while the legs fold before landing.
      */
-    private fun fitApexMs(hipSamples: List<Pair<Long, Float>>): Double? {
-        val (_, b, c) = fitParabola(hipSamples) ?: return null
-        return hipSamples.first().first + (-b / (2 * c)) * 1000.0
+    private fun fitApexMs(hipSamples: List<Pair<Long, Float>>, outlierFloor: Float): Double? {
+        val samples = withoutOutliers(hipSamples, outlierFloor)
+        val (_, b, c) = fitParabola(samples) ?: return null
+        return samples.first().first + (-b / (2 * c)) * 1000.0
+    }
+
+    /**
+     * [samples] without up to [Jump.MAX_DROPPED_FRAMES] frames far off their
+     * parabola: one mistracked frame bends the whole fit. Far is beyond
+     * [Jump.OUTLIER_SIGMAS] robust standard deviations of the residuals, and
+     * beyond [floor] so that frames are never dropped for ordinary jitter.
+     */
+    private fun withoutOutliers(samples: List<Pair<Long, Float>>, floor: Float): List<Pair<Long, Float>> {
+        var kept = samples
+        repeat(Jump.MAX_DROPPED_FRAMES) {
+            val (a, b, c) = fitParabola(kept) ?: return kept
+            val t0 = kept.first().first
+            val residuals = kept.map { (timestamp, rise) ->
+                val t = (timestamp - t0) / 1000.0
+                kotlin.math.abs(rise - (a + b * t + c * t * t))
+            }
+            val sigma = 1.4826 * residuals.sorted()[residuals.size / 2]
+            val worst = residuals.indices.maxBy { residuals[it] }
+            if (residuals[worst] <= maxOf(Jump.OUTLIER_SIGMAS * sigma, floor.toDouble())) return kept
+            kept = kept.filterIndexed { i, _ -> i != worst }
+        }
+        return kept
     }
 
     private fun fitFlightMs(samples: List<Pair<Long, Float>>, landingRise: Float): Float? {
@@ -515,7 +572,7 @@ class JumpStrategy(
             if (upsideDown) 1f - points.minOf { it.y } else points.maxOf { it.y }
         val feet = lowest(feetPoints)
         val hips = lowest(hipPoints)
-        return Frame(if (upsideDown) 1f - head else head, hips, feet)
+        return Frame(if (upsideDown) 1f - head else head, hips, feet, upsideDown)
     }
 
     override fun calculateMetrics(

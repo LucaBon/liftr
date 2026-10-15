@@ -30,7 +30,8 @@ fun MultiLineTrendChart(
     series: List<ChartSeries>,
     xLabels: List<String>,
     unit: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    decimals: Int = 0
 ) {
     if (series.all { s -> s.values.all { it == null } }) return
     val legendColor = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
@@ -89,7 +90,7 @@ fun MultiLineTrendChart(
                     xLabels.getOrNull(value.toInt()) ?: ""
             }
             chart.axisLeft.valueFormatter = object : ValueFormatter() {
-                override fun getFormattedValue(value: Float) = "%.0f %s".format(value, unit)
+                override fun getFormattedValue(value: Float) = "%.${decimals}f %s".format(value, unit)
             }
             chart.data = LineData(dataSets)
             chart.invalidate()

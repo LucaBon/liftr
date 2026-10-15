@@ -331,15 +331,22 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             if (transition.repCompleted) {
                 // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
-                val jumpWindow = transition.jump?.let { jumpPath?.pathForLanding(now, it.flightTimeMs) }
+                val jumpWindow = transition.jump?.let {
+                    jumpPath?.pathForLanding(now, it.flightTimeMs, it.takeoffAtMs?.toLong(), it.landingAtMs?.toLong())
+                }
                 jumpWindow?.let { window ->
                     currentRepBarPoints = window.points.toMutableList()
                     window.excursion?.let {
                         logger.i(
                             TAG,
-                            "Jump ${repScores.size + 1}: dip %.1f cm, peak %.1f cm above standing"
-                                .format(it.countermovementCm, it.peakRiseCm)
+                            ("Jump ${repScores.size + 1}: dip %.1f cm, peak %.1f cm above standing, " +
+                                "center of mass rise %s, takeoff velocity %s").format(
+                                it.countermovementCm, it.peakRiseCm,
+                                it.flightRiseCm?.let { cm -> "%.1f cm".format(cm) } ?: "n/a",
+                                it.takeoffVelocity?.let { v -> "%.2f m/s (%.1f cm)".format(v, it.velocityHeightCm) } ?: "n/a"
+                            )
                         )
+                        logger.i(TAG, "Jump ${repScores.size + 1} fit check: ${it.fitCheck?.describe() ?: "n/a"}")
                     }
                 }
                 val eccentricDuration = if (bottomTime > 0 && eccentricStart > 0) {

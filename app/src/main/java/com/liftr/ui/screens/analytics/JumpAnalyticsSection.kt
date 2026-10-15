@@ -30,6 +30,7 @@ private val ComColor = Color(0xFFFF9800)
 private val ApexColor = Color(0xFF4CAF50)
 private val DipColor = Color(0xFF2196F3)
 private val PeakColor = Color(0xFFE91E63)
+private val VelocityColor = Color(0xFF9C27B0)
 
 /**
  * Jump analytics: averages, jump height and center-of-mass trends per jump,
@@ -53,11 +54,24 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
             series = listOf(
                 ChartSeries(stringResource(R.string.analytics_jump_flight_time), ChartPrimary, jumps.map { it.jump.flightHeightCm }),
                 ChartSeries(stringResource(R.string.analytics_jump_takeoff_to_apex), ApexColor, jumps.map { it.jump.apexHeightCm }),
-                ChartSeries(stringResource(R.string.analytics_jump_com_displacement), ComColor, jumps.map { it.jump.comFlightRiseCm })
+                ChartSeries(stringResource(R.string.analytics_jump_com_displacement), ComColor, jumps.map { it.jump.comFlightRiseCm }),
+                ChartSeries(stringResource(R.string.analytics_jump_takeoff_velocity), VelocityColor, jumps.map { it.jump.velocityHeightCm })
             ),
             xLabels = xLabels,
             unit = "cm"
         )
+
+        if (jumps.any { it.jump.takeoffVelocity != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.jump_takeoff_velocity))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_takeoff_velocity), VelocityColor, jumps.map { it.jump.takeoffVelocity })
+                ),
+                xLabels = xLabels,
+                unit = "m/s",
+                decimals = 1
+            )
+        }
 
         if (jumps.any { it.jump.countermovementCm != null }) {
             AnalyticsSectionTitle(stringResource(R.string.jump_from_standing))
@@ -112,6 +126,16 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
             ) {
                 StatItem(label = stringResource(R.string.jump_countermovement), value = avg(jumps.map { it.jump.countermovementCm }))
                 StatItem(label = stringResource(R.string.jump_peak_rise), value = avg(jumps.map { it.jump.peakRiseCm }))
+                StatItem(label = stringResource(R.string.analytics_jump_takeoff_velocity), value = avg(jumps.map { it.jump.velocityHeightCm }))
+            }
+            jumps.mapNotNull { it.jump.takeoffVelocity }.takeIf { it.isNotEmpty() }?.let { speeds ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_takeoff_velocity), value = "%.2f m/s".format(speeds.average()))
+                    StatItem(label = stringResource(R.string.analytics_best_takeoff_velocity), value = "%.2f m/s".format(speeds.max()))
+                }
             }
         }
     }

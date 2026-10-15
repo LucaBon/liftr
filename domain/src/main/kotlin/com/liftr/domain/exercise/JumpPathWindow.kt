@@ -3,9 +3,11 @@ package com.liftr.domain.exercise
 import com.liftr.domain.calculator.CoordinateCalculator
 import com.liftr.domain.model.BarPathPoint
 import com.liftr.domain.model.JumpExcursion
+import com.liftr.domain.model.JumpFitCheck
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
+import com.liftr.domain.validation.JumpFlightValidator
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -60,14 +62,21 @@ class JumpPathWindow {
      * The path of the jump that just landed at [nowMs] after [flightMs] in the
      * air: from the countermovement if one started shortly before takeoff,
      * otherwise from [PRE_TAKEOFF_MS] before takeoff.
+     *
+     * [takeoffMs] and [landingMs] are the measured toe-off and touchdown, on
+     * this window's clock. Landing is only recognized a frame or two after
+     * touchdown, so without them takeoff is placed that much too late.
      */
-    fun pathForLanding(nowMs: Long, flightMs: Float): JumpPath {
-        val takeoffMs = nowMs - flightMs.toLong()
+    fun pathForLanding(nowMs: Long, flightMs: Float, takeoffMs: Long? = null, landingMs: Long? = null): JumpPath {
+        // Only measured takeoff and touchdown can be checked against each other.
+        val timed = takeoffMs != null && landingMs != null
+        val landedMs = landingMs ?: nowMs
+        val takeoffMs = takeoffMs ?: (landedMs - flightMs.toLong())
         val startMs = dipStartMs?.takeIf { it >= takeoffMs - MAX_DIP_MS } ?: (takeoffMs - PRE_TAKEOFF_MS)
         dipStartMs = null
         return JumpPath(
             points = recent.filter { it.timestamp in startMs..nowMs },
-            excursion = excursion(takeoffMs, nowMs)
+            excursion = excursion(takeoffMs, landedMs, timed)
         )
     }
 
@@ -75,20 +84,110 @@ class JumpPathWindow {
      * Dip and peak from standing: the lowest center of mass between standing
      * and takeoff, and the highest one in the air. Image y grows downward.
      */
-    private fun excursion(takeoffMs: Long, nowMs: Long): JumpExcursion? {
+    private fun excursion(takeoffMs: Long, landingMs: Long, timed: Boolean): JumpExcursion? {
         val ref = standing?.takeIf { it.atMs < takeoffMs } ?: return null
-        val flight = recent.filter { it.timestamp in takeoffMs..nowMs }
+        val flight = recent.filter { it.timestamp in takeoffMs..landingMs }
         if (flight.isEmpty()) return null
         val dipFrom = max(ref.atMs, takeoffMs - MAX_DIP_MS)
-        val lowest = recent.filter { it.timestamp in dipFrom..takeoffMs }.maxOfOrNull { it.normalizedY } ?: ref.y
-        val highest = flight.minOf { it.normalizedY }
+        // Extremes of a 3-frame median, so one mistracked frame can't set them.
+        val lowest = medianOf3(recent.filter { it.timestamp in dipFrom..takeoffMs }).maxOrNull() ?: ref.y
         val atTakeoff = yAt(takeoffMs)
+        val trimmed = flight.filter { it.timestamp in takeoffMs + TAKEOFF_TRIM_MS..landingMs - LANDING_TRIM_MS }
+        val (fitCheck, fitFrames) = fitCheck(trimmed, takeoffMs, ref.cmPerUnitY)
+        // Frames left out of the fit as mistracked don't set the peak either.
+        val dropped = trimmed.toSet() - fitFrames.toSet()
+        val highest = medianOf3(flight.filterNot { it in dropped }).min()
+        val takeoffVelocity = takeoffVelocity(fitFrames, takeoffMs, ref.cmPerUnitY)
+        val timedFitCheck = fitCheck?.let { check ->
+            takeoffVelocity?.takeIf { timed }?.let { timingCheck(check, it, takeoffMs, landingMs, ref.cmPerUnitY) } ?: check
+        }
         return JumpExcursion(
             countermovementCm = ((lowest - ref.y) * ref.cmPerUnitY).coerceAtLeast(0f),
             peakRiseCm = ((ref.y - highest) * ref.cmPerUnitY).coerceAtLeast(0f),
             standingYCm = ref.y * ref.realWorldCmPerUnitY,
-            flightRiseCm = atTakeoff?.let { ((it - highest) * ref.cmPerUnitY).coerceAtLeast(0f) }
+            flightRiseCm = atTakeoff?.let { ((it - highest) * ref.cmPerUnitY).coerceAtLeast(0f) },
+            takeoffVelocity = takeoffVelocity,
+            velocityHeightCm = takeoffVelocity?.let { (it * it / (2 * G) * 100).toFloat() },
+            fitCheck = timedFitCheck
         )
+    }
+
+    /**
+     * Checks takeoff and landing against the center of mass. Its parabola is
+     * symmetric, so the fall from the top lasts as long as the rise unless it
+     * lands lower than it took off (on bent legs): the extra fall time says
+     * how much lower, which must match where the center of mass was.
+     *
+     * The rise is v0 / g with v0 fitted from [takeoffMs], so it is the time
+     * from that takeoff to the top of the fitted flight.
+     */
+    private fun timingCheck(
+        check: JumpFitCheck,
+        takeoffVelocity: Float,
+        takeoffMs: Long,
+        landingMs: Long,
+        cmPerUnitY: Float
+    ): JumpFitCheck {
+        val atTakeoff = yAt(takeoffMs) ?: return check
+        val atLanding = yAt(landingMs) ?: return check
+        val riseS = takeoffVelocity / G
+        val fallS = (landingMs - takeoffMs) / 1000.0 - riseS
+        if (fallS <= 0) return check
+        val fromTimesCm = (G / 2 * (fallS * fallS - riseS * riseS) * 100).toFloat()
+        // Image y grows downward: landing lower is a larger y.
+        val measuredCm = (atLanding - atTakeoff) * cmPerUnitY
+        return check.copy(
+            landingDropFromTimesCm = fromTimesCm,
+            landingDropCm = measuredCm,
+            timingOk = abs(fromTimesCm - measuredCm) <= ExerciseThresholds.Jump.TIMING_TOLERANCE_CM
+        )
+    }
+
+    /**
+     * The flight checked against free fall (see [JumpFlightValidator]), and
+     * its frames without those left out as mistracked; all of them when it
+     * can't be checked.
+     */
+    private fun fitCheck(
+        flight: List<BarPathPoint>,
+        takeoffMs: Long,
+        cmPerUnitY: Float
+    ): Pair<JumpFitCheck?, List<BarPathPoint>> {
+        if (flight.isEmpty()) return null to flight
+        val taus = flight.map { (it.timestamp - takeoffMs) / 1000.0 }
+        val heights = flight.map { (flight.first().normalizedY - it.normalizedY) * cmPerUnitY / 100.0 }
+        val (check, kept) = JumpFlightValidator.checkWithoutOutliers(taus, heights) ?: return null to flight
+        return check to kept.map { flight[it] }
+    }
+
+    /**
+     * Upward velocity at takeoff, in m/s, from the whole flight rather than the
+     * frames around takeoff, whose difference is mostly landmark jitter.
+     *
+     * In the air the center of mass follows z = z0 + v0·τ - g·τ²/2 with τ the
+     * time since takeoff, so z + g·τ²/2 is a straight line whose slope is v0.
+     * Null with too few airborne frames, or when the fit does not rise.
+     */
+    private fun takeoffVelocity(flight: List<BarPathPoint>, takeoffMs: Long, cmPerUnitY: Float): Float? {
+        if (flight.size < ExerciseThresholds.Jump.MIN_FIT_SAMPLES) return null
+        val taus = flight.map { (it.timestamp - takeoffMs) / 1000.0 }
+        if (taus.last() - taus.first() < MIN_FIT_SPAN_S) return null
+        // Height above the first airborne frame, in meters; image y grows downward.
+        val lines = flight.zip(taus) { p, tau ->
+            (flight.first().normalizedY - p.normalizedY) * cmPerUnitY / 100.0 + G * tau * tau / 2
+        }
+        val meanTau = taus.average()
+        val meanLine = lines.average()
+        val sxx = taus.sumOf { (it - meanTau) * (it - meanTau) }
+        val sxy = taus.indices.sumOf { (taus[it] - meanTau) * (lines[it] - meanLine) }
+        val v0 = sxy / sxx
+        return v0.takeIf { it > 0 }?.toFloat()
+    }
+
+    /** Each point's y as the median of it and its neighbors; the ends keep their own. */
+    private fun medianOf3(points: List<BarPathPoint>): List<Float> = points.indices.map { i ->
+        if (i == 0 || i == points.lastIndex) points[i].normalizedY
+        else listOf(points[i - 1].normalizedY, points[i].normalizedY, points[i + 1].normalizedY).sorted()[1]
     }
 
     /** Center-of-mass y at [timeMs], interpolated between the frames around it. */
@@ -135,6 +234,20 @@ class JumpPathWindow {
 
         /** Path start before takeoff when no countermovement was detected. */
         private const val PRE_TAKEOFF_MS = 500L
+
+        /**
+         * Frames this soon after the toes leave the floor are not yet in free
+         * fall: the center of mass sits below the flight's parabola there.
+         */
+        private const val TAKEOFF_TRIM_MS = 30L
+
+        /** Frames this close to touchdown may already be braking on the ground. */
+        private const val LANDING_TRIM_MS = 20L
+
+        /** Airborne time the velocity fit needs to tell the rise from the fall. */
+        private const val MIN_FIT_SPAN_S = 0.15
+
+        private const val G = 9.81
 
         /** Center-of-mass wobble still counted as standing (~2 cm for a body filling most of the frame) */
         private const val STILL_RANGE = 0.006f

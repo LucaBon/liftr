@@ -91,8 +91,21 @@ class CenterOfMassCalculatorTest {
     }
 
     @Test
-    fun `missing core joint gives no center of mass`() {
-        assertNull(CenterOfMassCalculator.centerOfMass(standing(hidden = setOf(PoseResult.LEFT_KNEE))))
+    fun `core joint missing on both sides gives no center of mass`() {
+        assertNull(
+            CenterOfMassCalculator.centerOfMass(
+                standing(hidden = setOf(PoseResult.LEFT_KNEE, PoseResult.RIGHT_KNEE))
+            )
+        )
+    }
+
+    @Test
+    fun `hidden far side borrows the near side, as when filmed side-on`() {
+        val farSide = (PoseResult.LEFT_SHOULDER..PoseResult.LEFT_FOOT_INDEX step 2).toSet()
+        val full = CenterOfMassCalculator.centerOfMass(standing())!!
+        val nearOnly = CenterOfMassCalculator.centerOfMass(standing(hidden = farSide))
+        assertNotNull(nearOnly)
+        assertEquals(full.second, nearOnly!!.second, 0.001f)
     }
 
     @Test

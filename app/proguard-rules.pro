@@ -6,6 +6,15 @@
 -keep class com.google.mediapipe.** { *; }
 -dontwarn com.google.mediapipe.**
 
+# MediaPipe's Graph logs through Flogger, which finds its caller by matching
+# its own class names on the stack. Obfuscating it breaks Graph's static init
+# ("no caller found on the stack") and pose detection fails in release only.
+-keep class com.google.common.flogger.** { *; }
+-dontwarn com.google.common.flogger.**
+
+# MediaPipe task options/results are protobuf-lite messages accessed reflectively.
+-keep class * extends com.google.protobuf.GeneratedMessageLite { *; }
+
 # MediaPipe ships the AutoValue annotation processor as a runtime dependency.
 # It references javac APIs that don't exist on Android and never runs in the app.
 -dontwarn javax.annotation.processing.**

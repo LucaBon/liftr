@@ -35,7 +35,7 @@ object CenterOfMassCalculator {
 
     /**
      * Center of mass in normalized image coordinates, or null when a core joint
-     * (shoulders, hips, knees, ankles) is not visible.
+     * (shoulders, hips, knees, ankles) is visible on neither side.
      *
      * Hands and feet fall back to the wrist and ankle when their landmarks are
      * not visible; a whole arm falls back to the shoulder when the elbow is not.
@@ -47,8 +47,13 @@ object CenterOfMassCalculator {
      */
     fun centerOfMass(pose: PoseResult, extraMassFraction: Float = 0f): Pair<Float, Float>? {
         val lm = pose.landmarks
-        fun visible(index: Int): PoseKeypoint? =
+        fun seen(index: Int): PoseKeypoint? =
             lm.getOrNull(index)?.takeIf { it.visibility >= MIN_VISIBILITY }
+        // Filmed side-on, the far limbs hide behind the near ones and drop
+        // below any visibility threshold. They overlap in the image, so the
+        // same joint on the other side stands in for a hidden one.
+        fun visible(index: Int): PoseKeypoint? =
+            seen(index) ?: if (index >= PoseResult.LEFT_SHOULDER) seen(mirror(index)) else null
         fun mid(a: PoseKeypoint, b: PoseKeypoint) = Point((a.x + b.x) / 2f, (a.y + b.y) / 2f)
         fun point(k: PoseKeypoint) = Point(k.x, k.y)
 
@@ -96,6 +101,9 @@ object CenterOfMassCalculator {
         if (extraMassFraction > 0f) acc.add(loadPosition(::visible) ?: shoulders, extraMassFraction)
         return acc.result()
     }
+
+    /** The same limb landmark on the other side: MediaPipe numbers left odd, right even. */
+    private fun mirror(index: Int) = if (index % 2 == 1) index + 1 else index - 1
 
     /**
      * Load as a fraction of body mass, for [centerOfMass]'s extraMassFraction;

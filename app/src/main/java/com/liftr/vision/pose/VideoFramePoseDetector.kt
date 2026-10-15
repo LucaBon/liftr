@@ -18,7 +18,8 @@ import java.io.Closeable
  * Pose detector for offline (post-exercise) video analysis (Feature 17).
  *
  * Unlike the real-time [PoseDetector], this:
- * - uses [RunningMode.VIDEO] (synchronous, returns the result directly)
+ * - uses [RunningMode.VIDEO] (synchronous, returns the result directly), or
+ *   [RunningMode.IMAGE] with [perFrame]
  * - uses the heavy model by default for maximum landmark accuracy
  * - accepts a [Bitmap] directly (frames come from [com.liftr.vision.video.VideoFrameExtractor])
  * - has no frame throttling / caching / OneEuro smoothing (the bidirectional
@@ -26,19 +27,26 @@ import java.io.Closeable
  * - is NOT a singleton — create one per analysis session and [close] it after.
  *
  * Timestamps passed to [detectPose] MUST be monotonically increasing.
+ *
+ * @param perFrame Detect every frame on its own, without VIDEO mode's tracking
+ *   and temporal filtering. That filtering bends a jump's flight away from a
+ *   parabola by a couple of centimeters, the same way in every jump, which
+ *   biases the takeoff velocity and the free-fall checks. Per-frame detection
+ *   is noisier and misses a few more frames, but its errors are random.
  */
 class VideoFramePoseDetector(
     private val context: Context,
     private val logger: Logger,
     private val lensDistortionCorrector: LensDistortionCorrector,
-    modelPath: String = Constants.POSE_MODEL_HEAVY
+    modelPath: String = Constants.POSE_MODEL_HEAVY,
+    private val perFrame: Boolean = false
 ) : Closeable {
 
     private var poseLandmarker: PoseLandmarker? = null
     private var detectionCount = 0
 
     init {
-        logger.i(TAG, "Initializing with model: $modelPath (RunningMode.VIDEO)")
+        logger.i(TAG, "Initializing with model: $modelPath (${runningMode()})")
         poseLandmarker = createLandmarker(modelPath, Delegate.GPU)
             ?: createLandmarker(modelPath, Delegate.CPU)
         if (poseLandmarker == null) {
@@ -59,7 +67,7 @@ class VideoFramePoseDetector(
 
             val options = PoseLandmarker.PoseLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.VIDEO)
+                .setRunningMode(runningMode())
                 .setNumPoses(1)
                 .setMinPoseDetectionConfidence(Constants.POSE_MIN_DETECTION_CONFIDENCE)
                 .setMinPosePresenceConfidence(Constants.POSE_MIN_PRESENCE_CONFIDENCE)
@@ -86,7 +94,7 @@ class VideoFramePoseDetector(
         val landmarker = poseLandmarker ?: return null
 
         val mpImage = BitmapImageBuilder(bitmap).build()
-        val result = landmarker.detectForVideo(mpImage, timestampMs)
+        val result = if (perFrame) landmarker.detect(mpImage) else landmarker.detectForVideo(mpImage, timestampMs)
 
         detectionCount++
         if (detectionCount % 100 == 0) {
@@ -114,6 +122,8 @@ class VideoFramePoseDetector(
             correctedLandmarks, timestampMs, bitmap.width, bitmap.height, isPortrait
         )
     }
+
+    private fun runningMode() = if (perFrame) RunningMode.IMAGE else RunningMode.VIDEO
 
     override fun close() {
         poseLandmarker?.close()

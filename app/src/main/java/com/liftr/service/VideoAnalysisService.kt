@@ -233,7 +233,8 @@ class VideoAnalysisService : LifecycleService() {
                         VideoFramePoseDetector(
                             context = applicationContext,
                             logger = logger,
-                            lensDistortionCorrector = lensDistortionCorrector
+                            lensDistortionCorrector = lensDistortionCorrector,
+                            perFrame = exerciseType.isJumpExercise()
                         )
                     },
                     logger = logger

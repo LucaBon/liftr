@@ -24,6 +24,10 @@ package com.liftr.domain.exercise
  * @property stillFootY Toe height the feet have been resting at
  * @property stillHipsY Hip height the hips have been resting at
  * @property stillSinceMs When feet and hips came to rest at those heights
+ * @property upsideDown Whether the baseline pose had the head below the feet
+ *   (camera upside down); frames the other way up are mistracked
+ * @property flippedSinceMs Since when frames have been the other way up from
+ *   the baseline, back to back; for long enough, the camera itself was turned
  */
 data class JumpTrackingState(
     val baselineFootY: Float,
@@ -40,7 +44,9 @@ data class JumpTrackingState(
     val previousTimestamp: Long? = null,
     val stillFootY: Float? = null,
     val stillHipsY: Float? = null,
-    val stillSinceMs: Long? = null
+    val stillSinceMs: Long? = null,
+    val upsideDown: Boolean = false,
+    val flippedSinceMs: Long? = null
 ) {
     val isAirborne: Boolean get() = takeoffMs != null
 }

@@ -20,12 +20,16 @@ import com.liftr.domain.value.MetersPerSecond
  * @property height Rise of the center of mass: h = g·t² / 8
  * @property takeoffVelocity Vertical velocity at toe-off: v = g·t / 2
  * @property apexHeight Rise from the time between toe-off and the top of the flight: h = g·t² / 2
+ * @property takeoffAtMs When the toes left the floor, on the pose clock
+ * @property landingAtMs When the toes touched down again, on the pose clock
  */
 data class JumpData(
     val flightTimeMs: Float,
     val height: Meters,
     val takeoffVelocity: MetersPerSecond,
-    val apexHeight: Meters? = null
+    val apexHeight: Meters? = null,
+    val takeoffAtMs: Double? = null,
+    val landingAtMs: Double? = null
 ) {
     companion object {
         private const val GRAVITY = 9.81f

@@ -164,6 +164,22 @@ fun BarPathReplayCard(
                         )
                     }
                 }
+                if (excursion.takeoffVelocity != null && excursion.velocityHeightCm != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        MetricItem(
+                            label = stringResource(R.string.jump_takeoff_velocity),
+                            value = "%.2f m/s".format(excursion.takeoffVelocity)
+                        )
+                        MetricItem(
+                            label = stringResource(R.string.jump_velocity_height),
+                            value = "%.0f cm".format(excursion.velocityHeightCm)
+                        )
+                    }
+                }
                 Text(
                     text = stringResource(R.string.jump_from_standing),
                     style = MaterialTheme.typography.bodySmall,
