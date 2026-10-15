@@ -78,18 +78,37 @@ data class WorkoutState(
     // One-shot snackbar when analysis finishes while the banner was dismissed.
     val analysisCompleteMessage: String? = null,
     /**
-     * Analyses that finished while the athlete had dismissed the progress
-     * banner and whose summary has not been opened yet.
+     * Analyses that finished while their summary could not be shown (the
+     * progress banner dismissed, a set being recorded, or another summary
+     * open), oldest first, each with its own summary and video.
      *
      * The snackbar alone is not enough: it times out, and a queued analysis can
      * land a minute or more after the set it belongs to, so its result was easy
      * to miss entirely. This drives a persistent affordance that survives until
-     * the summary is actually viewed. The sets themselves are always persisted
+     * each summary is actually viewed. The sets themselves are always persisted
      * regardless of whether this is ever acted on.
      */
-    val unseenAnalysisCount: Int = 0,
+    val pendingResults: List<PendingSetResult> = emptyList(),
     /** Before a jump set: the camera sees the athlete from the front instead of side-on. */
     val cameraViewWarning: Boolean = false
+) {
+    /** Finished analyses whose summary has not been opened yet. */
+    val unseenAnalysisCount: Int get() = pendingResults.size
+
+    /** This state with [result]'s summary open. */
+    fun showing(result: PendingSetResult) = copy(
+        lastSetSummary = result.summary,
+        isSetSummaryVisible = true,
+        annotatedVideo = result.annotatedVideo,
+        playbackIsAnnotated = result.playbackIsAnnotated
+    )
+}
+
+/** A finished analysis whose summary has not been opened yet. */
+data class PendingSetResult(
+    val summary: SetSummary,
+    val annotatedVideo: AnnotatedVideoInfo?,
+    val playbackIsAnnotated: Boolean
 )
 
 /**
@@ -121,5 +140,9 @@ data class AnalysisProgress(
     val currentFrame: Int,
     val totalFrames: Int,
     val percentComplete: Float,
-    val currentRep: Int
+    val currentRep: Int,
+    /** Recordings waiting behind this analysis */
+    val queued: Int = 0,
+    /** Waiting for the set being recorded to end */
+    val paused: Boolean = false
 )

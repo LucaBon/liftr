@@ -30,9 +30,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -44,8 +47,12 @@ import com.liftr.ui.common.labelRes
  * Foreground service that runs post-exercise video analysis (Feature 17).
  *
  * Runs in the foreground so analysis survives the user navigating away or
- * locking the screen. Progress and the final result are published through the
- * companion [analysisState] StateFlow, which the WorkoutViewModel observes.
+ * locking the screen. Progress is published through the companion
+ * [analysisState] StateFlow, and each finished analysis through [results],
+ * which keeps it until a screen collects it.
+ *
+ * Analyses wait while a set is being recorded (see [setRecordingActive]), so
+ * the recording never competes with them for the CPU and GPU.
  */
 @AndroidEntryPoint
 class VideoAnalysisService : LifecycleService() {
@@ -59,7 +66,16 @@ class VideoAnalysisService : LifecycleService() {
 
     sealed class AnalysisState {
         data object Idle : AnalysisState()
-        data class Analyzing(val progress: AnalyzeVideoUseCase.Progress) : AnalysisState()
+
+        /**
+         * @property queued Recordings waiting behind this one
+         * @property paused Waiting for the set being recorded to end
+         */
+        data class Analyzing(
+            val progress: AnalyzeVideoUseCase.Progress,
+            val queued: Int = 0,
+            val paused: Boolean = false
+        ) : AnalysisState()
 
         /**
          * @property recordedVideoPath Raw workout recording kept for in-app replay.
@@ -119,6 +135,7 @@ class VideoAnalysisService : LifecycleService() {
                     }
                 } finally {
                     if (pendingRequests.decrementAndGet() == 0) {
+                        _analysisState.value = AnalysisState.Idle
                         clearPendingInputs()
                         stopForegroundCompat()
                     }
@@ -141,7 +158,7 @@ class VideoAnalysisService : LifecycleService() {
             // observes, so returning silently leaves it waiting on "analyzing"
             // forever.
             logger.w(TAG, "Missing analysis params, stopping service")
-            _analysisState.value = AnalysisState.Error("Analysis could not be started.")
+            finish(AnalysisState.Error("Analysis could not be started."))
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -151,7 +168,7 @@ class VideoAnalysisService : LifecycleService() {
         val videoFile = File(videoPath)
         if (!videoFile.exists() || videoFile.length() <= 0L) {
             logger.e(TAG, "Recording file missing or empty: $videoPath")
-            _analysisState.value = AnalysisState.Error("Recording file not found or empty.")
+            finish(AnalysisState.Error("Recording file not found or empty."))
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -172,9 +189,14 @@ class VideoAnalysisService : LifecycleService() {
             )
         ).isSuccess
 
-        if (!queued) {
+        if (queued) {
+            // The analysis already running shows how many wait behind it.
+            _analysisState.update {
+                if (it is AnalysisState.Analyzing) it.copy(queued = pendingRequests.get() - 1) else it
+            }
+        } else {
             logger.e(TAG, "Could not queue analysis request")
-            _analysisState.value = AnalysisState.Error("Analysis could not be started.")
+            finish(AnalysisState.Error("Analysis could not be started."))
             if (pendingRequests.decrementAndGet() == 0) {
                 stopForegroundCompat()
             }
@@ -197,9 +219,8 @@ class VideoAnalysisService : LifecycleService() {
         tempoPrescription: TempoPrescription?
     ) {
         try {
-            _analysisState.value = AnalysisState.Analyzing(
-                AnalyzeVideoUseCase.Progress(0, 1, 0f, 0)
-            )
+            showProgress(AnalyzeVideoUseCase.Progress(0, 1, 0f, 0))
+            waitWhileRecording()
 
             // Each analysis pass creates its own detector; this one only checks
             // that the pose model loads on this device.
@@ -210,7 +231,7 @@ class VideoAnalysisService : LifecycleService() {
             ).use { it.isAvailable() }
             if (!poseModelAvailable) {
                 videoStorageRepository.deleteRecording(videoFile)
-                _analysisState.value = AnalysisState.Error("Pose analysis isn't available on this device.")
+                finish(AnalysisState.Error("Pose analysis isn't available on this device."))
                 return
             }
 
@@ -237,10 +258,11 @@ class VideoAnalysisService : LifecycleService() {
                             perFrame = exerciseType.isJumpExercise()
                         )
                     },
-                    logger = logger
+                    logger = logger,
+                    beforeFrame = ::waitWhileRecording
                 ),
                 onProgress = { progress ->
-                    _analysisState.value = AnalysisState.Analyzing(progress)
+                    showProgress(progress)
                     updateNotification(
                         "Analyzing ${progress.currentFrame}/${progress.totalFrames} frames",
                         percent = (progress.percentComplete * 100).toInt()
@@ -252,6 +274,7 @@ class VideoAnalysisService : LifecycleService() {
             result.fold(
                 onSuccess = { summary ->
                     val annotatedPath = if (saveAnnotated && !annotations.isNullOrEmpty()) {
+                        waitWhileRecording()
                         generateAnnotatedVideo(videoFile, exerciseType, weight, targetReps, annotations)
                     } else null
                     // Keep the raw recording for in-app replay. If an annotated
@@ -260,28 +283,54 @@ class VideoAnalysisService : LifecycleService() {
                         videoStorageRepository.deleteRecording(videoFile)
                     }
                     val playbackPath = annotatedPath ?: videoFile.absolutePath
-                    _analysisState.value = AnalysisState.Complete(
-                        summary = summary,
-                        recordedVideoPath = playbackPath,
-                        annotatedVideoPath = annotatedPath
+                    finish(
+                        AnalysisState.Complete(
+                            summary = summary,
+                            recordedVideoPath = playbackPath,
+                            annotatedVideoPath = annotatedPath
+                        )
                     )
                     logger.i(TAG, "Analysis complete (playback=$playbackPath, annotated=$annotatedPath)")
                 },
                 onFailure = { error ->
                     videoStorageRepository.deleteRecording(videoFile)
-                    _analysisState.value = AnalysisState.Error(error.message ?: "Analysis failed")
+                    finish(AnalysisState.Error(error.message ?: "Analysis failed"))
                     logger.e(TAG, "Analysis failed", error)
                 }
             )
         } catch (e: Throwable) {
             videoStorageRepository.deleteRecording(videoFile)
-            _analysisState.value = AnalysisState.Error(e.message ?: "Unexpected error")
+            finish(AnalysisState.Error(e.message ?: "Unexpected error"))
             logger.e(TAG, "Analysis crashed", e)
         }
         // Per-run resources (pose detectors) are closed by each analysis pass.
         // Clearing the shared calibration and tearing down the service is the
         // worker loop's job, once the whole queue is drained — doing it per run
         // cancelled analyses that were still waiting behind this one.
+    }
+
+    private fun showProgress(progress: AnalyzeVideoUseCase.Progress) {
+        _analysisState.value = AnalysisState.Analyzing(progress, queued = pendingRequests.get() - 1)
+    }
+
+    /** Hands a finished analysis (Complete or Error) to whoever collects [results]. */
+    private fun finish(result: AnalysisState) {
+        _results.trySend(result)
+    }
+
+    /**
+     * Suspends while a set is being recorded: decoding and the pose model
+     * would compete with the recording for the CPU and GPU, and a dropped
+     * frame costs a jump's takeoff timing.
+     */
+    private suspend fun waitWhileRecording() {
+        if (!recordingActive.value) return
+        logger.i(TAG, "Recording in progress, analysis paused")
+        _analysisState.update { if (it is AnalysisState.Analyzing) it.copy(paused = true) else it }
+        updateNotificationIndeterminate("Paused while recording")
+        recordingActive.first { !it }
+        _analysisState.update { if (it is AnalysisState.Analyzing) it.copy(paused = false) else it }
+        logger.i(TAG, "Recording ended, analysis resumed")
     }
 
     /**
@@ -386,12 +435,24 @@ class VideoAnalysisService : LifecycleService() {
 
         private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
 
-        /** Observable analysis state for UI consumption. */
+        /** Progress of the queue: [AnalysisState.Analyzing] while it runs, else [AnalysisState.Idle]. */
         val analysisState: StateFlow<AnalysisState> = _analysisState.asStateFlow()
 
-        /** Reset state back to Idle (e.g. once the UI has consumed a result). */
-        fun acknowledgeState() {
-            _analysisState.value = AnalysisState.Idle
+        private val _results = Channel<AnalysisState>(Channel.UNLIMITED)
+
+        /**
+         * Each finished analysis, [AnalysisState.Complete] or [AnalysisState.Error],
+         * in queue order and delivered once. Results wait here until collected,
+         * so none is lost while no screen is listening, and none overwrites
+         * another that finished just before it.
+         */
+        val results: Flow<AnalysisState> = _results.receiveAsFlow()
+
+        private val recordingActive = MutableStateFlow(false)
+
+        /** Tell queued and running analyses whether a set is being recorded; they wait while it is. */
+        fun setRecordingActive(active: Boolean) {
+            recordingActive.value = active
         }
 
         // Passed out-of-band because CalibrationData/TempoPrescription are

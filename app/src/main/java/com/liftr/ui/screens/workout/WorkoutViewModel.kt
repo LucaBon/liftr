@@ -269,74 +269,76 @@ class WorkoutViewModel @Inject constructor(
         viewModelScope.launch {
             VideoAnalysisService.analysisState.collect { state ->
                 when (state) {
-                    is VideoAnalysisService.AnalysisState.Analyzing -> {
-                        _uiState.update {
-                            it.copy(
-                                analysisProgress = AnalysisProgress(
-                                    currentFrame = state.progress.currentFrame,
-                                    totalFrames = state.progress.totalFrames,
-                                    percentComplete = state.progress.percentComplete,
-                                    currentRep = state.progress.currentRep
-                                ),
-                                analysisError = null
-                            )
-                        }
+                    is VideoAnalysisService.AnalysisState.Analyzing -> _uiState.update {
+                        it.copy(
+                            analysisProgress = AnalysisProgress(
+                                currentFrame = state.progress.currentFrame,
+                                totalFrames = state.progress.totalFrames,
+                                percentComplete = state.progress.percentComplete,
+                                currentRep = state.progress.currentRep,
+                                queued = state.queued,
+                                paused = state.paused
+                            ),
+                            analysisError = null
+                        )
                     }
-                    is VideoAnalysisService.AnalysisState.Complete -> {
-                        val playbackFile = java.io.File(state.recordedVideoPath)
-                            .takeIf { it.exists() && it.length() > 0 }
-                        val playbackInfo = playbackFile?.let {
-                            AnnotatedVideoInfo(it.absolutePath, it.length())
-                        }
-                        val isAnnotated = state.annotatedVideoPath != null &&
-                            playbackFile?.absolutePath == state.annotatedVideoPath
-                        _uiState.update { current ->
-                            // The athlete may already be recording the next set:
-                            // leave the recording alone (clearing its flag rebinds
-                            // the camera and kills it) and keep the summary out
-                            // of the way, counted as unseen.
-                            val recordingNext = current.isVideoRecording || current.isRecording
-                            val dismissed = current.analysisProgressDismissed || recordingNext
-                            current.copy(
-                                analysisProgress = null,
-                                analysisProgressDismissed = false,
-                                lastSetSummary = state.summary,
-                                isSetSummaryVisible = !dismissed,
-                                annotatedVideo = playbackInfo,
-                                playbackIsAnnotated = isAnnotated,
-                                analysisCompleteMessage = if (dismissed && !recordingNext) {
-                                    context.getString(R.string.analysis_complete_snackbar)
-                                } else {
-                                    null
-                                },
-                                // The sheet is showing, so nothing is unseen.
-                                // Otherwise remember it until the athlete opens
-                                // it — the snackbar times out and would
-                                // otherwise be the only notice they ever get.
-                                unseenAnalysisCount = if (dismissed) {
-                                    current.unseenAnalysisCount + 1
-                                } else {
-                                    0
-                                }
-                            )
-                        }
-                        saveAnalyzedSet(state.summary)
-                        VideoAnalysisService.acknowledgeState()
+                    // Queue drained: the next analysis gets its banner back.
+                    is VideoAnalysisService.AnalysisState.Idle -> _uiState.update {
+                        it.copy(analysisProgress = null, analysisProgressDismissed = false)
                     }
-                    is VideoAnalysisService.AnalysisState.Error -> {
-                        logger.e(TAG, "Analysis error: ${state.message}")
-                        _uiState.update {
-                            it.copy(
-                                analysisProgress = null,
-                                analysisError = state.message
-                            )
-                        }
-                        VideoAnalysisService.acknowledgeState()
-                    }
-                    is VideoAnalysisService.AnalysisState.Idle -> Unit
+                    else -> Unit
                 }
             }
         }
+        viewModelScope.launch {
+            VideoAnalysisService.results.collect { result ->
+                when (result) {
+                    is VideoAnalysisService.AnalysisState.Complete -> onAnalysisComplete(result)
+                    is VideoAnalysisService.AnalysisState.Error -> {
+                        logger.e(TAG, "Analysis error: ${result.message}")
+                        _uiState.update { it.copy(analysisError = result.message) }
+                    }
+                    else -> Unit
+                }
+            }
+        }
+        // Analyses wait while a set is recorded, so they never compete with it.
+        viewModelScope.launch {
+            _uiState.map { it.isRecording || it.isVideoRecording }
+                .distinctUntilChanged()
+                .collect { VideoAnalysisService.setRecordingActive(it) }
+        }
+    }
+
+    private fun onAnalysisComplete(state: VideoAnalysisService.AnalysisState.Complete) {
+        val playbackFile = java.io.File(state.recordedVideoPath)
+            .takeIf { it.exists() && it.length() > 0 }
+        val result = PendingSetResult(
+            summary = state.summary,
+            annotatedVideo = playbackFile?.let { AnnotatedVideoInfo(it.absolutePath, it.length()) },
+            playbackIsAnnotated = state.annotatedVideoPath != null &&
+                playbackFile?.absolutePath == state.annotatedVideoPath
+        )
+        _uiState.update { current ->
+            // The athlete may already be recording the next set: leave the
+            // recording alone (clearing its flag rebinds the camera and kills
+            // it). Never pop a summary over it, nor replace one being read:
+            // queue it, oldest first, to be opened from the chip.
+            val recordingNext = current.isVideoRecording || current.isRecording
+            if (recordingNext || current.isSetSummaryVisible || current.analysisProgressDismissed) {
+                current.copy(
+                    pendingResults = current.pendingResults + result,
+                    analysisCompleteMessage = if (!recordingNext) {
+                        context.getString(R.string.analysis_complete_snackbar)
+                    } else {
+                        null
+                    }
+                )
+            } else {
+                current.showing(result)
+            }
+        }
+        saveAnalyzedSet(state.summary)
     }
 
     /**
@@ -427,14 +429,15 @@ class WorkoutViewModel @Inject constructor(
         _uiState.update { it.copy(analysisProgressDismissed = true) }
     }
 
-    /** Open the summary sheet after a background analysis completes. */
+    /** Open the oldest summary not seen yet; the chip keeps counting the rest. */
     fun showPendingAnalysisResults() {
         _uiState.update {
-            it.copy(
-                analysisCompleteMessage = null,
-                isSetSummaryVisible = it.lastSetSummary != null,
-                unseenAnalysisCount = 0
-            )
+            val next = it.pendingResults.firstOrNull()
+            if (it.isSetSummaryVisible || next == null) {
+                it.copy(analysisCompleteMessage = null)
+            } else {
+                it.copy(analysisCompleteMessage = null, pendingResults = it.pendingResults.drop(1)).showing(next)
+            }
         }
     }
 
@@ -1267,7 +1270,9 @@ class WorkoutViewModel @Inject constructor(
             it.copy(
                 isRecording = false,
                 isVideoRecording = false,
-                analysisProgress = AnalysisProgress(0, 1, 0f, 0),
+                // An analysis already running keeps its progress; the service
+                // adds this recording to its queue count.
+                analysisProgress = it.analysisProgress ?: AnalysisProgress(0, 1, 0f, 0),
                 analysisProgressDismissed = false
             )
         }
@@ -1527,9 +1532,7 @@ class WorkoutViewModel @Inject constructor(
                 lastSetSummary = null,
                 isSetSummaryVisible = false,
                 annotatedVideo = null,
-                playbackIsAnnotated = false,
-                // Viewing and closing the sheet counts as having seen it.
-                unseenAnalysisCount = 0
+                playbackIsAnnotated = false
             )
         }
     }
@@ -1809,6 +1812,11 @@ class WorkoutViewModel @Inject constructor(
         _uiState.value.annotatedVideo?.let { info ->
             runCatching { java.io.File(info.path).delete() }
         }
+        _uiState.value.pendingResults.forEach { result ->
+            result.annotatedVideo?.let { runCatching { java.io.File(it.path).delete() } }
+        }
+        // No set is being recorded once this screen is gone.
+        VideoAnalysisService.setRecordingActive(false)
         feedbackEmitter.stopCurrentSpeech()
     }
 }

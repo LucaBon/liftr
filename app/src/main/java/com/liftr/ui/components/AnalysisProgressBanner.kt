@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,14 +59,25 @@ fun AnalysisProgressBanner(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(
-                            R.string.analysis_frames_processed,
-                            progress.currentFrame,
-                            progress.totalFrames
-                        ),
+                        text = if (progress.paused) {
+                            stringResource(R.string.analysis_paused_recording)
+                        } else {
+                            stringResource(
+                                R.string.analysis_frames_processed,
+                                progress.currentFrame,
+                                progress.totalFrames
+                            )
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (progress.queued > 0) {
+                        Text(
+                            text = pluralStringResource(R.plurals.analysis_queued, progress.queued, progress.queued),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 IconButton(onClick = onDismiss) {
                     Icon(

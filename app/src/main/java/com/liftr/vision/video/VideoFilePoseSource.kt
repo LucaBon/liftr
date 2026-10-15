@@ -11,11 +11,14 @@ import java.io.File
  * [VideoPoseSource] that decodes [videoFile] with [VideoFrameExtractor] and runs
  * a pose detector from [createPoseDetector] on the selected frames. Each pass
  * gets its own detector: its VIDEO running mode needs increasing timestamps.
+ * [beforeFrame] runs before each detection and may suspend to pause the pass;
+ * decoding stops too, a couple of frames ahead.
  */
 class VideoFilePoseSource(
     videoFile: File,
     private val createPoseDetector: () -> VideoFramePoseDetector,
-    logger: Logger
+    logger: Logger,
+    private val beforeFrame: suspend () -> Unit = {}
 ) : VideoPoseSource {
 
     private val extractor = VideoFrameExtractor(videoFile, logger)
@@ -27,6 +30,7 @@ class VideoFilePoseSource(
             extractor.extractFrames().collect { frame ->
                 try {
                     val pose = if (include(frame.timestampMs)) {
+                        beforeFrame()
                         detector.detectPose(frame.bitmap, frame.timestampMs)
                     } else null
                     emit(VideoPoseSource.Frame(frame.timestampMs, pose))

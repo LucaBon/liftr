@@ -78,6 +78,11 @@
     <string name="analysis_continue_workout">Continue workout</string>
     <string name="analysis_complete_snackbar">Set analysis complete</string>
     <string name="analysis_view_results">View results</string>
+    <string name="analysis_paused_recording">Paused while you record, resumes when you stop</string>
+    <plurals name="analysis_queued">
+        <item quantity="one">%1$d more set waiting</item>
+        <item quantity="other">%1$d more sets waiting</item>
+    </plurals>
     <string name="video_recording_subtitle">Recorded set \u00B7 %1$s</string>
     <string name="video_play">Play</string>
     <string name="video_pause">Pause</string>
