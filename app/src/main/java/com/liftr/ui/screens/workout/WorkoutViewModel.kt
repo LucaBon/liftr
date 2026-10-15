@@ -207,6 +207,13 @@ class WorkoutViewModel @Inject constructor(
     @Volatile private var repCounterEnabled = false
     private var recordingTimerJob: Job? = null
 
+    // Above init: the collectors init launches read these.
+    /** Identifies this workout's analyses, so their results come back here and nowhere else. */
+    private val analysisOwner = java.util.UUID.randomUUID().toString()
+
+    /** A stopped recording CameraX is still writing out; analyses keep waiting. */
+    private val recordingFinalizing = MutableStateFlow(false)
+
     init {
         logger.d(TAG, "WorkoutViewModel initialized")
         // Surface a friendly message (instead of crashing) when on-device pose
@@ -261,12 +268,6 @@ class WorkoutViewModel @Inject constructor(
             }
         }
     }
-
-    /** Identifies this workout's analyses, so their results come back here and nowhere else. */
-    private val analysisOwner = java.util.UUID.randomUUID().toString()
-
-    /** A stopped recording CameraX is still writing out; analyses keep waiting. */
-    private val recordingFinalizing = MutableStateFlow(false)
 
     /**
      * Observes the global analysis service state and folds it into UI state.
