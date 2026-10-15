@@ -17,6 +17,11 @@ object Constants {
     const val CAMERA_TARGET_HEIGHT = 480
     const val TARGET_FPS = 30
 
+    // High-speed (120/240 fps) recording for fast movements. Off: it froze the
+    // camera on test devices and darkens the image (shutter capped at 1/fps),
+    // which hurts pose quality more than the extra frames help the flight fit.
+    const val HIGH_SPEED_RECORDING = false
+
     // Camera Configuration - Calibration (High accuracy)
     const val CAMERA_CALIBRATION_WIDTH = 1280
     const val CAMERA_CALIBRATION_HEIGHT = 960

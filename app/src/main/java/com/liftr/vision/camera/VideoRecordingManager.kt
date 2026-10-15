@@ -78,10 +78,11 @@ class VideoRecordingManager @Inject constructor(
     )
 
     /**
-     * A high-speed (120/240 fps) session for [cameraInfo] at its highest frame
-     * rate, or null when the camera has no high-speed mode (e.g. most front
-     * cameras). Records real-time high-frame-rate video, not slow motion, so
-     * frame timestamps stay in real time for the analysis.
+     * A high-speed session for [cameraInfo] at its lowest high-speed frame
+     * rate (120 fps when offered), or null when the camera has no high-speed
+     * mode (e.g. most front cameras). Records real-time high-frame-rate
+     * video, not slow motion, so frame timestamps stay in real time for the
+     * analysis.
      *
      * A high-speed session binds only preview and video: no ImageAnalysis, so
      * the live rep counter can't run alongside it.
@@ -105,7 +106,10 @@ class VideoRecordingManager @Inject constructor(
         val videoCapture = VideoCapture.withOutput(recorder)
         val probe = HighSpeedVideoSessionConfig.Builder(videoCapture).setPreview(preview).build()
         val ranges = cameraInfo.getSupportedFrameRateRanges(probe)
-        val range = ranges.maxByOrNull { it.upper } ?: run {
+        // Slowest high-speed rate: 120 over 240 fps keeps twice the exposure
+        // time, so the image stays brighter indoors.
+        val range = ranges.filter { it.upper >= MIN_HIGH_SPEED_FPS }.minByOrNull { it.upper }
+            ?: ranges.maxByOrNull { it.upper } ?: run {
             logger.i(TAG, "High-speed video at $quality has no frame rate range")
             return null
         }
@@ -231,5 +235,6 @@ class VideoRecordingManager @Inject constructor(
     companion object {
         private const val TAG = "VideoRecordingManager"
         private const val FINALIZE_TIMEOUT_MS = 5_000L
+        private const val MIN_HIGH_SPEED_FPS = 120
     }
 }

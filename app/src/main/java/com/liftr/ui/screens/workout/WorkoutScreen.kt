@@ -63,6 +63,7 @@ import com.liftr.ui.components.TempoInputWidget
 import com.liftr.ui.components.TempoProgressBar
 import com.liftr.ui.theme.Spacing
 import com.liftr.ui.theme.VbtStopAlert
+import com.liftr.util.Constants
 import com.liftr.util.Constants.TAG_WORKOUT
 import com.liftr.util.getRotationDegrees
 import com.liftr.util.findActivity
@@ -213,7 +214,7 @@ fun WorkoutScreen(
                     repCounterEnabled = uiState.repCounterEnabled,
                     isVideoRecording = uiState.isVideoRecording,
                     videoRecordingManager = cameraViewModel.videoRecordingManager,
-                    preferHighSpeed = uiState.selectedExercise.isFastMovement(),
+                    preferHighSpeed = Constants.HIGH_SPEED_RECORDING && uiState.selectedExercise.isFastMovement(),
                     // Jumps must be filmed side-on. With no live pose stream
                     // (high-speed recording), check snapshots of the preview.
                     previewPoseSampler = cameraViewModel.previewPoseSampler,
