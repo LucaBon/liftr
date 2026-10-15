@@ -1320,6 +1320,9 @@ class WorkoutViewModel @Inject constructor(
             return
         }
 
+        // Set before the recording flags drop, so paused analyses never see
+        // a gap between "recording" and "writing the file".
+        recordingFinalizing.value = true
         _uiState.update {
             it.copy(
                 isRecording = false,
@@ -1331,7 +1334,6 @@ class WorkoutViewModel @Inject constructor(
             )
         }
 
-        recordingFinalizing.value = true
         viewModelScope.launch {
             val videoFile = try {
                 videoRecordingManager.stopRecording()
