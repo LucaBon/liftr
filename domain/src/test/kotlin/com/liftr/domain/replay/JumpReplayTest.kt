@@ -22,7 +22,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
-/** Replays poses exported from a recording through [JumpStrategy]; runs only with REPLAY_POSES=<file>; writes <file>.log, every frame with REPLAY_VERBOSE=1. */
+/** Replays poses exported from a recording through [JumpStrategy]; runs only with REPLAY_POSES=<file> (exercise from REPLAY_EXERCISE, default VERTICAL_JUMP); writes <file>.log, every frame with REPLAY_VERBOSE=1. */
 class JumpReplayTest {
     @Test
     fun replay() {
@@ -36,7 +36,7 @@ class JumpReplayTest {
             override fun w(tag: String, message: String) = println("W $message")
             override fun e(tag: String, message: String, throwable: Throwable?) = println("E $message")
         }
-        val strategy = JumpStrategy(ExerciseType.VERTICAL_JUMP, logger)
+        val strategy = JumpStrategy(ExerciseType.valueOf(System.getenv("REPLAY_EXERCISE") ?: "VERTICAL_JUMP"), logger)
         val calibration = CalibrationData(1000f, 1.90f, 0.45f)
         var state = ExercisePhaseState.initial()
         val window = JumpPathWindow()

@@ -128,6 +128,7 @@ data class LoadVelocityProfile(
             ExerciseType.SNATCH -> 0.30f
             ExerciseType.VERTICAL_JUMP -> 0.30f
             ExerciseType.LOADED_JUMP -> 0.30f
+            ExerciseType.APPROACH_JUMP -> 0.30f
         }
     }
 }

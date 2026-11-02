@@ -121,7 +121,8 @@ object ExerciseModule {
             cleanStrategy = cleanStrategy,
             snatchStrategy = snatchStrategy,
             verticalJumpStrategy = JumpStrategy(ExerciseType.VERTICAL_JUMP, logger),
-            loadedJumpStrategy = JumpStrategy(ExerciseType.LOADED_JUMP, logger)
+            loadedJumpStrategy = JumpStrategy(ExerciseType.LOADED_JUMP, logger),
+            approachJumpStrategy = JumpStrategy(ExerciseType.APPROACH_JUMP, logger)
         )
     }
 }

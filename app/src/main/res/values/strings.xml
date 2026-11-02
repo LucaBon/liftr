@@ -113,6 +113,7 @@
     <string name="exercise_snatch">Snatch</string>
     <string name="exercise_vertical_jump">Vertical Jump</string>
     <string name="exercise_loaded_jump">Loaded Jump</string>
+    <string name="exercise_approach_jump">Approach Jump</string>
 
     <!-- Jumps -->
     <string name="jump_height_cm">%1$.0f cm</string>
@@ -433,6 +434,7 @@
     <string name="jump_velocity_height">Jump (takeoff speed)</string>
     <string name="jump_takeoff_velocity">Takeoff speed</string>
     <string name="jump_side_view_hint">Film jumps from the side: stand side-on to the camera, whole body in frame.</string>
+    <string name="jump_approach_side_view_hint">Film from the side, camera perpendicular to the run. Frame the last two steps, the jump and the landing, with the whole body in view.</string>
     <string name="jump_front_view_warning">The camera sees you from the front. Turn side-on for accurate jump heights.</string>
     <string name="jump_filmed_from_front">Filmed from the front: heights may be off if you moved toward or away from the camera. Film jumps from the side.</string>
 </resources>

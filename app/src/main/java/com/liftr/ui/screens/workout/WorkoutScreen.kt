@@ -423,7 +423,10 @@ fun WorkoutScreen(
                             AnalysisModeHint(mode = uiState.analysisMode)
 
                             if (uiState.selectedExercise.isJumpExercise()) {
-                                CameraViewHint(frontViewDetected = uiState.cameraViewWarning)
+                                CameraViewHint(
+                                    frontViewDetected = uiState.cameraViewWarning,
+                                    approach = uiState.selectedExercise == ExerciseType.APPROACH_JUMP
+                                )
                             }
 
                             val startInteractionSource = remember { MutableInteractionSource() }
@@ -1251,6 +1254,7 @@ fun AnalysisModeHint(
 @Composable
 fun CameraViewHint(
     frontViewDetected: Boolean,
+    approach: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val (background, content) = if (frontViewDetected) {
@@ -1260,7 +1264,11 @@ fun CameraViewHint(
     }
     Text(
         text = stringResource(
-            if (frontViewDetected) R.string.jump_front_view_warning else R.string.jump_side_view_hint
+            when {
+                frontViewDetected -> R.string.jump_front_view_warning
+                approach -> R.string.jump_approach_side_view_hint
+                else -> R.string.jump_side_view_hint
+            }
         ),
         style = MaterialTheme.typography.bodySmall,
         fontWeight = if (frontViewDetected) FontWeight.SemiBold else FontWeight.Normal,

@@ -808,8 +808,10 @@ class WorkoutViewModel @Inject constructor(
                 )
                 currentRepBarPathPoints.clear()
                 currentRepBarPathPoints.addAll(window.points)
-                currentJumpExcursion = window.excursion
-                window.excursion?.let {
+                // The dip from standing means nothing after a run-up.
+                val excursion = window.excursion.takeUnless { _uiState.value.selectedExercise == ExerciseType.APPROACH_JUMP }
+                currentJumpExcursion = excursion
+                excursion?.let {
                     logger.i(TAG, "Jump: dip %.1f cm, peak %.1f cm above standing".format(it.countermovementCm, it.peakRiseCm))
                     logger.i(TAG, "Jump fit check: ${it.fitCheck?.describe() ?: "n/a"}")
                 }
@@ -967,7 +969,7 @@ class WorkoutViewModel @Inject constructor(
                 val right = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
                 averageXY(left, right) ?: return null
             }
-            ExerciseType.VERTICAL_JUMP ->
+            ExerciseType.VERTICAL_JUMP, ExerciseType.APPROACH_JUMP ->
                 CenterOfMassCalculator.centerOfMass(poseResult) ?: return null
             ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
                 poseResult,
@@ -1804,7 +1806,7 @@ class WorkoutViewModel @Inject constructor(
             ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> 180
             ExerciseType.BENCH_PRESS -> 120
             ExerciseType.DEADLIFT -> 180
-            ExerciseType.VERTICAL_JUMP, ExerciseType.LOADED_JUMP -> 60
+            ExerciseType.VERTICAL_JUMP, ExerciseType.LOADED_JUMP, ExerciseType.APPROACH_JUMP -> 60
             else -> 90
         }
     }

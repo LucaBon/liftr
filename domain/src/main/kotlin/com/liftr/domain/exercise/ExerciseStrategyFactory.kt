@@ -27,11 +27,13 @@ class ExerciseStrategyFactory(
     private val cleanStrategy: CleanStrategy,
     private val snatchStrategy: SnatchStrategy,
     private val verticalJumpStrategy: JumpStrategy,
-    private val loadedJumpStrategy: JumpStrategy
+    private val loadedJumpStrategy: JumpStrategy,
+    private val approachJumpStrategy: JumpStrategy
 ) {
     init {
         require(verticalJumpStrategy.exerciseType == ExerciseType.VERTICAL_JUMP)
         require(loadedJumpStrategy.exerciseType == ExerciseType.LOADED_JUMP)
+        require(approachJumpStrategy.exerciseType == ExerciseType.APPROACH_JUMP)
     }
 
     /**
@@ -50,6 +52,7 @@ class ExerciseStrategyFactory(
             ExerciseType.SNATCH -> snatchStrategy
             ExerciseType.VERTICAL_JUMP -> verticalJumpStrategy
             ExerciseType.LOADED_JUMP -> loadedJumpStrategy
+            ExerciseType.APPROACH_JUMP -> approachJumpStrategy
             // No else: a new ExerciseType must get a strategy to compile.
         }
     }
@@ -62,7 +65,8 @@ class ExerciseStrategyFactory(
     fun getAllStrategies(): List<ExerciseStrategy> {
         return listOf(
             backSquatStrategy, frontSquatStrategy, benchPressStrategy, deadliftStrategy,
-            cleanStrategy, snatchStrategy, verticalJumpStrategy, loadedJumpStrategy
+            cleanStrategy, snatchStrategy, verticalJumpStrategy, loadedJumpStrategy,
+            approachJumpStrategy
         )
     }
 

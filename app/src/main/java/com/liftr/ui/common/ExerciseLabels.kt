@@ -19,6 +19,7 @@ val ExerciseType.labelRes: Int
         ExerciseType.SNATCH -> R.string.exercise_snatch
         ExerciseType.VERTICAL_JUMP -> R.string.exercise_vertical_jump
         ExerciseType.LOADED_JUMP -> R.string.exercise_loaded_jump
+        ExerciseType.APPROACH_JUMP -> R.string.exercise_approach_jump
     }
 
 @Composable

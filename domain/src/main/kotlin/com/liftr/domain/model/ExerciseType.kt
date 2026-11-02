@@ -8,9 +8,10 @@ enum class ExerciseType {
     CLEAN,
     SNATCH,
     VERTICAL_JUMP,
-    LOADED_JUMP;
+    LOADED_JUMP,
+    APPROACH_JUMP;
 
-    fun isJumpExercise(): Boolean = this == VERTICAL_JUMP || this == LOADED_JUMP
+    fun isJumpExercise(): Boolean = this == VERTICAL_JUMP || this == LOADED_JUMP || this == APPROACH_JUMP
 
     /**
      * Exercises timed from very fast movement (jump flight, the pull of a
@@ -19,7 +20,7 @@ enum class ExerciseType {
     fun isFastMovement(): Boolean = isJumpExercise() || this == CLEAN || this == SNATCH
 
     /** False for bodyweight exercises, which are performed without a weight. */
-    fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP
+    fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP && this != APPROACH_JUMP
 
     fun getDisplayName(): String = when (this) {
         FRONT_SQUAT -> "Front Squat"
@@ -30,5 +31,6 @@ enum class ExerciseType {
         SNATCH -> "Snatch"
         VERTICAL_JUMP -> "Vertical Jump"
         LOADED_JUMP -> "Loaded Jump"
+        APPROACH_JUMP -> "Approach Jump"
     }
 }

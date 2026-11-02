@@ -448,6 +448,162 @@ class JumpStrategyTest {
         assertEquals(0, run.reps)
     }
 
+    private val approachStrategy = JumpStrategy(ExerciseType.APPROACH_JUMP, mockk<Logger>(relaxed = true))
+
+    private fun runApproach(frames: List<PoseResult>): Run {
+        var state = ExercisePhaseState.initial()
+        val jumps = mutableListOf<JumpData>()
+        for (frame in frames) {
+            val result = approachStrategy.detectPhase(frame, calibration, state)
+            state = result.newState
+            if (result.repCompleted) jumps += result.jump!!
+        }
+        return Run(jumps.size, jumps, emptySet())
+    }
+
+    /**
+     * A run-up seen side-on, flown in the air only: [strides] bounds of 0.18 s, each landing on a 0.2 s
+     * stance, a last stance, a jump of [flightS], landing and standing. The athlete moves along the image
+     * only in the air (3 m/s), toes stay put while planted. Image artifacts:
+     * - [slope]: the floor rises this much per meter run (camera roll, a run off parallel);
+     * - [shrink]: the body is this much smaller at the end of the run than at the start;
+     * - [drift]: the floor creeps up the image at this many m/s;
+     * - [landingShift]: the floor is this many meters higher on landing;
+     * - [farToeUp]: the right toe is this many meters higher, being deeper in the scene;
+     * - [oneFoot]: the right foot is driven up by 0.3 m during the last 0.25 s before the jump;
+     * - [swapped]: time ranges (ms from the start) in which left and right landmarks are labeled the other way.
+     */
+    private fun approachFrames(
+        flightS: Float,
+        strides: Int = 3,
+        slope: Float = 0f,
+        shrink: Float = 0f,
+        drift: Float = 0.03f,
+        landingShift: Float = 0f,
+        farToeUp: Float = 0f,
+        oneFoot: Boolean = false,
+        swapped: List<LongRange> = emptyList()
+    ): List<PoseResult> {
+        val strideS = 0.18f
+        val stanceS = 0.2f
+        val runSpeed = 3f
+        // Flights as (start, duration, takeoff speed) in seconds.
+        val flights = mutableListOf<Triple<Float, Float, Float>>()
+        var clock = stanceS
+        repeat(strides) {
+            flights += Triple(clock, strideS, g * strideS / 2f)
+            clock += strideS + stanceS
+        }
+        val jumpStart = clock
+        flights += Triple(jumpStart, flightS, g * flightS / 2f)
+        val endS = jumpStart + flightS + 0.5f
+        val airTotal = flights.sumOf { it.second.toDouble() }.toFloat()
+        val aspect = 1080f / 1920f
+        val footBase = basePose.landmarks[PoseResult.LEFT_FOOT_INDEX].y
+
+        val frames = mutableListOf<PoseResult>()
+        var tMs = 0L
+        while (tMs / 1000f < endS) {
+            val t = tMs / 1000f
+            var rise = 0f
+            var aloft = 0f
+            for ((start, duration, v0) in flights) {
+                val f = (t - start).coerceIn(0f, duration)
+                aloft += f
+                if (t > start && t < start + duration) rise = v0 * f - g * f * f / 2f
+            }
+            val run = runSpeed * aloft * normPerMeter                    // distance run, height units
+            val progress = aloft / airTotal
+            val scale = 1f - shrink * progress
+            val floor = slope * run +
+                drift * minOf(t, jumpStart) * normPerMeter +
+                landingShift * normPerMeter * ((t - jumpStart) / flightS).coerceIn(0f, 1f)
+            val driveUp = if (oneFoot) 0.3f * ((t - (jumpStart - 0.25f)) / 0.25f).coerceIn(0f, 1f) else 0f
+            var landmarks = basePose.landmarks.mapIndexed { i, lm ->
+                val extra = when (i) {
+                    PoseResult.RIGHT_FOOT_INDEX, PoseResult.RIGHT_ANKLE -> driveUp + farToeUp
+                    else -> 0f
+                }
+                lm.copy(
+                    x = lm.x + run / aspect,
+                    y = footBase - floor - scale * ((footBase - lm.y) + (rise + extra) * normPerMeter)
+                )
+            }
+            if (swapped.any { tMs in it }) {
+                landmarks = landmarks.toMutableList().also {
+                    for ((l, r) in listOf(
+                        PoseResult.LEFT_FOOT_INDEX to PoseResult.RIGHT_FOOT_INDEX,
+                        PoseResult.LEFT_ANKLE to PoseResult.RIGHT_ANKLE
+                    )) { val tmp = it[l]; it[l] = it[r]; it[r] = tmp }
+                }
+            }
+            frames += basePose.copy(landmarks = landmarks, timestamp = 1000 + tMs)
+            tMs += frameMs
+        }
+        return frames
+    }
+
+    private fun assertOneJump(frames: List<PoseResult>, flightS: Float) {
+        val run = runApproach(frames)
+        assertEquals(1, run.reps)
+        assertEquals(expectedHeight(flightS), run.jumps.single().height.value, 0.02f)
+    }
+
+    @Test
+    fun `approach jump after running strides counts one rep with accurate height`() {
+        assertOneJump(approachFrames(flightS = 0.6f), 0.6f)
+    }
+
+    @Test
+    fun `approach jump from one foot counts one rep with accurate height`() {
+        assertOneJump(approachFrames(flightS = 0.6f, oneFoot = true), 0.6f)
+    }
+
+    @Test
+    fun `approach jump landing at another floor level is measured the same`() {
+        assertOneJump(approachFrames(flightS = 0.6f, landingShift = 0.12f), 0.6f)
+    }
+
+    @Test
+    fun `approach jump up a slanted floor counts one rep with accurate height`() {
+        // 3 degrees of camera roll, running up the slope: the floor creeps up about 0.16 m/s.
+        assertOneJump(approachFrames(flightS = 0.6f, slope = 0.052f), 0.6f)
+        assertOneJump(approachFrames(flightS = 0.6f, slope = 0.052f, oneFoot = true), 0.6f)
+    }
+
+    @Test
+    fun `approach jump run off parallel with the body shrinking counts one rep`() {
+        assertOneJump(approachFrames(flightS = 0.6f, slope = 0.035f, shrink = 0.1f), 0.6f)
+    }
+
+    @Test
+    fun `approach jump with the far toe higher in the image counts one rep`() {
+        assertOneJump(approachFrames(flightS = 0.6f, farToeUp = 0.03f), 0.6f)
+        assertOneJump(approachFrames(flightS = 0.6f, farToeUp = 0.03f, oneFoot = true), 0.6f)
+    }
+
+    @Test
+    fun `approach jump with left and right labels swapping counts one rep`() {
+        // Swapped over the second stance and, once, mid-flight (the jump starts at 1.3 s).
+        val swapped = listOf(500L..900L, 1500L..1700L)
+        assertOneJump(approachFrames(flightS = 0.6f, farToeUp = 0.03f, swapped = swapped), 0.6f)
+        assertOneJump(approachFrames(flightS = 0.6f, farToeUp = 0.03f, oneFoot = true, swapped = swapped), 0.6f)
+    }
+
+    @Test
+    fun `running strides alone are not approach jumps`() {
+        assertEquals(0, runApproach(approachFrames(flightS = 0.18f)).reps)
+        assertEquals(0, runApproach(approachFrames(flightS = 0.18f, slope = 0.052f)).reps)
+        assertEquals(0, runApproach(approachFrames(flightS = 0.18f, slope = 0.052f, strides = 6)).reps)
+    }
+
+    @Test
+    fun `vertical jump strategy still counts a short hop`() {
+        // 0.3 s is below the approach minimum but a valid vertical jump.
+        assertEquals(1, run(jumpFrames(1000, flightS = 0.3f)).reps)
+        assertEquals(0, runApproach(jumpFrames(1000, flightS = 0.3f)).reps)
+    }
+
     @Test
     fun `fromFlightTime matches projectile motion`() {
         val jump = JumpData.fromFlightTime(500f)

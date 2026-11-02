@@ -53,10 +53,10 @@ fun OrientationMode.isLandscape(): Boolean = this == OrientationMode.LANDSCAPE
 /**
  * Screen orientation to record an exercise in. Standing lifts and jumps are
  * tall, so portrait fills the frame and gives the vertical axis more pixels;
- * a bench press lifter lies horizontally and only fits well in landscape.
+ * a bench press lifter lies horizontally and a run-up is wide, so both fit best in landscape.
  */
 fun ExerciseType.preferredScreenOrientation(): Int =
-    if (this == ExerciseType.BENCH_PRESS) {
+    if (this == ExerciseType.BENCH_PRESS || this == ExerciseType.APPROACH_JUMP) {
         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     } else {
         ActivityInfo.SCREEN_ORIENTATION_PORTRAIT

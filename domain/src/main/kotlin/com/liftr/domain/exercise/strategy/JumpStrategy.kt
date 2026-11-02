@@ -8,6 +8,8 @@ import com.liftr.domain.exercise.ExerciseThresholds.Jump
 import com.liftr.domain.exercise.FormValidationResult
 import com.liftr.domain.exercise.JumpTrackingState
 import com.liftr.domain.exercise.PhaseTransitionResult
+import com.liftr.domain.exercise.ToePoint
+import com.liftr.domain.exercise.ToeTrack
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
@@ -23,7 +25,7 @@ import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Watts
 
 /**
- * Strategy for vertical jumps (bodyweight or loaded).
+ * Strategy for vertical jumps (bodyweight or loaded) and approach jumps.
  *
  * Jump height comes from flight time (see [JumpData]), timed on the toes: they
  * are the last point to leave the ground and the first to touch it, whereas the
@@ -41,6 +43,20 @@ import com.liftr.domain.value.Watts
  * CONCENTRIC (push-off) -> TOP (airborne) -> landing counts the rep -> IDLE.
  * A jump without a visible dip goes straight from IDLE to TOP.
  *
+ * Approach jumps (run-up, then a one- or two-foot takeoff) have no standing
+ * position to measure the ground and body size from, and the floor's height
+ * in the image changes along the run (camera roll, a run not quite parallel
+ * to the image) and between the feet (different depth). So the floor is the
+ * height of the toe that takes off, measured while it is planted
+ * ([followToes]): a toe barely moving for [Jump.APPROACH_STANCE_MS] is in
+ * stance, and with two the lower one counts. That toe is then followed, matched
+ * by position between frames, through takeoff and flight; its height over its
+ * stance height is the rise everything else works on. Strides and bounds are
+ * kept out by a longer minimum flight ([Jump.APPROACH_MIN_FLIGHT_MS]), and since
+ * there is no dip to wait for, a takeoff needs no toe planted and the hips rising.
+ * The ground is measured anew from wherever the athlete lands. This needs the
+ * foot to stay planted for about 80 ms before takeoff (a gather step does).
+ *
  * Detection works on normalized landmark coordinates with thresholds expressed
  * as fractions of the standing body span, so it needs no metric calibration.
  */
@@ -52,6 +68,9 @@ class JumpStrategy(
     init {
         require(exerciseType.isJumpExercise()) { "$exerciseType is not a jump" }
     }
+
+    private val approach = exerciseType == ExerciseType.APPROACH_JUMP
+    private val minFlightMs = if (approach) Jump.APPROACH_MIN_FLIGHT_MS else Jump.MIN_FLIGHT_MS
 
     private val criteria = ExerciseCriteria(
         minDescentDepth = Meters(0f),
@@ -77,10 +96,18 @@ class JumpStrategy(
         private const val GROUND_WINDOW_MS = 300L
         /** The toes start to peel off this long before they cross the timing level. */
         private const val TOE_OFF_LEAD_MS = 60L
+        /** Stance heights kept per toe to find the floor. */
+        private const val STANCE_SAMPLES = 15
     }
 
     /** Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet. */
-    private data class Frame(val headY: Float, val hipsY: Float, val footY: Float, val upsideDown: Boolean = false)
+    private data class Frame(
+        val headY: Float,
+        val hipsY: Float,
+        val footY: Float,
+        val upsideDown: Boolean = false,
+        val toes: List<ToePoint> = emptyList()
+    )
 
     override fun detectPhase(
         poseResult: PoseResult,
@@ -93,7 +120,9 @@ class JumpStrategy(
                 // gap, and end any run of upside-down frames: a turned camera
                 // shows them back to back.
                 newState = currentState.copy(
-                    jump = currentState.jump?.copy(previousFootY = null, previousTimestamp = null, flippedSinceMs = null)
+                    jump = currentState.jump?.copy(
+                        previousFootY = null, previousHipsY = null, previousTimestamp = null, flippedSinceMs = null
+                    )
                 ),
                 repCompleted = false,
                 debugInfo = "Feet, hips or head not visible"
@@ -135,10 +164,12 @@ class JumpStrategy(
         }
         val tracking = if (stored.flippedSinceMs != null) stored.copy(flippedSinceMs = null) else stored
 
-        return if (tracking.isAirborne) {
-            detectLanding(currentState, tracking, frame, poseResult.timestamp, calibrationData)
+        val (followed, measured) =
+            if (approach) followToes(tracking, frame, poseResult.timestamp) else tracking to frame
+        return if (followed.isAirborne) {
+            detectLanding(currentState, followed, measured, poseResult.timestamp, calibrationData)
         } else {
-            detectGroundPhase(currentState, tracking, frame, poseResult.timestamp)
+            detectGroundPhase(currentState, followed, measured, poseResult.timestamp)
         }
     }
 
@@ -198,10 +229,12 @@ class JumpStrategy(
         val landingMs = landingCrossingMs(points, landingLevel) ?: timestamp.toDouble()
         val crossingFlightMs = (landingMs - takeoffMs).toFloat()
         // Landing elsewhere moves the ground: stand from there. Otherwise keep
-        // the standing baseline, which the landing crouch would distort.
+        // the standing baseline, which the landing crouch would distort. After
+        // a run-up the athlete rarely lands where they took off, nor was there
+        // a standing baseline to keep.
         val grounded = state.copy(
             currentPhase = MovementPhase.IDLE,
-            jump = if (landingRise != 0f) {
+            jump = if (landingRise != 0f || approach) {
                 baselineFrom(frame, timestamp)
             } else {
                 tracking.copy(
@@ -211,7 +244,7 @@ class JumpStrategy(
             }
         )
 
-        if (crossingFlightMs < Jump.MIN_FLIGHT_MS) {
+        if (crossingFlightMs < minFlightMs) {
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
         }
 
@@ -222,10 +255,11 @@ class JumpStrategy(
         // baseline only follows the feet while they stay within it); a root at
         // the baseline instead would cut or stretch the flight. The feet may
         // come down elsewhere: compare the landing with the takeoff floor.
-        val takeoffGround = restingToeRise(tracking.groundSamples, takeoffMs)
+        // Approach: the baseline is the takeoff toe's own stance height.
+        val takeoffGround = if (approach) 0f else restingToeRise(tracking.groundSamples, takeoffMs)
         val landingGround = if (kotlin.math.abs(rise - takeoffGround) > timingLevel) rise else takeoffGround
         val fittedFlightMs = fitFlightMs(airborneSamples(tracking.flightSamples, landingLevel), takeoffGround, landingGround)
-        val fromFlight = if (fittedFlightMs != null && fittedFlightMs in Jump.MIN_FLIGHT_MS..Jump.MAX_FLIGHT_MS) {
+        val fromFlight = if (fittedFlightMs != null && fittedFlightMs in minFlightMs..Jump.MAX_FLIGHT_MS) {
             JumpData.fromFlightTime(fittedFlightMs)
         } else {
             JumpData.fromFlightTime(crossingFlightMs, timingLevelMeters)
@@ -246,7 +280,7 @@ class JumpStrategy(
             }
         val jump = fromFlight.copy(apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs)
         val flightMs = jump.flightTimeMs
-        if (flightMs < Jump.MIN_FLIGHT_MS) {
+        if (flightMs < minFlightMs) {
             logger.d(TAG, "Flight of %.0f ms is too short for a jump".format(flightMs))
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
         }
@@ -313,14 +347,21 @@ class JumpStrategy(
         var next = tracking.copy(
             takeoffCandidateMs = takeoffCandidate,
             previousFootY = frame.footY,
+            previousHipsY = frame.hipsY,
             previousTimestamp = timestamp,
             groundSamples = (tracking.groundSamples + (timestamp to rise))
                 .filter { timestamp - it.first <= GROUND_WINDOW_MS }
         )
 
         // A takeoff needs the hips driving up: feet "rising" while the hips are
-        // still sinking into the dip is a landmark glitch, not a flight.
-        val dipping = state.currentPhase == MovementPhase.ECCENTRIC
+        // still sinking into the dip is a landmark glitch, not a flight. A run-up
+        // has no dip and no standing hip height: a foot still planted, or hips not
+        // higher than a frame ago, is no takeoff.
+        val dipping = if (approach) {
+            tracking.planted || (tracking.previousHipsY?.let { frame.hipsY >= it } ?: true)
+        } else {
+            state.currentPhase == MovementPhase.ECCENTRIC
+        }
         if (takeoffCandidate != null && rise > Jump.AIRBORNE_LEVEL * span && !dipping) {
             return PhaseTransitionResult(
                 newState = state.copy(
@@ -357,7 +398,7 @@ class JumpStrategy(
                     next = next.copy(lowestHipsY = frame.hipsY)
                     MovementPhase.ECCENTRIC
                 } else {
-                    next = reanchor(next, frame)
+                    if (!approach) next = reanchor(next, frame)
                     MovementPhase.IDLE
                 }
             }
@@ -419,11 +460,97 @@ class JumpStrategy(
         )
     }
 
+    /**
+     * Approach jumps: finds the toes in stance and returns the state and a
+     * frame whose [Frame.footY] is the followed toe's height.
+     *
+     * Toes are matched to last frame's by position; one slower than
+     * [Jump.APPROACH_STANCE_SPEED] in x and y for [Jump.APPROACH_STANCE_MS] is
+     * in stance. On the ground the lower toe in stance (nearer the camera)
+     * becomes the followed one and its median stance height the baseline, with
+     * the recent ground samples shifted along. Otherwise (flight, swing) the
+     * toe nearest to where the followed one should be is followed; the baseline
+     * stays, in flight it is the takeoff floor.
+     */
+    private fun followToes(tracking: JumpTrackingState, frame: Frame, timestamp: Long): Pair<JumpTrackingState, Frame> {
+        if (frame.toes.isEmpty()) return tracking to frame
+        val span = tracking.bodySpan
+        val dt = tracking.previousTimestamp?.let { (timestamp - it) / 1000f }?.takeIf { it > 0f }
+        val maxSpeed = Jump.APPROACH_STANCE_SPEED * span
+        val timingLevel = Jump.TIMING_LEVEL * span
+
+        val unmatched = tracking.toeTracks.toMutableList()
+        val tracks = frame.toes.map { toe ->
+            val before = if (dt == null) null else unmatched.minByOrNull { dist(it.x, it.y, toe.x, toe.y) }
+            before?.let { unmatched.remove(it) }
+            val slow = before != null &&
+                kotlin.math.abs(toe.x - before.x) / dt!! < maxSpeed &&
+                kotlin.math.abs(toe.y - before.y) / dt < maxSpeed
+            if (before == null || !slow) {
+                ToeTrack(toe.x, toe.y)
+            } else {
+                // A heel rolling off the floor must not pull the floor with it.
+                val ys = if (before.stanceYs.size < 2 || kotlin.math.abs(toe.y - median(before.stanceYs)) <= timingLevel) {
+                    (before.stanceYs + toe.y).takeLast(STANCE_SAMPLES)
+                } else {
+                    before.stanceYs
+                }
+                ToeTrack(toe.x, toe.y, before.slowSinceMs ?: tracking.previousTimestamp, ys)
+            }
+        }
+        val stance = tracks.filter {
+            it.slowSinceMs != null && it.stanceYs.isNotEmpty() && timestamp - it.slowSinceMs >= Jump.APPROACH_STANCE_MS
+        }
+        val planted = stance.maxByOrNull { it.y }
+
+        val previous = tracking.followedToe
+        val followed = when {
+            planted != null -> ToePoint(planted.x, planted.y)
+            previous == null -> frame.toes.maxBy { it.y }
+            else -> {
+                val v = tracking.followedVelocity
+                val expectedX = previous.x + if (dt != null && v != null) v.x * dt else 0f
+                val expectedY = previous.y + if (dt != null && v != null) v.y * dt else 0f
+                frame.toes.minBy { dist(it.x, it.y, expectedX, expectedY) }
+            }
+        }
+        var next = tracking.copy(
+            toeTracks = tracks,
+            followedToe = followed,
+            followedVelocity = if (dt != null && previous != null) {
+                ToePoint((followed.x - previous.x) / dt, (followed.y - previous.y) / dt)
+            } else {
+                null
+            },
+            planted = stance.isNotEmpty()
+        )
+        if (!tracking.isAirborne) {
+            next = next.copy(
+                baselineHipsY = tracking.baselineHipsY + Jump.BASELINE_SMOOTHING * (frame.hipsY - tracking.baselineHipsY)
+            )
+            if (planted != null) {
+                val floor = median(planted.stanceYs)
+                val shift = floor - tracking.baselineFootY
+                next = next.copy(
+                    baselineFootY = floor,
+                    groundSamples = tracking.groundSamples.map { it.first to it.second + shift },
+                    bodySpan = span + Jump.APPROACH_SPAN_SMOOTHING * ((planted.y - frame.headY) - span)
+                )
+            }
+        }
+        return next to frame.copy(footY = followed.y)
+    }
+
+    private fun median(values: List<Float>) = values.sorted()[values.size / 2]
+
+    private fun dist(x0: Float, y0: Float, x1: Float, y1: Float) = kotlin.math.hypot(x1 - x0, y1 - y0)
+
     private fun baselineFrom(frame: Frame, timestamp: Long) = JumpTrackingState(
         baselineFootY = frame.footY,
         baselineHipsY = frame.hipsY,
         bodySpan = frame.footY - frame.headY,
         previousFootY = frame.footY,
+        previousHipsY = frame.hipsY,
         previousTimestamp = timestamp,
         upsideDown = frame.upsideDown
     )
@@ -593,7 +720,9 @@ class JumpStrategy(
             if (upsideDown) 1f - points.minOf { it.y } else points.maxOf { it.y }
         val feet = lowest(feetPoints)
         val hips = lowest(hipPoints)
-        return Frame(if (upsideDown) 1f - head else head, hips, feet, upsideDown)
+        val aspect = if (poseResult.imageHeight > 0) poseResult.imageWidth.toFloat() / poseResult.imageHeight else 1f
+        val toes = feetPoints.map { ToePoint(it.x * aspect, if (upsideDown) 1f - it.y else it.y) }
+        return Frame(if (upsideDown) 1f - head else head, hips, feet, upsideDown, toes)
     }
 
     override fun calculateMetrics(

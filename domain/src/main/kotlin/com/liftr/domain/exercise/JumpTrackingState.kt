@@ -20,6 +20,13 @@ package com.liftr.domain.exercise
  *   for finding the top of the flight
  * @property peakHeadRise Highest head rise above standing during the flight
  * @property previousFootY Toe height on the previous frame, for interpolation
+ * @property toeTracks Approach jumps: each visible toe with its position, since
+ *   when it has been planted and its heights while planted; matched from frame
+ *   to frame by position, as left and right labels swap when filmed side-on
+ * @property followedToe Approach jumps: the toe whose height is measured, the
+ *   one last planted (with [followedVelocity] in units per second to predict it in flight)
+ * @property planted Approach jumps: whether any toe is in stance on this frame
+ * @property previousHipsY Hip height on the previous frame, to tell hips driving up
  * @property previousTimestamp Timestamp of the previous frame (ms)
  * @property stillFootY Toe height the feet have been resting at
  * @property stillHipsY Hip height the hips have been resting at
@@ -41,6 +48,11 @@ data class JumpTrackingState(
     val flightHipSamples: List<Pair<Long, Float>> = emptyList(),
     val peakHeadRise: Float = 0f,
     val previousFootY: Float? = null,
+    val toeTracks: List<ToeTrack> = emptyList(),
+    val followedToe: ToePoint? = null,
+    val followedVelocity: ToePoint? = null,
+    val planted: Boolean = false,
+    val previousHipsY: Float? = null,
     val previousTimestamp: Long? = null,
     val stillFootY: Float? = null,
     val stillHipsY: Float? = null,
@@ -50,3 +62,14 @@ data class JumpTrackingState(
 ) {
     val isAirborne: Boolean get() = takeoffMs != null
 }
+
+/** A toe in the image: x in units of the image height, y with larger = lower. */
+data class ToePoint(val x: Float, val y: Float)
+
+/** A toe followed across frames; [slowSinceMs] is null while it moves, [stanceYs] its recent heights while planted. */
+data class ToeTrack(
+    val x: Float,
+    val y: Float,
+    val slowSinceMs: Long? = null,
+    val stanceYs: List<Float> = emptyList()
+)

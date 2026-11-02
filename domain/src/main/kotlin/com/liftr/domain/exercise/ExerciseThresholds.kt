@@ -341,6 +341,22 @@ object ExerciseThresholds {
 
         /** Smoothing factor for re-anchoring the standing baseline */
         const val BASELINE_SMOOTHING = 0.2f
+
+        /** Approach jumps: strides and bounds stay below this flight (~15 cm); a jump goes above */
+        const val APPROACH_MIN_FLIGHT_MS = 350f
+
+        /** Approach jumps: smoothing for following the body size while running, as it changes with depth */
+        const val APPROACH_SPAN_SMOOTHING = 0.3f
+
+        /**
+         * Approach jumps: a toe slower than this in both x and y, in body spans per second, is
+         * planted. The swing foot moves about twice as fast as the body, which runs at 2-4 spans
+         * per second; landmark jitter stays under 0.2.
+         */
+        const val APPROACH_STANCE_SPEED = 0.5f
+
+        /** Approach jumps: a toe planted this long is in stance, and its height is the floor (3 frames at 40 fps, 4 at 30) */
+        const val APPROACH_STANCE_MS = 80L
     }
 
     /**

@@ -390,7 +390,8 @@ class AnalyzeVideoUseCase @Inject constructor(
                     BarPathAnalyzer.analyze(
                         repNumber = repScores.size,
                         points = currentRepBarPoints.toList(),
-                        excursion = jumpWindow?.excursion
+                        // The dip from standing means nothing after a run-up.
+                        excursion = jumpWindow?.excursion.takeUnless { params.exerciseType == ExerciseType.APPROACH_JUMP }
                     )
                 )
 
@@ -533,7 +534,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         return when (params.exerciseType) {
             // No bar to follow: track the whole body's center of mass, plus
             // the bar on the shoulders for a loaded jump.
-            ExerciseType.VERTICAL_JUMP -> CenterOfMassCalculator.centerOfMass(pose)
+            ExerciseType.VERTICAL_JUMP, ExerciseType.APPROACH_JUMP -> CenterOfMassCalculator.centerOfMass(pose)
             ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
                 pose,
                 CenterOfMassCalculator.loadFraction(
