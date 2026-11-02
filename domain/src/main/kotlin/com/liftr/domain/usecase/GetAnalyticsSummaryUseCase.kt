@@ -34,6 +34,11 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             analyticsRepository.getQualityScoreTrend(params.exerciseType, params.timeRange)
         } else emptyList()
 
+        // Quality scores, and so their components, don't apply to jumps.
+        val scoreBreakdown = if (params.exerciseType != null && !params.exerciseType.isJumpExercise()) {
+            analyticsRepository.getScoreBreakdown(params.exerciseType, params.timeRange)
+        } else null
+
         val jumpReps = if (params.exerciseType?.isJumpExercise() == true) {
             analyticsRepository.getJumpReps(params.exerciseType, params.timeRange)
         } else emptyList()
@@ -50,7 +55,8 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             totalWorkouts = recentWorkouts.size,
             totalSets = recentWorkouts.sumOf { it.sets.size },
             totalReps = recentWorkouts.sumOf { it.getTotalReps() },
-            jumpReps = jumpReps
+            jumpReps = jumpReps,
+            scoreBreakdown = scoreBreakdown
         )
     }
 }

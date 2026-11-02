@@ -503,11 +503,13 @@ class BackSquatStrategy @Inject constructor(
 
         return when {
             angleFromVertical > 50f -> FormIssue(
+                kind = "torso_angle",
                 severity = Severity.CRITICAL,
                 message = "Excessive forward lean (${angleFromVertical.toInt()}° from vertical)",
                 suggestion = "Keep chest up and sit back into the squat"
             )
             angleFromVertical > 35f -> FormIssue(
+                kind = "torso_angle",
                 severity = Severity.WARNING,
                 message = "Moderate forward lean (${angleFromVertical.toInt()}° from vertical)",
                 suggestion = "Try to maintain more upright torso position"
@@ -530,6 +532,7 @@ class BackSquatStrategy @Inject constructor(
         // This is a simplified check; full implementation would track movement over time
         return if (hipKneeDifference < 0.05f) {
             FormIssue(
+                kind = "hip_hinge",
                 severity = Severity.INFO,
                 message = "Limited hip hinge pattern",
                 suggestion = "Focus on pushing hips back as you descend"
@@ -557,6 +560,7 @@ class BackSquatStrategy @Inject constructor(
 
         return if (heelVisibility < 0.3f) {
             FormIssue(
+                kind = "foot_stability",
                 severity = Severity.WARNING,
                 message = "Heels lifting off ground",
                 suggestion = "Keep weight on heels throughout the movement"

@@ -25,6 +25,11 @@ val ExerciseType.labelRes: Int
 @Composable
 fun ExerciseType.label(): String = stringResource(labelRes)
 
+/** Name of the score's depth part: a deadlift has no depth, so it scores its lockout there. */
+@get:StringRes
+val ExerciseType.depthPartLabelRes: Int
+    get() = if (this == ExerciseType.DEADLIFT) R.string.score_part_lockout else R.string.set_summary_depth_header
+
 /** The set's custom name for manual entries, otherwise the localized exercise name. */
 @Composable
 fun Set.label(): String = exerciseName ?: exerciseType.label()

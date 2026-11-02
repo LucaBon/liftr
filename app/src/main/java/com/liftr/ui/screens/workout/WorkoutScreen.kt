@@ -45,6 +45,9 @@ import com.liftr.ui.components.common.StatItem
 import com.liftr.ui.components.common.pressScale
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.model.RepQualityScore
+import com.liftr.domain.model.ScoreBreakdown
+import com.liftr.ui.components.ScoreBreakdownRow
+import com.liftr.ui.common.depthPartLabelRes
 import com.liftr.domain.model.ScoreGrade
 import com.liftr.domain.model.SetSummary
 import com.liftr.ui.components.AnalysisProgressBanner
@@ -215,11 +218,11 @@ fun WorkoutScreen(
                     isVideoRecording = uiState.isVideoRecording,
                     videoRecordingManager = cameraViewModel.videoRecordingManager,
                     preferHighSpeed = Constants.HIGH_SPEED_RECORDING && uiState.selectedExercise.isFastMovement(),
-                    // Jumps must be filmed side-on. With no live pose stream
+                    // Sets must be filmed side-on. With no live pose stream
                     // (high-speed recording), check snapshots of the preview.
                     previewPoseSampler = cameraViewModel.previewPoseSampler,
                     onPreviewPose = if (
-                        uiState.selectedExercise.isJumpExercise() && postExerciseMode &&
+                        uiState.selectedExercise.canJudgeCameraView() && postExerciseMode &&
                         !uiState.repCounterEnabled && !uiState.isVideoRecording
                     ) {
                         { pose -> viewModel.onViewSample(pose) }
@@ -422,12 +425,10 @@ fun WorkoutScreen(
                             // what happens after they hit record.
                             AnalysisModeHint(mode = uiState.analysisMode)
 
-                            if (uiState.selectedExercise.isJumpExercise()) {
-                                CameraViewHint(
-                                    frontViewDetected = uiState.cameraViewWarning,
-                                    approach = uiState.selectedExercise == ExerciseType.APPROACH_JUMP
-                                )
-                            }
+                            CameraViewHint(
+                                frontViewDetected = uiState.cameraViewWarning,
+                                exercise = uiState.selectedExercise
+                            )
 
                             val startInteractionSource = remember { MutableInteractionSource() }
                             Button(
@@ -675,9 +676,11 @@ fun SetSummarySheet(
 
             // Quality scoring rates depth, bar path and tempo, which don't
             // apply to jumps; jumps list each height instead.
-            if (isJump && summary.cameraView == CameraView.FRONT) {
+            if (summary.cameraView == CameraView.FRONT) {
                 Text(
-                    text = stringResource(R.string.jump_filmed_from_front),
+                    text = stringResource(
+                        if (isJump) R.string.jump_filmed_from_front else R.string.lift_filmed_from_front
+                    ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier
@@ -696,6 +699,8 @@ fun SetSummarySheet(
             } else {
                 // Overall score bar
                 ScoreBar(score = summary.overallScore, grade = summary.overallGrade)
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                ScoreBreakdown.of(summary.repScores.map { it.parts })?.let { ScoreBreakdownRow(it, summary.exerciseType) }
 
                 Spacer(modifier = Modifier.height(Spacing.md))
             }
@@ -704,6 +709,7 @@ fun SetSummarySheet(
             if (!isJump && summary.repScores.isNotEmpty()) {
                 RepScoreTable(
                     scores = summary.repScores,
+                    exerciseType = summary.exerciseType,
                     velocities = summary.repVelocities,
                     bestIndex = summary.bestRepIndex,
                     worstIndex = summary.worstRepIndex
@@ -864,6 +870,7 @@ fun ScoreBar(score: Int, grade: ScoreGrade) {
 @Composable
 fun RepScoreTable(
     scores: List<RepQualityScore>,
+    exerciseType: ExerciseType,
     velocities: List<com.liftr.domain.value.MetersPerSecond>,
     bestIndex: Int,
     worstIndex: Int
@@ -882,9 +889,10 @@ fun RepScoreTable(
         ) {
             TableCell(text = stringResource(R.string.set_summary_rep_header), weight = 0.8f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_vel_header), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_depth_header), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_form_header), weight = 0.8f, bold = true)
+            TableCell(text = stringResource(exerciseType.depthPartLabelRes), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_bar_path_header), weight = 1f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_tempo_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_form_header), weight = 0.8f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_score_header), weight = 1f, bold = true)
             TableCell(text = "", weight = 0.6f, bold = false) // marker column
         }
@@ -911,9 +919,10 @@ fun RepScoreTable(
             ) {
                 TableCell(text = "${index + 1}", weight = 0.8f)
                 TableCell(text = velocity?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
-                TableCell(text = if (score.depthAchieved) "\u2713" else "~", weight = 1f)
-                TableCell(text = "${score.formScore}", weight = 0.8f)
+                TableCell(text = "${score.depthScore}" + if (score.depthAchieved) " \u2713" else "", weight = 1f)
+                TableCell(text = "${score.barPathScore}", weight = 1f)
                 TableCell(text = "${score.tempoScore}", weight = 1f)
+                TableCell(text = "${score.formScore}", weight = 0.8f)
                 TableCell(
                     text = "${score.totalScore}",
                     weight = 1f,
@@ -1248,13 +1257,13 @@ fun AnalysisModeHint(
 }
 
 /**
- * Jumps are measured correctly only when filmed side-on: says so, and turns
- * into a warning while the camera sees the athlete from the front.
+ * Every exercise is measured correctly only when filmed side-on: says so, and
+ * turns into a warning while the camera sees the athlete from the front.
  */
 @Composable
 fun CameraViewHint(
     frontViewDetected: Boolean,
-    approach: Boolean = false,
+    exercise: ExerciseType,
     modifier: Modifier = Modifier
 ) {
     val (background, content) = if (frontViewDetected) {
@@ -1265,9 +1274,12 @@ fun CameraViewHint(
     Text(
         text = stringResource(
             when {
-                frontViewDetected -> R.string.jump_front_view_warning
-                approach -> R.string.jump_approach_side_view_hint
-                else -> R.string.jump_side_view_hint
+                frontViewDetected && exercise.isJumpExercise() -> R.string.jump_front_view_warning
+                frontViewDetected -> R.string.lift_front_view_warning
+                exercise == ExerciseType.APPROACH_JUMP -> R.string.jump_approach_side_view_hint
+                exercise.isJumpExercise() -> R.string.jump_side_view_hint
+                exercise == ExerciseType.BENCH_PRESS -> R.string.bench_side_view_hint
+                else -> R.string.lift_side_view_hint
             }
         ),
         style = MaterialTheme.typography.bodySmall,

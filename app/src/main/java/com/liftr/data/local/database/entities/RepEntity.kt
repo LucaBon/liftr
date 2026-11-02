@@ -37,5 +37,10 @@ data class RepEntity(
     val positionProfile: List<PositionProfile>, // Full position tracking
     val timestamp: Long,
     val qualityScore: Int = 0, // Rep quality score (0-100), 0 = not scored
-    val jumpData: RepJumpData? = null // Jump measurements and center-of-mass path
+    val jumpData: RepJumpData? = null, // Jump measurements and center-of-mass path
+    // Points per scoring component; null for unscored reps and those saved before version 5
+    val depthScore: Int? = null,
+    val barPathScore: Int? = null,
+    val tempoScore: Int? = null,
+    val formScore: Int? = null
 )

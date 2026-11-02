@@ -502,11 +502,13 @@ class FrontSquatStrategy @Inject constructor(
         // Front squat requires more upright torso (stricter thresholds than back squat)
         return when {
             angleFromVertical > 35f -> FormIssue(
+                kind = "torso_uprightness",
                 severity = Severity.CRITICAL,
                 message = "Excessive forward lean (${angleFromVertical.toInt()}°)",
                 suggestion = "Keep chest up and elbows high to maintain upright torso"
             )
             angleFromVertical > 25f -> FormIssue(
+                kind = "torso_uprightness",
                 severity = Severity.WARNING,
                 message = "Moderate forward lean (${angleFromVertical.toInt()}°)",
                 suggestion = "Try to stay more upright - drive elbows up"
@@ -544,11 +546,13 @@ class FrontSquatStrategy @Inject constructor(
 
         return when {
             elbowDrop > 0.15f -> FormIssue(
+                kind = "elbow_position",
                 severity = Severity.CRITICAL,
                 message = "Elbows dropped significantly below shoulders",
                 suggestion = "Drive elbows up and keep them high throughout the movement"
             )
             elbowDrop > 0.08f -> FormIssue(
+                kind = "elbow_position",
                 severity = Severity.WARNING,
                 message = "Elbows lowering below optimal position",
                 suggestion = "Focus on keeping elbows parallel to ground"
@@ -575,6 +579,7 @@ class FrontSquatStrategy @Inject constructor(
 
         return if (heelVisibility < 0.3f) {
             FormIssue(
+                kind = "foot_stability",
                 severity = Severity.WARNING,
                 message = "Heels lifting off ground",
                 suggestion = "Keep entire foot flat on ground - may need to improve ankle mobility"

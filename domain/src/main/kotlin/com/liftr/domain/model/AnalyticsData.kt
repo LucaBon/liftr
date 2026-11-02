@@ -33,7 +33,9 @@ data class AnalyticsSummary(
     val totalWorkouts: Int,
     val totalSets: Int,
     val totalReps: Int,
-    val jumpReps: List<JumpRepRecord> = emptyList()
+    val jumpReps: List<JumpRepRecord> = emptyList(),
+    /** Average points per scoring component over the range's reps that stored them. */
+    val scoreBreakdown: ScoreBreakdown? = null
 )
 
 /**

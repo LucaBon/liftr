@@ -415,6 +415,7 @@ class BenchPressStrategy @Inject constructor(
 
         return if (drift > ExerciseThresholds.BenchPress.BAR_DRIFT_MAX) {
             FormIssue(
+                kind = "bar_drift",
                 severity = Severity.WARNING,
                 message = "Bar drifting horizontally (%.0f cm)".format(drift * 100),
                 suggestion = "Keep the bar path more vertical"
@@ -430,6 +431,7 @@ class BenchPressStrategy @Inject constructor(
 
         return if (elbowAngle < ExerciseThresholds.BenchPress.LOCKOUT_MIN_ANGLE) {
             FormIssue(
+                kind = "incomplete_lockout",
                 severity = Severity.INFO,
                 message = "Incomplete lockout (elbow angle: %.0f°)".format(elbowAngle),
                 suggestion = "Fully extend your arms at the top"

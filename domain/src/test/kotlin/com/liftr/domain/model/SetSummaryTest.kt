@@ -178,4 +178,27 @@ class SetSummaryTest {
         )
         assertEquals(0.9f, summary.peakVelocity.value, 0.001f)
     }
+
+    @Test
+    fun `aggregated form issues group by kind across reps and show the worst`() {
+        fun lean(severity: Severity, degrees: Int) =
+            FormIssue(severity, "Forward lean ($degrees°)", "Chest up", kind = "torso_uprightness")
+        val heels = FormIssue(Severity.WARNING, "Heels lifting off ground", "Feet flat", kind = "foot_stability")
+        val scores = listOf(
+            createScore(70, formIssues = listOf(lean(Severity.WARNING, 27))),
+            createScore(60, formIssues = listOf(lean(Severity.CRITICAL, 38), heels)),
+            createScore(90),
+            createScore(70, formIssues = listOf(lean(Severity.WARNING, 29)))
+        )
+
+        val aggregated = aggregateFormIssues(scores)
+
+        assertEquals(
+            listOf(
+                AggregateFormIssue(lean(Severity.CRITICAL, 38), listOf(1, 2, 4)),
+                AggregateFormIssue(heels, listOf(2))
+            ),
+            aggregated
+        )
+    }
 }

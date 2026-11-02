@@ -43,7 +43,9 @@ data class Rep(
     val positionProfile: List<PositionProfile>,
     val timestamp: Long,
     val qualityScore: Int = 0,
-    val jump: RepJumpData? = null
+    val jump: RepJumpData? = null,
+    /** Points per scoring component; null for unscored reps and reps saved before parts were stored. */
+    val scoreParts: RepScoreParts? = null
 ) {
     /**
      * Returns the total duration of the rep in seconds.

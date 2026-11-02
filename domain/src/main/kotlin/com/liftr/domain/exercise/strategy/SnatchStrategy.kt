@@ -536,6 +536,7 @@ class SnatchStrategy @Inject constructor(
         // Use OVERHEAD_STABILITY_DRIFT as a reasonable asymmetry threshold
         return if (asymmetry > ExerciseThresholds.Snatch.OVERHEAD_STABILITY_DRIFT) {
             FormIssue(
+                kind = "overhead_stability",
                 severity = Severity.WARNING,
                 message = "Overhead instability: wrist asymmetry (%.0f cm)".format(asymmetry * 100),
                 suggestion = "Keep both wrists aligned overhead — engage your lats and keep the bar balanced"
@@ -567,6 +568,7 @@ class SnatchStrategy @Inject constructor(
         // hipsY < kneesY means hips are higher than knees (insufficient depth)
         return if (hipsY < kneesY) {
             FormIssue(
+                kind = "catch_depth",
                 severity = Severity.INFO,
                 message = "Insufficient catch depth",
                 suggestion = "Drop under the bar deeper — catch with hips at or below knee level"
@@ -597,6 +599,7 @@ class SnatchStrategy @Inject constructor(
 
         return if (behindDistance > ExerciseThresholds.Snatch.BAR_BEHIND_HEAD_MAX) {
             FormIssue(
+                kind = "bar_behind_head",
                 severity = Severity.WARNING,
                 message = "Bar too far behind head (%.0f cm)".format(behindDistance * 100),
                 suggestion = "Keep the bar over your base of support — slightly behind the head is correct but not excessively"
@@ -613,6 +616,7 @@ class SnatchStrategy @Inject constructor(
 
         return if (elbowAngle < 160f) {
             FormIssue(
+                kind = "press_out",
                 severity = Severity.WARNING,
                 message = "Press-out detected: elbow angle %.0f°".format(elbowAngle),
                 suggestion = "Lock out the elbows at the catch — the bar must be caught with straight arms"

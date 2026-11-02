@@ -596,6 +596,7 @@ class CleanStrategy @Inject constructor(
 
         return if (elbowAngle < ExerciseThresholds.Clean.EARLY_ARM_BEND_ANGLE) {
             FormIssue(
+                kind = "early_arm_bend",
                 severity = Severity.WARNING,
                 message = "Early arm bend detected (elbow: %.0f°)".format(elbowAngle),
                 suggestion = "Keep arms straight during the first pull until the bar passes your knees"
@@ -636,6 +637,7 @@ class CleanStrategy @Inject constructor(
         val verticalDrop = wristsY - elbowsY
         return if (verticalDrop > ExerciseThresholds.Clean.BAR_CRASH_VELOCITY) {
             FormIssue(
+                kind = "bar_crash",
                 severity = Severity.WARNING,
                 message = "Bar crash detected at catch",
                 suggestion = "Meet the bar actively — pull yourself under it and receive it in a solid front rack"
@@ -668,6 +670,7 @@ class CleanStrategy @Inject constructor(
 
         return if (forwardDrift > ExerciseThresholds.Clean.FORWARD_JUMP_MAX) {
             FormIssue(
+                kind = "forward_jump",
                 severity = Severity.INFO,
                 message = "Forward jump detected (%.0f cm)".format(forwardDrift * 100),
                 suggestion = "Keep feet planted; drive straight up rather than forward"
@@ -700,6 +703,7 @@ class CleanStrategy @Inject constructor(
         // elbowsY > wristsY means elbows are physically lower than wrists (dropped elbows)
         return if (elbowsY > wristsY) {
             FormIssue(
+                kind = "elbow_drop",
                 severity = Severity.WARNING,
                 message = "Elbows dropping below wrists in front rack",
                 suggestion = "Drive elbows up and forward to secure the bar in a high front rack position"

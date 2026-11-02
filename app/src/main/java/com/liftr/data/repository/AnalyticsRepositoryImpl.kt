@@ -14,6 +14,7 @@ import com.liftr.domain.model.LoadVelocityPoint
 import com.liftr.domain.model.LoadVelocityProfile
 import com.liftr.domain.model.PersonalRecord
 import com.liftr.domain.model.PersonalRecordType
+import com.liftr.domain.model.ScoreBreakdown
 import com.liftr.domain.model.TimeRange
 import com.liftr.domain.model.TrendDataPoint
 import com.liftr.domain.model.WeeklyVolume
@@ -248,6 +249,15 @@ class AnalyticsRepositoryImpl @Inject constructor(
             }
         }
         return trend
+    }
+
+    override suspend fun getScoreBreakdown(
+        exerciseType: ExerciseType,
+        timeRange: TimeRange
+    ): ScoreBreakdown? {
+        val sets = setDao.getSetsForExerciseInRange(exerciseType, getFromTimestamp(timeRange))
+        val parts = sets.flatMap { set -> repDao.getRepsForSetSync(set.id).mapNotNull(repMapper::scoreParts) }
+        return ScoreBreakdown.of(parts)
     }
 
     override suspend fun getRecentWorkouts(limit: Int): List<Workout> {

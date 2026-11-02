@@ -142,12 +142,29 @@ data class FormValidationResult(
  * @property severity The severity level of the issue
  * @property message Description of what's wrong
  * @property suggestion How to correct the issue
+ * @property kind Which check raised the issue. Messages can carry the
+ *   measured value ("forward lean (36°)"), so a fault seen across a rep's
+ *   frames yields many messages; issues of one kind are one fault.
  */
 data class FormIssue(
     val severity: Severity,
     val message: String,
-    val suggestion: String
+    val suggestion: String,
+    val kind: String = message
 )
+
+/**
+ * One issue per [FormIssue.kind]: the most severe instance (the first one
+ * seen on a tie), kept at the position where that kind first appeared.
+ */
+fun List<FormIssue>.worstPerKind(): List<FormIssue> {
+    val worst = LinkedHashMap<String, FormIssue>()
+    for (issue in this) {
+        val current = worst[issue.kind]
+        if (current == null || issue.severity > current.severity) worst[issue.kind] = issue
+    }
+    return worst.values.toList()
+}
 
 /**
  * Severity levels for form issues.

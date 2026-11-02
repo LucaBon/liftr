@@ -2,6 +2,7 @@ package com.liftr.ui.screens.workout
 
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.model.JumpExcursion
+import com.liftr.domain.model.aggregateFormIssues
 import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.calculator.CameraViewClassifier
@@ -400,7 +401,8 @@ class WorkoutViewModel @Inject constructor(
                 velocityProfile = emptyList(),
                 positionProfile = emptyList(),
                 timestamp = now,
-                qualityScore = score.totalScore
+                qualityScore = score.totalScore,
+                scoreParts = score.parts
             )
         }
         val completedSet = Set(
@@ -730,6 +732,21 @@ class WorkoutViewModel @Inject constructor(
     ) {
         val now = System.currentTimeMillis()
 
+        // A deadlift rep is the pull: it starts leaving the floor and ends at
+        // lockout, so the lowering afterwards isn't part of it. Timing the pull
+        // from here makes it the rep's concentric duration.
+        if (_uiState.value.selectedExercise.startsWithConcentric() &&
+            previousPhase == MovementPhase.IDLE && newPhase == MovementPhase.CONCENTRIC
+        ) {
+            currentRepBarPathPoints.clear()
+            _currentBarPathPoints.value = emptyList()
+            currentRepFormIssues.clear()
+            currentRepPoses.clear()
+            currentRepDepthValidation = null
+            currentRepEccentricStartTime = 0L
+            currentRepBottomTime = now
+        }
+
         // Detect phase transitions
         if (newPhase != previousPhase) {
             when (newPhase) {
@@ -821,6 +838,8 @@ class WorkoutViewModel @Inject constructor(
 
         // Score the rep when it completes
         if (repJustCounted) {
+            // A rep complete at lockout (deadlift) reports its lockout here, scored as its depth part.
+            result.phaseResult?.depthValidation?.let { currentRepDepthValidation = it }
             scoreCurrentRep(result, now)
         }
     }
@@ -925,7 +944,8 @@ class WorkoutViewModel @Inject constructor(
             velocityProfile = emptyList(),
             positionProfile = emptyList(),
             timestamp = now,
-            qualityScore = score.totalScore
+            qualityScore = score.totalScore,
+            scoreParts = score.parts
         )
         setReps.add(rep)
 
@@ -1566,23 +1586,6 @@ class WorkoutViewModel @Inject constructor(
     }
 
     /**
-     * Aggregates form issues across all reps, grouping by issue message
-     * and listing which rep numbers each issue appeared in.
-     */
-    private fun aggregateFormIssues(scores: List<RepQualityScore>): List<AggregateFormIssue> {
-        val issueMap = mutableMapOf<String, Pair<FormIssue, MutableList<Int>>>()
-        scores.forEachIndexed { index, score ->
-            score.formIssues.forEach { issue ->
-                val entry = issueMap.getOrPut(issue.message) { issue to mutableListOf() }
-                entry.second.add(index + 1) // 1-indexed rep numbers
-            }
-        }
-        return issueMap.values.map { (issue, repNumbers) ->
-            AggregateFormIssue(issue = issue, repNumbers = repNumbers)
-        }
-    }
-
-    /**
      * Dismisses the post-set summary sheet. Any annotated video that was neither
      * shared nor saved is a transient app-private file; sharing/saving copies it
      * out, so we delete the original on dismiss to avoid orphan accumulation.
@@ -1672,12 +1675,12 @@ class WorkoutViewModel @Inject constructor(
     }
 
     /**
-     * Checks, before a jump set, that the camera sees the athlete side-on: fed
-     * by the live pose stream or by preview snapshots when there is none.
+     * Checks, before a set, that the camera sees the athlete side-on: fed by
+     * the live pose stream or by preview snapshots when there is none.
      */
     fun onViewSample(pose: PoseResult) {
         val state = _uiState.value
-        if (!state.selectedExercise.isJumpExercise() || state.isRecording || state.isVideoRecording) {
+        if (!state.selectedExercise.canJudgeCameraView() || state.isRecording || state.isVideoRecording) {
             viewSamples.clear()
             return
         }
@@ -1688,7 +1691,7 @@ class WorkoutViewModel @Inject constructor(
         }
         val frontView = CameraViewClassifier.classify(viewSamples.map { it.second }) == CameraView.FRONT
         if (frontView != state.cameraViewWarning) {
-            logger.i(TAG, if (frontView) "Jump camera view: front" else "Jump camera view: no longer front")
+            logger.i(TAG, if (frontView) "Camera view: front" else "Camera view: no longer front")
             _uiState.update { it.copy(cameraViewWarning = frontView) }
         }
     }

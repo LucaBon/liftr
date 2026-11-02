@@ -12,7 +12,9 @@ import com.liftr.domain.exercise.PhaseTransitionResult
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
 import com.liftr.domain.value.Joules
@@ -62,6 +64,9 @@ class DeadliftStrategy @Inject constructor(
 
     companion object {
         private const val TAG = "DeadliftStrategy"
+
+        /** Least visibility for a joint to be used in an angle. */
+        private const val MIN_JOINT_VISIBILITY = 0.5f
     }
 
     override fun detectPhase(
@@ -264,18 +269,18 @@ class DeadliftStrategy @Inject constructor(
         val sufficientHeight = liftHeight >= criteriaRef.get().minDescentDepth.value
 
         // Check lockout: hip and knee extension
-        val lockoutAchieved = if (sufficientHeight) {
-            checkLockout(poseResult)
-        } else false
+        val lockout = if (sufficientHeight) checkLockout(poseResult) else null
 
-        logger.d(TAG, "CONCENTRIC: liftHeight=%.2f m, sufficient=$sufficientHeight, lockout=$lockoutAchieved".format(liftHeight))
+        logger.d(TAG, "CONCENTRIC: liftHeight=%.2f m, sufficient=$sufficientHeight, lockout=${lockout?.achieved}".format(liftHeight))
 
-        if (sufficientHeight && lockoutAchieved) {
+        if (lockout != null && lockout.achieved) {
             logger.d(TAG, "Phase: CONCENTRIC -> TOP (rep completed)")
             return PhaseTransitionResult(
                 newState = updatedState.withCurrentPhase(MovementPhase.TOP),
                 repCompleted = true,
-                debugInfo = "Rep completed (lockout): %.2f m pull".format(liftHeight)
+                debugInfo = "Rep completed (lockout): %.2f m pull".format(liftHeight),
+                // A deadlift has no depth: its lockout takes that place in the rep score.
+                depthValidation = lockout.toDepthValidation()
             )
         }
 
@@ -356,16 +361,39 @@ class DeadliftStrategy @Inject constructor(
     }
 
     /**
+     * The lockout at the top of the pull, from the hip and knee angles.
+     *
+     * @property achieved Hips and knees extended (or, with neither angle measurable, the pull was high enough)
+     * @property anglesMeasured How many of the two angles could be measured (0-2)
+     */
+    private data class Lockout(val achieved: Boolean, val anglesMeasured: Int) {
+        /**
+         * As a depth result: the fewer angles behind the lockout, the less sure
+         * it is, which the scorer turns into fewer points (2 angles: 30, 1: 25, 0: 20).
+         */
+        fun toDepthValidation() = DepthValidationResult(
+            isValid = achieved,
+            confidence = when (anglesMeasured) {
+                2 -> 1.0f
+                1 -> 0.7f
+                else -> 0.5f
+            },
+            methods = emptyList(),
+            debugInfo = "Lockout from $anglesMeasured angle(s)"
+        )
+    }
+
+    /**
      * Check if full lockout is achieved.
      * Requires both hip extension and knee extension above threshold angles.
      */
-    private fun checkLockout(poseResult: PoseResult): Boolean {
+    private fun checkLockout(poseResult: PoseResult): Lockout {
         val hipAngle = calculateHipAngle(poseResult)
         val kneeAngle = calculateKneeAngle(poseResult)
 
         if (hipAngle == null && kneeAngle == null) {
             // If we can't compute either angle, allow lockout based on height alone
-            return true
+            return Lockout(achieved = true, anglesMeasured = 0)
         }
 
         val hipOk = hipAngle == null || hipAngle >= ExerciseThresholds.Deadlift.LOCKOUT_HIP_ANGLE
@@ -374,78 +402,53 @@ class DeadliftStrategy @Inject constructor(
         logger.d(TAG, "Lockout check: hipAngle=${hipAngle?.let { "%.1f°".format(it) } ?: "N/A"}, " +
             "kneeAngle=${kneeAngle?.let { "%.1f°".format(it) } ?: "N/A"}, hipOk=$hipOk, kneeOk=$kneeOk")
 
-        return hipOk && kneeOk
+        return Lockout(achieved = hipOk && kneeOk, anglesMeasured = listOfNotNull(hipAngle, kneeAngle).size)
+    }
+
+    /**
+     * The given joints on the body side facing the camera, or null if neither
+     * side has them all visible. Filmed side-on, the far side is hidden behind
+     * the body, so requiring both sides would leave the angles unmeasured.
+     * The side whose least visible joint is seen better wins.
+     */
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
+        fun side(indices: List<Int>): List<PoseKeypoint>? =
+            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
+        val candidates = listOfNotNull(side(left), side(right))
+            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
+        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
+    }
+
+    /** Angle in degrees at the middle joint, on the side facing the camera. */
+    private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {
+        val (a, b, c) = nearSide(poseResult, left, right) ?: return null
+        val sx = poseResult.aspectScaleX
+        return coordinateCalculator.angleBetweenPoints(
+            ax = a.x * sx, ay = a.y,
+            bx = b.x * sx, by = b.y,
+            cx = c.x * sx, cy = c.y
+        )
     }
 
     /**
      * Calculate hip angle: angle at hip formed by shoulder-hip-knee.
      * 180° = fully extended (standing tall), smaller = more bent.
      */
-    private fun calculateHipAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-
-        val minVis = 0.5f
-        if (leftShoulder == null || rightShoulder == null ||
-            leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null) return null
-        if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
-            leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
-
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = shoulderX, ay = shoulderY,
-            bx = hipX, by = hipY,
-            cx = kneeX, cy = kneeY
-        )
-    }
+    private fun calculateHipAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE),
+        right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE)
+    )
 
     /**
      * Calculate knee angle: angle at knee formed by hip-knee-ankle.
      * 180° = fully extended, smaller = more bent.
      */
-    private fun calculateKneeAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-        val leftAnkle = landmarks.getOrNull(PoseResult.LEFT_ANKLE)
-        val rightAnkle = landmarks.getOrNull(PoseResult.RIGHT_ANKLE)
-
-        val minVis = 0.5f
-        if (leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null ||
-            leftAnkle == null || rightAnkle == null) return null
-        if (leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis ||
-            leftAnkle.visibility < minVis || rightAnkle.visibility < minVis) return null
-
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f * poseResult.aspectScaleX
-        val ankleY = (leftAnkle.y + rightAnkle.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = hipX, ay = hipY,
-            bx = kneeX, by = kneeY,
-            cx = ankleX, cy = ankleY
-        )
-    }
+    private fun calculateKneeAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE, PoseResult.LEFT_ANKLE),
+        right = listOf(PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE, PoseResult.RIGHT_ANKLE)
+    )
 
     override fun calculateMetrics(
         poseResult: PoseResult,
@@ -476,7 +479,6 @@ class DeadliftStrategy @Inject constructor(
         val issues = mutableListOf<FormIssue>()
 
         checkBackRounding(poseResult, currentState?.startingTorsoAngle)?.let { issues.add(it) }
-        checkLockoutCompleteness(poseResult)?.let { issues.add(it) }
         checkBarDrift(poseResult, calibrationData)?.let { issues.add(it) }
 
         return FormValidationResult(
@@ -530,11 +532,13 @@ class DeadliftStrategy @Inject constructor(
 
         return when {
             angleIncrease > threshold -> FormIssue(
+                kind = "back_rounding",
                 severity = Severity.CRITICAL,
                 message = "Back rounding detected (${angleIncrease.toInt()}° more than setup)",
                 suggestion = "Keep chest up and back flat"
             )
             angleIncrease > threshold * 0.6f -> FormIssue(
+                kind = "back_rounding",
                 severity = Severity.WARNING,
                 message = "Torso tipping forward under load (${angleIncrease.toInt()}°)",
                 suggestion = "Engage lats and keep chest proud"
@@ -544,45 +548,31 @@ class DeadliftStrategy @Inject constructor(
     }
 
     /**
-     * Check lockout completeness — hips and knees should be fully extended at top.
-     */
-    private fun checkLockoutCompleteness(poseResult: PoseResult): FormIssue? {
-        val hipAngle = calculateHipAngle(poseResult) ?: return null
-        val kneeAngle = calculateKneeAngle(poseResult) ?: return null
-
-        return if (hipAngle < ExerciseThresholds.Deadlift.LOCKOUT_HIP_ANGLE ||
-            kneeAngle < ExerciseThresholds.Deadlift.LOCKOUT_KNEE_ANGLE) {
-            FormIssue(
-                severity = Severity.INFO,
-                message = "Lockout incomplete (hip: %.0f°, knee: %.0f°)".format(hipAngle, kneeAngle),
-                suggestion = "Drive hips through and stand tall at the top"
-            )
-        } else null
-    }
-
-    /**
-     * Check if bar is drifting away from the body.
-     * Bar should stay close to the shins/thighs — drift forward increases lower back load.
+     * Check if the bar drifts away from the body: seen from the side, the hands
+     * (holding the bar) should stay over mid-foot through the pull. Drifting
+     * forward moves the load away from the hips and increases lower back load.
      */
     private fun checkBarDrift(
         poseResult: PoseResult,
         calibrationData: CalibrationData
     ): FormIssue? {
-        val bodyPositions = positionCalculator.getBodyPartPositions(poseResult) ?: return null
+        val (wrist, ankle, toes) = nearSide(
+            poseResult,
+            left = listOf(PoseResult.LEFT_WRIST, PoseResult.LEFT_ANKLE, PoseResult.LEFT_FOOT_INDEX),
+            right = listOf(PoseResult.RIGHT_WRIST, PoseResult.RIGHT_ANKLE, PoseResult.RIGHT_FOOT_INDEX)
+        ) ?: return null
 
-        val hipsX = bodyPositions.hipsX ?: return null
-        val anklesX = bodyPositions.anklesX ?: return null
-
-        val hipsXMeters = positionCalculator.pixelsToMeters(hipsX, poseResult, calibrationData)
-        val anklesXMeters = positionCalculator.pixelsToMeters(anklesX, poseResult, calibrationData)
-
-        val drift = abs(hipsXMeters - anklesXMeters)
+        val midFootX = (ankle.x + toes.x) / 2f
+        // Image-width units to image-height units, which pixelsToMeters takes.
+        val driftUnits = abs(wrist.x - midFootX) * poseResult.aspectScaleX
+        val drift = positionCalculator.pixelsToMeters(driftUnits, poseResult, calibrationData)
 
         return if (drift > ExerciseThresholds.Deadlift.BAR_DRIFT_MAX) {
             FormIssue(
+                kind = "bar_drift",
                 severity = Severity.WARNING,
-                message = "Bar drifting away from body (%.0f cm)".format(drift * 100),
-                suggestion = "Keep the bar close to your shins and thighs"
+                message = "Bar drifting away from mid-foot (%.0f cm)".format(drift * 100),
+                suggestion = "Keep the bar close to your shins and thighs, over the middle of your foot"
             )
         } else null
     }

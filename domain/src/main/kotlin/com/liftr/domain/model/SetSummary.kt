@@ -28,7 +28,7 @@ import com.liftr.domain.model.BarPathData
  * @property aggregateFormIssues Form issues grouped with which reps they occurred in
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
- * @property cameraView How a jump set was filmed (jumps should be filmed side-on); UNKNOWN for other exercises
+ * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
     val exerciseType: ExerciseType,
@@ -74,3 +74,24 @@ data class AggregateFormIssue(
     val issue: FormIssue,
     val repNumbers: List<Int>
 )
+
+/**
+ * Groups the reps' form issues by [FormIssue.kind], listing the reps each
+ * kind appeared in and showing its most severe instance in the set.
+ */
+fun aggregateFormIssues(repScores: List<RepQualityScore>): List<AggregateFormIssue> {
+    val byKind = LinkedHashMap<String, Pair<FormIssue, MutableList<Int>>>()
+    repScores.forEachIndexed { index, score ->
+        score.formIssues.forEach { issue ->
+            val entry = byKind[issue.kind]
+            when {
+                entry == null -> byKind[issue.kind] = issue to mutableListOf(index + 1)
+                else -> {
+                    if (index + 1 !in entry.second) entry.second.add(index + 1)
+                    if (issue.severity > entry.first.severity) byKind[issue.kind] = issue to entry.second
+                }
+            }
+        }
+    }
+    return byKind.values.map { (issue, repNumbers) -> AggregateFormIssue(issue, repNumbers) }
+}

@@ -5,6 +5,7 @@ import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.ExerciseStrategyFactory
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.exercise.FormValidationResult
+import com.liftr.domain.exercise.worstPerKind
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
@@ -64,20 +65,16 @@ class AnalyzeRepUseCase @Inject constructor(
 
         val strategy = strategyFactory.getStrategy(params.exerciseType)
 
-        val aggregatedIssues = mutableListOf<FormIssue>()
-        val seenMessages = mutableSetOf<String>()
+        val frameIssues = mutableListOf<FormIssue>()
         for (pose in params.bufferedPoses) {
             try {
-                val result = strategy.validateForm(pose, params.calibrationData, params.phaseState)
-                for (issue in result.issues) {
-                    if (seenMessages.add(issue.message)) {
-                        aggregatedIssues.add(issue)
-                    }
-                }
+                frameIssues += strategy.validateForm(pose, params.calibrationData, params.phaseState).issues
             } catch (e: Exception) {
                 logger.w(TAG, "validateForm pass failed: ${e.message}")
             }
         }
+        // A fault held over many frames is one fault for the rep, scored once at its worst.
+        val aggregatedIssues = frameIssues.worstPerKind()
 
         val isValid = aggregatedIssues.none { it.severity == Severity.CRITICAL }
         val formValidation = FormValidationResult(isValid = isValid, issues = aggregatedIssues)

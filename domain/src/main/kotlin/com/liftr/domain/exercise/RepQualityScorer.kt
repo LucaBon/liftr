@@ -21,6 +21,12 @@ import kotlin.math.sqrt
  */
 object RepQualityScorer {
 
+    /** Most points each component can award; together they make 100. */
+    const val MAX_DEPTH = 30
+    const val MAX_BAR_PATH = 20
+    const val MAX_TEMPO = 20
+    const val MAX_FORM = 30
+
     /**
      * Scores a single rep based on depth, bar path, tempo, and form.
      *
@@ -48,7 +54,7 @@ object RepQualityScorer {
         val tempo = if (tempoAdherence != null) {
             scoreTempoAdherence(tempoAdherence)
         } else {
-            scoreTempo(eccentricDuration, concentricDuration, previousConcentricDurations)
+            scoreTempo(eccentricDuration, concentricDuration, previousConcentricDurations, exerciseType)
         }
         val form = scoreForm(formIssues)
 
@@ -72,6 +78,8 @@ object RepQualityScorer {
      * - Valid with low confidence: 20 pts
      * - Invalid: partial credit based on confidence (up to 15 pts)
      * - No data: 15 pts (benefit of the doubt)
+     *
+     * A deadlift has no depth: its strategy reports the lockout at the top instead.
      */
     internal fun scoreDepth(result: DepthValidationResult?): Int {
         if (result == null) return 15
@@ -105,16 +113,20 @@ object RepQualityScorer {
      * Tempo scoring (0-20 points).
      *
      * Two sub-components of 10 points each:
-     * 1. Eccentric control (10 pts): Penalizes dropping the weight (<0.5s)
+     * 1. Eccentric control (10 pts): Penalizes dropping the weight (<0.5s).
+     *    Not judged for lifts whose rep [starts with the lift][ExerciseType.startsWithConcentric]
+     *    (deadlift): lowering it fast, or dropping it, is normal and not part of the rep.
      * 2. Concentric consistency (10 pts): How consistent is the lifting speed vs previous reps?
      *    First rep always gets full consistency marks.
      */
     internal fun scoreTempo(
         eccentricDuration: Float,
         concentricDuration: Float,
-        previousConcentricDurations: List<Float>
+        previousConcentricDurations: List<Float>,
+        exerciseType: ExerciseType? = null
     ): Int {
         val eccentricScore = when {
+            exerciseType?.startsWithConcentric() == true -> 10
             eccentricDuration >= 1.0f -> 10
             eccentricDuration >= 0.5f -> 5
             else -> 0

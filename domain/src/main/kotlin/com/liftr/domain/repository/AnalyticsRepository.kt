@@ -3,6 +3,7 @@ package com.liftr.domain.repository
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.JumpRepRecord
 import com.liftr.domain.model.PersonalRecord
+import com.liftr.domain.model.ScoreBreakdown
 import com.liftr.domain.model.TimeRange
 import com.liftr.domain.model.TrendDataPoint
 import com.liftr.domain.model.WeeklyVolume
@@ -33,6 +34,12 @@ interface AnalyticsRepository {
         exerciseType: ExerciseType,
         timeRange: TimeRange
     ): List<TrendDataPoint>
+
+    /** Average points per scoring component over the range's reps; null if none stored them. */
+    suspend fun getScoreBreakdown(
+        exerciseType: ExerciseType,
+        timeRange: TimeRange
+    ): ScoreBreakdown?
 
     suspend fun getRecentWorkouts(limit: Int = 10): List<Workout>
 

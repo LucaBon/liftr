@@ -17,6 +17,7 @@ import com.liftr.domain.exercise.strategy.BackSquatStrategy
 import com.liftr.domain.exercise.strategy.FrontSquatStrategy
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.AggregateFormIssue
+import com.liftr.domain.model.aggregateFormIssues
 import com.liftr.domain.model.BarPathData
 import com.liftr.domain.model.BarPathPoint
 import com.liftr.domain.model.CalibrationData
@@ -272,7 +273,7 @@ class AnalyzeVideoUseCase @Inject constructor(
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
-        // Shoulder width while standing tells whether jumps were filmed side-on.
+        // Shoulder width while standing tells whether the set was filmed side-on.
         val standingShoulderRatios = mutableListOf<Float>()
 
         for (i in poseResults.indices) {
@@ -283,8 +284,23 @@ class AnalyzeVideoUseCase @Inject constructor(
             val transition = strategy.detectPhase(pose, params.calibrationData, phaseState)
             val newPhase = transition.newState.currentPhase
             phaseState = transition.newState
-            if (jumpPath != null && newPhase == MovementPhase.IDLE) {
+            if (params.exerciseType.canJudgeCameraView() && params.exerciseType.isStandingPhase(newPhase)) {
                 CameraViewClassifier.shoulderWidthRatio(pose)?.let { standingShoulderRatios += it }
+            }
+
+            // A deadlift rep is the pull: it starts leaving the floor and ends at
+            // lockout, so the lowering afterwards isn't part of it. Timing the pull
+            // from here makes it the rep's concentric duration.
+            if (params.exerciseType.startsWithConcentric() &&
+                previousPhase == MovementPhase.IDLE && newPhase == MovementPhase.CONCENTRIC
+            ) {
+                currentRepBarPoints = mutableListOf()
+                currentRepPoses = mutableListOf()
+                currentRepDepthValidation = null
+                eccentricStart = 0L
+                bottomTime = now
+                repVelocitySum = 0f
+                repVelocityCount = 0
             }
 
             if (newPhase != previousPhase) {
@@ -330,6 +346,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
 
             if (transition.repCompleted) {
+                // A rep complete at lockout (deadlift) reports its lockout here, scored as its depth part.
+                transition.depthValidation?.let { currentRepDepthValidation = it }
                 // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
                 val jumpWindow = transition.jump?.let {
                     jumpPath?.pathForLanding(now, it.flightTimeMs, it.takeoffAtMs?.toLong(), it.landingAtMs?.toLong())
@@ -437,7 +455,9 @@ class AnalyzeVideoUseCase @Inject constructor(
             previousPhase = newPhase
         }
 
-        val cameraView = if (jumpPath != null) CameraViewClassifier.classify(standingShoulderRatios) else CameraView.UNKNOWN
+        val cameraView = if (params.exerciseType.canJudgeCameraView()) {
+            CameraViewClassifier.classify(standingShoulderRatios)
+        } else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repBarPaths, repJumpHeights)
             .copy(cameraView = cameraView, repApexHeights = repApexHeights)
     }
@@ -480,19 +500,6 @@ class AnalyzeVideoUseCase @Inject constructor(
             repBarPaths = repBarPaths,
             repJumpHeights = repJumpHeights
         )
-    }
-
-    private fun aggregateFormIssues(scores: List<RepQualityScore>): List<AggregateFormIssue> {
-        val issueMap = mutableMapOf<String, Pair<FormIssue, MutableList<Int>>>()
-        scores.forEachIndexed { index, score ->
-            score.formIssues.forEach { issue ->
-                val entry = issueMap.getOrPut(issue.message) { issue to mutableListOf() }
-                entry.second.add(index + 1)
-            }
-        }
-        return issueMap.values.map { (issue, repNumbers) ->
-            AggregateFormIssue(issue = issue, repNumbers = repNumbers)
-        }
     }
 
     /**

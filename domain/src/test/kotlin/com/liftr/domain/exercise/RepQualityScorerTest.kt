@@ -169,6 +169,29 @@ class RepQualityScorerTest {
         assertEquals(20, score) // 10 + 10
     }
 
+    @Test
+    fun `scoreTempo does not judge a deadlift's lowering`() {
+        // A deadlift rep ends at lockout; its lowering isn't timed (0 s) and may be a drop.
+        val score = RepQualityScorer.scoreTempo(
+            eccentricDuration = 0f,
+            concentricDuration = 1.2f,
+            previousConcentricDurations = listOf(1.2f),
+            exerciseType = com.liftr.domain.model.ExerciseType.DEADLIFT
+        )
+        assertEquals(20, score)
+    }
+
+    @Test
+    fun `scoreTempo still judges a squat's lowering`() {
+        val score = RepQualityScorer.scoreTempo(
+            eccentricDuration = 0.3f,
+            concentricDuration = 1.0f,
+            previousConcentricDurations = emptyList(),
+            exerciseType = com.liftr.domain.model.ExerciseType.BACK_SQUAT
+        )
+        assertEquals(10, score)
+    }
+
     // --- Form Scoring Tests ---
 
     @Test

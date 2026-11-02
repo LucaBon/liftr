@@ -1,5 +1,9 @@
 package com.liftr.ui.screens.analytics
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.res.pluralStringResource
+import com.liftr.ui.components.ScoreBreakdownRow
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -208,6 +212,25 @@ fun AnalyticsScreen(
                             }
                             item {
                                 QualityScoreChart(dataPoints = summary.qualityScoreTrend)
+                            }
+                            val breakdownExercise = uiState.selectedExercise
+                            val breakdown = summary.scoreBreakdown
+                            if (breakdown != null && breakdownExercise != null) {
+                                item {
+                                    Column {
+                                        ScoreBreakdownRow(breakdown, breakdownExercise)
+                                        Text(
+                                            text = pluralStringResource(
+                                                R.plurals.analytics_score_breakdown_caption,
+                                                breakdown.repCount,
+                                                breakdown.repCount
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     } else {

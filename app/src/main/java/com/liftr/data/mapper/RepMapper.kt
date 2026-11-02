@@ -2,6 +2,7 @@ package com.liftr.data.mapper
 
 import com.liftr.data.local.database.entities.RepEntity
 import com.liftr.domain.model.Rep
+import com.liftr.domain.model.RepScoreParts
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import javax.inject.Inject
@@ -36,7 +37,8 @@ class RepMapper @Inject constructor() {
             positionProfile = entity.positionProfile,
             timestamp = entity.timestamp,
             qualityScore = entity.qualityScore,
-            jump = entity.jumpData
+            jump = entity.jumpData,
+            scoreParts = scoreParts(entity)
         )
     }
 
@@ -73,7 +75,21 @@ class RepMapper @Inject constructor() {
             positionProfile = domain.positionProfile,
             timestamp = domain.timestamp,
             qualityScore = domain.qualityScore,
-            jumpData = domain.jump
+            jumpData = domain.jump,
+            depthScore = domain.scoreParts?.depth,
+            barPathScore = domain.scoreParts?.barPath,
+            tempoScore = domain.scoreParts?.tempo,
+            formScore = domain.scoreParts?.form
+        )
+    }
+
+    /** The stored component points, or null unless all four were stored. */
+    fun scoreParts(entity: RepEntity): RepScoreParts? {
+        return RepScoreParts(
+            depth = entity.depthScore ?: return null,
+            barPath = entity.barPathScore ?: return null,
+            tempo = entity.tempoScore ?: return null,
+            form = entity.formScore ?: return null
         )
     }
 }

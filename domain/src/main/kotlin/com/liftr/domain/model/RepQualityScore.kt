@@ -29,6 +29,39 @@ data class RepQualityScore(
     val formIssues: List<FormIssue>
 ) {
     val grade: ScoreGrade get() = ScoreGrade.fromScore(totalScore)
+
+    val parts: RepScoreParts get() = RepScoreParts(depthScore, barPathScore, tempoScore, formScore)
+}
+
+/** A rep's points in each scoring component (depth /30, bar path /20, tempo /20, form /30). */
+data class RepScoreParts(
+    val depth: Int,
+    val barPath: Int,
+    val tempo: Int,
+    val form: Int
+)
+
+/** Average points per scoring component over [repCount] reps. */
+data class ScoreBreakdown(
+    val depth: Float,
+    val barPath: Float,
+    val tempo: Float,
+    val form: Float,
+    val repCount: Int
+) {
+    companion object {
+        /** Null when there is nothing to average. */
+        fun of(parts: List<RepScoreParts>): ScoreBreakdown? {
+            if (parts.isEmpty()) return null
+            return ScoreBreakdown(
+                depth = parts.map { it.depth }.average().toFloat(),
+                barPath = parts.map { it.barPath }.average().toFloat(),
+                tempo = parts.map { it.tempo }.average().toFloat(),
+                form = parts.map { it.form }.average().toFloat(),
+                repCount = parts.size
+            )
+        }
+    }
 }
 
 /**
