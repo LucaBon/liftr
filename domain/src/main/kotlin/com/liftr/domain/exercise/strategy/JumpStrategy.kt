@@ -1,5 +1,6 @@
 package com.liftr.domain.exercise.strategy
 
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.domain.exercise.ExerciseCriteria
 import com.liftr.domain.exercise.ExerciseMetrics
 import com.liftr.domain.exercise.ExercisePhaseState
@@ -16,6 +17,7 @@ import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.JumpData
+import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
@@ -803,10 +805,37 @@ class JumpStrategy(
      * flight time, so jump power comes from here.
      */
     fun peakPower(jump: JumpData, calibrationData: CalibrationData, load: Kilograms): Watts? {
-        val bodyMass = calibrationData.anthropometricData?.userWeight?.takeIf { it > 0f } ?: return null
-        val systemMass = bodyMass + if (exerciseType == ExerciseType.LOADED_JUMP) load.value else 0f
+        val systemMass = systemMass(calibrationData, load) ?: return null
         val power = 60.7f * jump.height.value * 100f + 45.3f * systemMass - 2055f
         return if (power > 0f) Watts(power) else null
+    }
+
+    /**
+     * Mean push-off force, velocity and power of [jump] by Samozino's simple
+     * method (see [JumpMechanics]), with the push-off distance measured from
+     * its center-of-mass [excursion] and the same system mass as [peakPower].
+     *
+     * Null without a body mass, without an excursion (never seen standing, or
+     * an approach jump, whose dip from standing means nothing after a run-up),
+     * or when the measured push-off is implausible. No assumed push-off
+     * distance stands in: a guessed hPO moves the force as much as the jump.
+     */
+    fun pushOffMechanics(
+        jump: JumpData,
+        excursion: JumpExcursion?,
+        calibrationData: CalibrationData,
+        load: Kilograms
+    ): JumpMechanics? {
+        if (approach || excursion == null) return null
+        val systemMass = systemMass(calibrationData, load) ?: return null
+        val pushOffCm = JumpMechanics.pushOffCm(excursion) ?: return null
+        return JumpMechanics.of(jump.height.value, pushOffCm / 100f, systemMass)
+    }
+
+    /** Body mass from the calibration, plus [load] for a loaded jump; null without a body mass. */
+    private fun systemMass(calibrationData: CalibrationData, load: Kilograms): Float? {
+        val bodyMass = calibrationData.anthropometricData?.userWeight?.takeIf { it > 0f } ?: return null
+        return bodyMass + if (exerciseType == ExerciseType.LOADED_JUMP) load.value else 0f
     }
 
     override fun validateForm(

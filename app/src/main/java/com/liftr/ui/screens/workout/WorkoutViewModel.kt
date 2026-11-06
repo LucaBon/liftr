@@ -8,6 +8,7 @@ import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.calculator.CameraViewClassifier
 import com.liftr.domain.calculator.CenterOfMassCalculator
+import com.liftr.domain.calculator.JumpMechanics
 import android.content.Context
 import android.net.Uri
 import androidx.camera.core.ImageProxy
@@ -198,6 +199,7 @@ class WorkoutViewModel @Inject constructor(
     private var setPeakPowers = mutableListOf<Watts?>()
     private var setCatchTypes = mutableListOf<CatchType?>()
     private var setJumpQualities = mutableListOf<JumpQuality>()
+    private var setMechanics = mutableListOf<JumpMechanics?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -461,7 +463,8 @@ class WorkoutViewModel @Inject constructor(
                     flightHeightCm = height.value * 100f,
                     apexHeightCm = summary.repApexHeights.getOrNull(index)?.let { it.value * 100f },
                     barPath = summary.repBarPaths.getOrNull(index),
-                    peakPowerW = summary.repPeakPowers.getOrNull(index)?.value
+                    peakPowerW = summary.repPeakPowers.getOrNull(index)?.value,
+                    mechanics = summary.repMechanics.getOrNull(index)
                 )
             )
         }
@@ -949,9 +952,11 @@ class WorkoutViewModel @Inject constructor(
         jump?.let {
             setJumpHeights.add(it.height)
             setApexHeights.add(it.apexHeight)
-            // Peak power needs no per-rep state: a fresh strategy computes it.
-            setPeakPowers.add(calib?.let { c ->
-                JumpStrategy(_uiState.value.selectedExercise, logger).peakPower(it, c, _uiState.value.weight)
+            // Power needs no per-rep state: a fresh strategy computes it.
+            val strategy = JumpStrategy(_uiState.value.selectedExercise, logger)
+            setPeakPowers.add(calib?.let { c -> strategy.peakPower(it, c, _uiState.value.weight) })
+            setMechanics.add(calib?.let { c ->
+                strategy.pushOffMechanics(it, barPathData.excursion, c, _uiState.value.weight)
             })
             setJumpQualities.add(JumpQuality.of(barPathData.excursion?.fitCheck))
         }
@@ -1201,6 +1206,7 @@ class WorkoutViewModel @Inject constructor(
         setPeakPowers.clear()
         setCatchTypes.clear()
         setJumpQualities.clear()
+        setMechanics.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1651,7 +1657,8 @@ class WorkoutViewModel @Inject constructor(
             repApexHeights = setApexHeights.toList(),
             repPeakPowers = setPeakPowers.toList(),
             repCatchTypes = setCatchTypes.toList(),
-            repJumpQualities = setJumpQualities.toList()
+            repJumpQualities = setJumpQualities.toList(),
+            repMechanics = setMechanics.toList()
         )
     }
 

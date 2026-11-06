@@ -1,6 +1,7 @@
 package com.liftr.domain.model
 
 import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
@@ -34,6 +35,8 @@ import com.liftr.domain.model.BarPathData
  * @property repCatchTypes Per-rep catch (snatch and clean), null where not judged; empty for other lifts
  * @property repJumpQualities Per-jump [JumpQuality] from the free-fall check, aligned with
  *   [repJumpHeights]; empty (every jump counts) for lifts and summaries built without it
+ * @property repMechanics Per-jump mean push-off force, velocity and power (Samozino), null where
+ *   body mass or the push-off distance is unknown; empty for lifts
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -59,7 +62,8 @@ data class SetSummary(
     val videoSpeedSuspect: Boolean = false,
     val repPeakPowers: List<Watts?> = emptyList(),
     val repCatchTypes: List<CatchType?> = emptyList(),
-    val repJumpQualities: List<JumpQuality> = emptyList()
+    val repJumpQualities: List<JumpQuality> = emptyList(),
+    val repMechanics: List<JumpMechanics?> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 

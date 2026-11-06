@@ -80,6 +80,7 @@ import com.liftr.util.findActivity
 import com.liftr.vision.pose.PreviewPoseSampler
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.util.isPortrait
 import com.liftr.util.preferredScreenOrientation
 import com.liftr.util.rememberOrientation
@@ -750,7 +751,8 @@ fun SetSummarySheet(
                     velocities = summary.repVelocities,
                     powers = summary.repPeakPowers,
                     suspect = { summary.jumpQuality(it) == JumpQuality.SUSPECT },
-                    excludedCount = summary.excludedJumpCount
+                    excludedCount = summary.excludedJumpCount,
+                    mechanics = summary.repMechanics
                 )
             } else {
                 // Overall score bar
@@ -870,7 +872,8 @@ private fun JumpHeightList(
     velocities: List<MetersPerSecond>,
     powers: List<Watts?>,
     suspect: (Int) -> Boolean,
-    excludedCount: Int
+    excludedCount: Int,
+    mechanics: List<JumpMechanics?>
 ) {
     Column {
         if (apexHeights.any { it != null }) {
@@ -903,6 +906,18 @@ private fun JumpHeightList(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isSuspect) FontWeight.Normal else FontWeight.SemiBold,
                     color = color
+                )
+            }
+            mechanics.getOrNull(index)?.let {
+                Text(
+                    text = stringResource(
+                        R.string.jump_push_off_summary,
+                        it.pushOffM * 100f, it.meanForceN, it.meanVelocity, it.meanPowerW
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
                 )
             }
         }

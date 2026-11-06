@@ -435,6 +435,15 @@
     <string name="analytics_best_takeoff_velocity">Best takeoff speed</string>
     <string name="jump_peak_power">Peak power</string>
     <string name="analytics_best_peak_power">Best peak power</string>
+    <string name="jump_push_off">Push-off</string>
+    <string name="jump_mean_force">Mean force</string>
+    <string name="jump_mean_velocity">Mean velocity</string>
+    <string name="jump_mean_power">Mean power</string>
+    <string name="jump_relative_force">Relative force</string>
+    <string name="jump_relative_power">Relative power</string>
+    <string name="analytics_jump_power">Power</string>
+    <string name="analytics_jump_push_off_force">Push-off force</string>
+    <string name="jump_push_off_summary">Push-off %1$.0f cm · %2$.0f N · %3$.2f m/s · %4$.0f W</string>
     <string name="jump_heights_legend">Flight time / takeoff to peak</string>
     <string name="jump_heights_cm">%1$.0f / %2$.0f cm</string>
     <string name="analytics_jump_averages">Averages over %d jumps</string>
