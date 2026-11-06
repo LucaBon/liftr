@@ -112,6 +112,9 @@ class JumpStrategy(
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState
     ): PhaseTransitionResult {
+        // Milliseconds with the microseconds kept: at 240 fps a whole
+        // millisecond is a quarter of a frame.
+        val now = poseResult.timestampUs / 1000.0
         val frame = readFrame(poseResult)
             ?: return PhaseTransitionResult(
                 // Drop the previous sample so timing never interpolates across a
@@ -130,7 +133,7 @@ class JumpStrategy(
             ?: return PhaseTransitionResult(
                 newState = currentState.copy(
                     currentPhase = MovementPhase.IDLE,
-                    jump = baselineFrom(frame, poseResult.timestamp)
+                    jump = baselineFrom(frame, now)
                 ),
                 repCompleted = false,
                 debugInfo = "Standing baseline set"
@@ -141,8 +144,8 @@ class JumpStrategy(
         // read as is, it puts the feet back on the floor. Skip it like a frame
         // with nothing visible, unless it lasts: then the camera was turned.
         if (frame.upsideDown != stored.upsideDown) {
-            val since = stored.flippedSinceMs ?: poseResult.timestamp
-            if (stored.isAirborne || poseResult.timestamp - since < Jump.STILL_MS) {
+            val since = stored.flippedSinceMs ?: now
+            if (stored.isAirborne || now - since < Jump.STILL_MS) {
                 return PhaseTransitionResult(
                     newState = currentState.copy(
                         jump = stored.copy(previousFootY = null, previousTimestamp = null, flippedSinceMs = since)
@@ -154,7 +157,7 @@ class JumpStrategy(
             return PhaseTransitionResult(
                 newState = currentState.copy(
                     currentPhase = MovementPhase.IDLE,
-                    jump = baselineFrom(frame, poseResult.timestamp)
+                    jump = baselineFrom(frame, now)
                 ),
                 repCompleted = false,
                 debugInfo = "Camera turned, standing baseline set"
@@ -163,11 +166,11 @@ class JumpStrategy(
         val tracking = if (stored.flippedSinceMs != null) stored.copy(flippedSinceMs = null) else stored
 
         val (followed, measured) =
-            if (approach) followToes(tracking, frame, poseResult.timestamp) else tracking to frame
+            if (approach) followToes(tracking, frame, now) else tracking to frame
         return if (followed.isAirborne) {
-            detectLanding(currentState, followed, measured, poseResult.timestamp, calibrationData)
+            detectLanding(currentState, followed, measured, now, calibrationData)
         } else {
-            detectGroundPhase(currentState, followed, measured, poseResult.timestamp)
+            detectGroundPhase(currentState, followed, measured, now)
         }
     }
 
@@ -175,7 +178,7 @@ class JumpStrategy(
         state: ExercisePhaseState,
         tracking: JumpTrackingState,
         frame: Frame,
-        timestamp: Long,
+        timestamp: Double,
         calibrationData: CalibrationData
     ): PhaseTransitionResult {
         val takeoffMs = tracking.takeoffMs!!
@@ -225,7 +228,7 @@ class JumpStrategy(
         val landingRise = if (kotlin.math.abs(rise) > timingLevel) rise else 0f
         val landingLevel = landingRise + timingLevel
         val points = tracking.flightSamples + (timestamp to rise)
-        val landingMs = landingCrossingMs(points, landingLevel) ?: timestamp.toDouble()
+        val landingMs = landingCrossingMs(points, landingLevel) ?: timestamp
         val crossingFlightMs = (landingMs - takeoffMs).toFloat()
         // Landing elsewhere moves the ground: stand from there. Otherwise keep
         // the standing baseline, which the landing crouch would distort. After
@@ -307,13 +310,13 @@ class JumpStrategy(
     }
 
     /** Flight samples up to the peak, then those still above [landingLevel]. */
-    private fun airborneSamples(samples: List<Pair<Long, Float>>, landingLevel: Float): List<Pair<Long, Float>> {
+    private fun airborneSamples(samples: List<Pair<Double, Float>>, landingLevel: Float): List<Pair<Double, Float>> {
         val peakIndex = samples.indices.maxByOrNull { samples[it].second } ?: return samples
         return samples.filterIndexed { i, (_, rise) -> i <= peakIndex || rise > landingLevel }
     }
 
     /** Time the toes came down through [level] after the peak, interpolated between frames. */
-    private fun landingCrossingMs(points: List<Pair<Long, Float>>, level: Float): Double? {
+    private fun landingCrossingMs(points: List<Pair<Double, Float>>, level: Float): Double? {
         val peakIndex = points.indices.maxByOrNull { points[it].second } ?: return null
         for (i in peakIndex until points.lastIndex) {
             val (t0, r0) = points[i]
@@ -327,7 +330,7 @@ class JumpStrategy(
         state: ExercisePhaseState,
         tracking: JumpTrackingState,
         frame: Frame,
-        timestamp: Long
+        timestamp: Double
     ): PhaseTransitionResult {
         val span = tracking.bodySpan
         val timingLevel = Jump.TIMING_LEVEL * span
@@ -431,7 +434,7 @@ class JumpStrategy(
      * still walking into place, or during a held squat. [reanchor] only
      * follows small drifts while standing.
      */
-    private fun settleOnStillBody(tracking: JumpTrackingState, frame: Frame, timestamp: Long): JumpTrackingState {
+    private fun settleOnStillBody(tracking: JumpTrackingState, frame: Frame, timestamp: Double): JumpTrackingState {
         val tolerance = Jump.TIMING_LEVEL * tracking.bodySpan
         val footAnchor = tracking.stillFootY
         val hipsAnchor = tracking.stillHipsY
@@ -450,13 +453,13 @@ class JumpStrategy(
      * A smoothing [factor] given per [Jump.SMOOTHING_FRAME_MS] as the factor for the time since
      * [previousTimestamp], so the baseline follows at the same speed at any frame rate.
      */
-    private fun smoothing(factor: Float, previousTimestamp: Long?, timestamp: Long): Float {
+    private fun smoothing(factor: Float, previousTimestamp: Double?, timestamp: Double): Float {
         val dt = previousTimestamp?.let { timestamp - it }?.takeIf { it > 0 } ?: return factor
-        return 1f - Math.pow((1f - factor).toDouble(), dt.toDouble() / Jump.SMOOTHING_FRAME_MS).toFloat()
+        return 1f - Math.pow((1f - factor).toDouble(), dt / Jump.SMOOTHING_FRAME_MS).toFloat()
     }
 
     /** Slowly follows the standing position so posture shifts don't trip thresholds. */
-    private fun reanchor(tracking: JumpTrackingState, frame: Frame, previousTimestamp: Long?, timestamp: Long): JumpTrackingState {
+    private fun reanchor(tracking: JumpTrackingState, frame: Frame, previousTimestamp: Double?, timestamp: Double): JumpTrackingState {
         val a = smoothing(Jump.BASELINE_SMOOTHING, previousTimestamp, timestamp)
         val span = tracking.bodySpan
         val footStill = kotlin.math.abs(frame.footY - tracking.baselineFootY) < Jump.TIMING_LEVEL * span
@@ -480,10 +483,10 @@ class JumpStrategy(
      * toe nearest to where the followed one should be is followed; the baseline
      * stays, in flight it is the takeoff floor.
      */
-    private fun followToes(tracking: JumpTrackingState, frame: Frame, timestamp: Long): Pair<JumpTrackingState, Frame> {
+    private fun followToes(tracking: JumpTrackingState, frame: Frame, timestamp: Double): Pair<JumpTrackingState, Frame> {
         if (frame.toes.isEmpty()) return tracking to frame
         val span = tracking.bodySpan
-        val dt = tracking.previousTimestamp?.let { (timestamp - it) / 1000f }?.takeIf { it > 0f }
+        val dt = tracking.previousTimestamp?.let { ((timestamp - it) / 1000).toFloat() }?.takeIf { it > 0f }
         val maxSpeed = Jump.APPROACH_STANCE_SPEED * span
         val timingLevel = Jump.TIMING_LEVEL * span
 
@@ -556,7 +559,7 @@ class JumpStrategy(
 
     private fun dist(x0: Float, y0: Float, x1: Float, y1: Float) = kotlin.math.hypot(x1 - x0, y1 - y0)
 
-    private fun baselineFrom(frame: Frame, timestamp: Long) = JumpTrackingState(
+    private fun baselineFrom(frame: Frame, timestamp: Double) = JumpTrackingState(
         baselineFootY = frame.footY,
         baselineHipsY = frame.hipsY,
         bodySpan = frame.footY - frame.headY,
@@ -576,7 +579,7 @@ class JumpStrategy(
      * t in seconds from the first sample; null if too few samples or not
      * curving downward like a flight.
      */
-    private fun fitParabola(samples: List<Pair<Long, Float>>): Triple<Double, Double, Double>? {
+    private fun fitParabola(samples: List<Pair<Double, Float>>): Triple<Double, Double, Double>? {
         if (samples.size < Jump.MIN_FIT_SAMPLES || samples.last().first - samples.first().first < Jump.MIN_FIT_MS) return null
         val t0 = samples.first().first
         // Power sums for the normal equations.
@@ -606,7 +609,7 @@ class JumpStrategy(
      * Time of the top of the flight, from a parabola through the hips: the
      * trunk follows the center of mass, while the legs fold before landing.
      */
-    private fun fitApexMs(hipSamples: List<Pair<Long, Float>>, outlierFloor: Float): Double? {
+    private fun fitApexMs(hipSamples: List<Pair<Double, Float>>, outlierFloor: Float): Double? {
         val samples = withoutOutliers(hipSamples, outlierFloor)
         val (_, b, c) = fitParabola(samples) ?: return null
         return samples.first().first + (-b / (2 * c)) * 1000.0
@@ -618,7 +621,7 @@ class JumpStrategy(
      * [Jump.OUTLIER_SIGMAS] robust standard deviations of the residuals, and
      * beyond [floor] so that frames are never dropped for ordinary jitter.
      */
-    private fun withoutOutliers(samples: List<Pair<Long, Float>>, floor: Float): List<Pair<Long, Float>> {
+    private fun withoutOutliers(samples: List<Pair<Double, Float>>, floor: Float): List<Pair<Double, Float>> {
         var kept = samples
         repeat(Jump.MAX_DROPPED_FRAMES) {
             val (a, b, c) = fitParabola(kept) ?: return kept
@@ -640,12 +643,12 @@ class JumpStrategy(
      * median of the ground frames before the toes started to peel off; 0 (the
      * baseline) when there are none.
      */
-    private fun restingToeRise(groundSamples: List<Pair<Long, Float>>, takeoffMs: Double): Float {
+    private fun restingToeRise(groundSamples: List<Pair<Double, Float>>, takeoffMs: Double): Float {
         val resting = groundSamples.filter { it.first <= takeoffMs - TOE_OFF_LEAD_MS }.map { it.second }.sorted()
         return if (resting.isEmpty()) 0f else resting[resting.size / 2]
     }
 
-    private fun fitFlightMs(samples: List<Pair<Long, Float>>, takeoffRise: Float, landingRise: Float): Float? {
+    private fun fitFlightMs(samples: List<Pair<Double, Float>>, takeoffRise: Float, landingRise: Float): Float? {
         val (a, b, c) = fitParabola(samples) ?: return null
         // Takeoff is where the parabola rises through takeoffRise, landing
         // where it comes down through landingRise: the floor at each end.
@@ -669,8 +672,8 @@ class JumpStrategy(
     }
 
     /** Time at which the toe rise crossed [level], linearly interpolated between two frames. */
-    private fun crossingTime(rise0: Float, t0: Long, rise1: Float, t1: Long, level: Float): Double {
-        if (rise1 == rise0) return t1.toDouble()
+    private fun crossingTime(rise0: Float, t0: Double, rise1: Float, t1: Double, level: Float): Double {
+        if (rise1 == rise0) return t1
         val fraction = ((level - rise0) / (rise1 - rise0)).coerceIn(0f, 1f)
         return t0 + fraction.toDouble() * (t1 - t0)
     }
@@ -685,8 +688,8 @@ class JumpStrategy(
      * motion how long ago they left the ground.
      */
     private fun heightFromTakeoffToApex(
-        firstOff: Pair<Long, Float>,
-        lastOnFloorMs: Long?,
+        firstOff: Pair<Double, Float>,
+        lastOnFloorMs: Double?,
         apexMs: Double,
         spanPerMeter: Float
     ): Meters? {
@@ -697,7 +700,7 @@ class JumpStrategy(
         val velocity = GRAVITY * toApexS
         val sinceTakeoffS = (kotlin.math.sqrt(velocity * velocity + 2 * GRAVITY * heightM) - velocity) / GRAVITY
         // Not before the last frame that still showed the toes on the floor.
-        val takeoffMs = maxOf(frameMs - sinceTakeoffS * 1000, lastOnFloorMs?.toDouble() ?: Double.NEGATIVE_INFINITY)
+        val takeoffMs = maxOf(frameMs - sinceTakeoffS * 1000, lastOnFloorMs ?: Double.NEGATIVE_INFINITY)
         return JumpData.heightFromRiseTime((apexMs - takeoffMs).toFloat())
     }
 

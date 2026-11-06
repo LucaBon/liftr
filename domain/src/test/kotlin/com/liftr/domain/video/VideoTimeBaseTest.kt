@@ -68,4 +68,18 @@ class VideoTimeBaseTest {
     fun `too few deltas never variable`() {
         assertFalse(VideoTimeBase.resolve(30f, null, null, listOf(33_000L, 4_000L)).isVariableSpeed)
     }
+    @Test
+    fun `slow motion container time maps to real time`() {
+        val r = VideoTimeBase.resolve(30f, null, 240f, deltas(30.0))
+        // Container frames every 33333 us are 4167 us apart in real time.
+        assertEquals(0L, r.realTimeUs(0L))
+        assertEquals(4_167L, r.realTimeUs(33_333L))
+        assertEquals(1_000_000L, r.realTimeUs(8_000_000L))
+    }
+
+    @Test
+    fun `real time video keeps its timestamps`() {
+        val r = VideoTimeBase.resolve(60f, null, null, deltas(60.0))
+        assertEquals(16_667L, r.realTimeUs(16_667L))
+    }
 }

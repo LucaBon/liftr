@@ -53,7 +53,7 @@ class JumpReplayTest {
             if (com == null) println("${pose.timestamp} no CoM")
             window.onFrame(point, result.newState.currentPhase, pose.timestamp, JumpPathWindow.cmPerUnitY(pose, 1.90f))
             result.jump?.let { println("TIMES takeoff=${it.takeoffAtMs} landing=${it.landingAtMs}") }
-            result.jump?.let { println("EXCURSION " + window.pathForLanding(pose.timestamp, it.flightTimeMs, it.takeoffAtMs?.toLong(), it.landingAtMs?.toLong()).excursion) }
+            result.jump?.let { println("EXCURSION " + window.pathForLanding(pose.timestamp, it.flightTimeMs, it.takeoffAtMs, it.landingAtMs).excursion) }
             if (System.getenv("REPLAY_VERBOSE") != null) println("${pose.timestamp} . ${result.debugInfo}")
             if (result.newState.currentPhase != state.currentPhase || result.repCompleted) {
                 println("${pose.timestamp} ${state.currentPhase} -> ${result.newState.currentPhase} rep=${result.repCompleted} ${result.debugInfo}")

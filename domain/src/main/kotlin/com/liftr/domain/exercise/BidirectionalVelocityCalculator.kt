@@ -22,10 +22,11 @@ import kotlin.math.abs
  */
 object BidirectionalVelocityCalculator {
 
-    /** A single tracked vertical position sample. */
+    /** A single tracked vertical position sample; [timestampUs] times it, [timestampMs] labels the output. */
     data class PositionSample(
         val positionMeters: Float,
-        val timestampMs: Long
+        val timestampMs: Long,
+        val timestampUs: Long = timestampMs * 1000
     )
 
     private const val DEFAULT_PROCESS_NOISE = 0.01f
@@ -109,7 +110,7 @@ object BidirectionalVelocityCalculator {
         // from the first finite difference so the filter starts near the true
         // motion instead of spending several samples climbing away from zero.
         var position = positions[0].positionMeters
-        val seedDt = abs(positions[1].timestampMs - positions[0].timestampMs) / 1000f
+        val seedDt = abs(positions[1].timestampUs - positions[0].timestampUs) / 1_000_000f
         var velocity = if (seedDt > 0f) {
             (positions[1].positionMeters - positions[0].positionMeters) / seedDt
         } else 0f
@@ -120,7 +121,7 @@ object BidirectionalVelocityCalculator {
         var p10 = 0f
         var p11 = INITIAL_VELOCITY_VARIANCE
 
-        var prevTimestamp = positions[0].timestampMs
+        var prevTimestamp = positions[0].timestampUs
 
         velocities.add(0f) // first sample has no prior
 
@@ -128,7 +129,7 @@ object BidirectionalVelocityCalculator {
             // Use the magnitude of the time delta: in the backward pass the
             // series is reversed, so raw deltas are negative even though the
             // spacing between samples is unchanged.
-            val dt = abs(positions[i].timestampMs - prevTimestamp) / 1000f
+            val dt = abs(positions[i].timestampUs - prevTimestamp) / 1_000_000f
             if (dt == 0f) {
                 velocities.add(velocities.last())
                 continue
@@ -158,7 +159,7 @@ object BidirectionalVelocityCalculator {
             p11 = predP11 - gainVelocity * predP01
 
             velocities.add(velocity)
-            prevTimestamp = positions[i].timestampMs
+            prevTimestamp = positions[i].timestampUs
         }
 
         return velocities

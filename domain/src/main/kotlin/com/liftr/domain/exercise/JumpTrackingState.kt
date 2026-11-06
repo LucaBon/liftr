@@ -43,9 +43,9 @@ data class JumpTrackingState(
     val lowestHipsY: Float? = null,
     val takeoffCandidateMs: Double? = null,
     val takeoffMs: Double? = null,
-    val flightSamples: List<Pair<Long, Float>> = emptyList(),
-    val groundSamples: List<Pair<Long, Float>> = emptyList(),
-    val flightHipSamples: List<Pair<Long, Float>> = emptyList(),
+    val flightSamples: List<Pair<Double, Float>> = emptyList(),
+    val groundSamples: List<Pair<Double, Float>> = emptyList(),
+    val flightHipSamples: List<Pair<Double, Float>> = emptyList(),
     val peakHeadRise: Float = 0f,
     val previousFootY: Float? = null,
     val toeTracks: List<ToeTrack> = emptyList(),
@@ -53,12 +53,12 @@ data class JumpTrackingState(
     val followedVelocity: ToePoint? = null,
     val planted: Boolean = false,
     val previousHipsY: Float? = null,
-    val previousTimestamp: Long? = null,
+    val previousTimestamp: Double? = null,
     val stillFootY: Float? = null,
     val stillHipsY: Float? = null,
-    val stillSinceMs: Long? = null,
+    val stillSinceMs: Double? = null,
     val upsideDown: Boolean = false,
-    val flippedSinceMs: Long? = null
+    val flippedSinceMs: Double? = null
 ) {
     val isAirborne: Boolean get() = takeoffMs != null
 }
@@ -70,8 +70,8 @@ data class ToePoint(val x: Float, val y: Float)
 data class ToeTrack(
     val x: Float,
     val y: Float,
-    val slowSinceMs: Long? = null,
+    val slowSinceMs: Double? = null,
     val stanceYs: List<Float> = emptyList(),
     /** When each of [stanceYs] was seen, in ms. */
-    val stanceTimesMs: List<Long> = emptyList()
+    val stanceTimesMs: List<Double> = emptyList()
 )

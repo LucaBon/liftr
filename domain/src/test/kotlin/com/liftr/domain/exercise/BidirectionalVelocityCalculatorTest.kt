@@ -49,6 +49,20 @@ class BidirectionalVelocityCalculatorTest {
     }
 
     @Test
+    fun `240 fps velocity uses microsecond timestamps`() {
+        // 2 m/s sampled every 4166.7 us: whole milliseconds alternate 4 and 5 ms.
+        val periodUs = 1_000_000.0 / 240
+        val input = (0..240).map { i ->
+            val us = Math.round(i * periodUs)
+            PositionSample(positionMeters = 2f * (i * periodUs / 1e6).toFloat(), timestampMs = us / 1000, timestampUs = us)
+        }
+
+        val result = BidirectionalVelocityCalculator.calculateVelocities(input)
+
+        for (i in 20..220) assertEquals("sample $i", 2f, result[i].instantaneous.value, 0.01f)
+    }
+
+    @Test
     fun `constant velocity motion is recovered approximately`() {
         // Move 1 m/s: 0.1 m every 100 ms over 1 second.
         val input = (0..10).map { i ->

@@ -10,7 +10,11 @@ object VideoTimeBase {
         val timeScale: Float,
         val captureFps: Float,
         val isVariableSpeed: Boolean
-    )
+    ) {
+        /** Real time of a container time (both in microseconds from the first frame). */
+        fun realTimeUs(containerUs: Long): Long =
+            if (timeScale == 1f) containerUs else Math.round(containerUs / timeScale.toDouble())
+    }
 
     private const val MIN_SLOWMO_SCALE = 1.5f
     private const val VARIABLE_RATIO = 1.8

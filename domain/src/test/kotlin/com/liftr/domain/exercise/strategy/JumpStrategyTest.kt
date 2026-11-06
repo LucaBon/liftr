@@ -10,6 +10,7 @@ import com.liftr.domain.model.JumpData
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.PoseResultTestFixtures
+import com.liftr.domain.video.VideoTimeBase
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,8 +44,12 @@ class JumpStrategyTest {
             val y = lm.y - rise * normPerMeter + (if (upperBody) dip * normPerMeter else 0f)
             lm.copy(y = y)
         }
-        return basePose.copy(landmarks = landmarks, timestamp = timestamp)
+        return basePose.copy(landmarks = landmarks, timestamp = timestamp, timestampUs = timestamp * 1000)
     }
+
+    /** Like [pose], at [timeUs] microseconds. */
+    private fun poseUs(timeUs: Long, rise: Float = 0f, dip: Float = 0f): PoseResult =
+        pose(timeUs / 1000, dip, rise).copy(timestampUs = timeUs)
 
     /**
      * Builds a frame sequence: stand, optional countermovement, ballistic flight of [flightS], land, stand.
@@ -134,6 +139,54 @@ class JumpStrategyTest {
             assertEquals("reps at ${frameMs}ms", at30.reps, other.reps)
             assertEquals("phases at ${frameMs}ms", at30.phases, other.phases)
             assertEquals(at30.jumps.single().height.value, other.jumps.single().height.value, 0.01f)
+        }
+    }
+
+    /**
+     * A 240 fps capture of a jump with a [flightS] flight, taking off [phase]
+     * of a frame before a frame; [stamp] turns each frame's true time (us)
+     * into the timestamp the pipeline sees.
+     */
+    private fun capture240(flightS: Double, phase: Double, stamp: (Double) -> Long): List<PoseResult> {
+        val periodUs = 1_000_000.0 / 240
+        val frames = mutableListOf<PoseResult>()
+        var n = 0
+        fun timeUs() = 1_000_000 + n * periodUs
+        fun add(rise: Float = 0f, dip: Float = 0f) { frames += poseUs(stamp(timeUs()), rise, dip); n++ }
+
+        repeat(120) { add() }                                  // stand 0.5 s
+        for (i in 1..72) add(dip = 0.20f * i / 72)             // dip 20 cm in 0.3 s
+        for (i in 1..48) add(dip = 0.20f * (1f - i / 48f))     // push off in 0.2 s
+        val takeoffUs = timeUs() - phase * periodUs
+        val v0 = g * flightS / 2
+        while (true) {
+            val s = (timeUs() - takeoffUs) / 1e6
+            if (s >= flightS) break
+            add(rise = maxOf(0.0, v0 * s - g * s * s / 2).toFloat())
+        }
+        repeat(120) { add() }                                  // land and stand
+        return frames
+    }
+
+    @Test
+    fun `flight time at 240 fps with microsecond timestamps is within 1 ms of truth`() {
+        // Takeoff at several points between two frames.
+        for (phase in listOf(0.1, 0.35, 0.6, 0.85)) {
+            val jump = run(capture240(0.5, phase) { Math.round(it) }).jumps.single()
+            assertEquals("phase $phase", 500.0, jump.flightTimeMs.toDouble(), 1.0)
+        }
+    }
+
+    @Test
+    fun `slow motion time scale of 4 gives the real flight time`() {
+        // 240 fps stored as 60 fps playback: container times are 4x real ones.
+        val containerDeltas = List(100) { 16_667L }
+        val timeBase = VideoTimeBase.resolve(60f, null, 240f, containerDeltas)
+        assertEquals(4f, timeBase.timeScale)
+        for (phase in listOf(0.1, 0.35, 0.6, 0.85)) {
+            val frames = capture240(0.5, phase) { trueUs -> timeBase.realTimeUs(Math.round(trueUs * 4)) }
+            val jump = run(frames).jumps.single()
+            assertEquals("phase $phase", 500.0, jump.flightTimeMs.toDouble(), 1.0)
         }
     }
 
@@ -565,7 +618,7 @@ class JumpStrategyTest {
                     )) { val tmp = it[l]; it[l] = it[r]; it[r] = tmp }
                 }
             }
-            frames += basePose.copy(landmarks = landmarks, timestamp = 1000 + tMs)
+            frames += basePose.copy(landmarks = landmarks, timestamp = 1000 + tMs, timestampUs = (1000 + tMs) * 1000)
             tMs += frameMs
         }
         return frames

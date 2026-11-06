@@ -15,12 +15,19 @@ data class PoseKeypoint(
     }
 }
 
+/**
+ * @property timestamp Frame time in milliseconds, always [timestampUs] / 1000.
+ * @property timestampUs Frame time in microseconds, for timing fast movements
+ *   at 120/240 fps where whole milliseconds are a quarter of a frame. Copying
+ *   with a new [timestamp] must set it too.
+ */
 data class PoseResult(
     val landmarks: List<PoseKeypoint>,
     val timestamp: Long,
     val imageWidth: Int = 640,
     val imageHeight: Int = 480,
-    val isPortrait: Boolean = false  // Track orientation for coordinate normalization
+    val isPortrait: Boolean = false,  // Track orientation for coordinate normalization
+    val timestampUs: Long = timestamp * 1000
 ) {
     /**
      * Factor that converts a normalized x distance into image-height units.

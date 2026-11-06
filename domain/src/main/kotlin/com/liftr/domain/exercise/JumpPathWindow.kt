@@ -23,7 +23,9 @@ import kotlin.math.max
  * It also remembers where the center of mass rests while the athlete stands
  * still, so each jump's dip and peak can be measured from standing.
  *
- * Point timestamps and the `nowMs` passed in must share one clock.
+ * Point timestamps and the `nowMs` passed in must share one clock. Each point
+ * is timed by its frame's `nowUs` when given (microseconds on that clock),
+ * which keeps the flight fits exact at 240 fps; otherwise by its timestamp.
  */
 class JumpPathWindow {
 
@@ -31,14 +33,19 @@ class JumpPathWindow {
     data class JumpPath(val points: List<BarPathPoint>, val excursion: JumpExcursion?)
 
     /** Where the center of mass rested, and the frame's scale, when last standing still. */
-    private class Standing(val y: Float, val cmPerUnitY: Float, val realWorldCmPerUnitY: Float, val atMs: Long)
+    private class Standing(val y: Float, val cmPerUnitY: Float, val realWorldCmPerUnitY: Float, val atMs: Double)
 
-    private val recent = ArrayDeque<BarPathPoint>()
+    /** A path point and its time in milliseconds. */
+    private class Sample(val point: BarPathPoint, val ms: Double) {
+        val normalizedY get() = point.normalizedY
+    }
+
+    private val recent = ArrayDeque<Sample>()
     private var phase = MovementPhase.IDLE
     private var dipStartMs: Long? = null
 
     // The current still stretch: frames within STILL_RANGE of its first one.
-    private var stillFrom: BarPathPoint? = null
+    private var stillFrom: Sample? = null
     private val stillYs = mutableListOf<Float>()
     private val stillScales = mutableListOf<Float>()
     private var standing: Standing? = null
@@ -47,15 +54,17 @@ class JumpPathWindow {
      * Record one frame; [point] is null when the center of mass was not
      * measurable. [cmPerUnitY] is the body-based scale of this frame (see
      * [cmPerUnitY]); without it the point's calibrated coordinates are used.
+     * [nowUs] is this frame's time in microseconds, when known.
      */
-    fun onFrame(point: BarPathPoint?, newPhase: MovementPhase, nowMs: Long, cmPerUnitY: Float? = null) {
+    fun onFrame(point: BarPathPoint?, newPhase: MovementPhase, nowMs: Long, cmPerUnitY: Float? = null, nowUs: Long? = null) {
         if (newPhase == MovementPhase.ECCENTRIC && phase != MovementPhase.ECCENTRIC) dipStartMs = nowMs
         phase = newPhase
         point?.let {
-            recent.addLast(it)
-            trackStanding(it, newPhase, cmPerUnitY)
+            val sample = Sample(it, nowUs?.let { us -> us / 1000.0 } ?: it.timestamp.toDouble())
+            recent.addLast(sample)
+            trackStanding(sample, newPhase, cmPerUnitY)
         }
-        while (recent.isNotEmpty() && nowMs - recent.first().timestamp > KEEP_MS) recent.removeFirst()
+        while (recent.isNotEmpty() && nowMs - recent.first().ms > KEEP_MS) recent.removeFirst()
     }
 
     /**
@@ -67,15 +76,15 @@ class JumpPathWindow {
      * this window's clock. Landing is only recognized a frame or two after
      * touchdown, so without them takeoff is placed that much too late.
      */
-    fun pathForLanding(nowMs: Long, flightMs: Float, takeoffMs: Long? = null, landingMs: Long? = null): JumpPath {
+    fun pathForLanding(nowMs: Long, flightMs: Float, takeoffMs: Double? = null, landingMs: Double? = null): JumpPath {
         // Only measured takeoff and touchdown can be checked against each other.
         val timed = takeoffMs != null && landingMs != null
-        val landedMs = landingMs ?: nowMs
-        val takeoffMs = takeoffMs ?: (landedMs - flightMs.toLong())
-        val startMs = dipStartMs?.takeIf { it >= takeoffMs - MAX_DIP_MS } ?: (takeoffMs - PRE_TAKEOFF_MS)
+        val landedMs = landingMs ?: nowMs.toDouble()
+        val takeoffMs = takeoffMs ?: (landedMs - flightMs)
+        val startMs = dipStartMs?.takeIf { it >= takeoffMs - MAX_DIP_MS }?.toDouble() ?: (takeoffMs - PRE_TAKEOFF_MS)
         dipStartMs = null
         return JumpPath(
-            points = recent.filter { it.timestamp in startMs..nowMs },
+            points = recent.filter { it.ms >= startMs && it.ms <= nowMs }.map { it.point },
             excursion = excursion(takeoffMs, landedMs, timed)
         )
     }
@@ -84,15 +93,15 @@ class JumpPathWindow {
      * Dip and peak from standing: the lowest center of mass between standing
      * and takeoff, and the highest one in the air. Image y grows downward.
      */
-    private fun excursion(takeoffMs: Long, landingMs: Long, timed: Boolean): JumpExcursion? {
+    private fun excursion(takeoffMs: Double, landingMs: Double, timed: Boolean): JumpExcursion? {
         val ref = standing?.takeIf { it.atMs < takeoffMs } ?: return null
-        val flight = recent.filter { it.timestamp in takeoffMs..landingMs }
+        val flight = recent.filter { it.ms in takeoffMs..landingMs }
         if (flight.isEmpty()) return null
         val dipFrom = max(ref.atMs, takeoffMs - MAX_DIP_MS)
         // Extremes of a 3-frame median, so one mistracked frame can't set them.
-        val lowest = medianOf3(recent.filter { it.timestamp in dipFrom..takeoffMs }).maxOrNull() ?: ref.y
+        val lowest = medianOf3(recent.filter { it.ms in dipFrom..takeoffMs }).maxOrNull() ?: ref.y
         val atTakeoff = yAt(takeoffMs)
-        val trimmed = flight.filter { it.timestamp in takeoffMs + TAKEOFF_TRIM_MS..landingMs - LANDING_TRIM_MS }
+        val trimmed = flight.filter { it.ms in takeoffMs + TAKEOFF_TRIM_MS..landingMs - LANDING_TRIM_MS }
         val (fitCheck, fitFrames) = fitCheck(trimmed, takeoffMs, ref.cmPerUnitY)
         // Frames left out of the fit as mistracked don't set the peak either.
         val dropped = trimmed.toSet() - fitFrames.toSet()
@@ -124,8 +133,8 @@ class JumpPathWindow {
     private fun timingCheck(
         check: JumpFitCheck,
         takeoffVelocity: Float,
-        takeoffMs: Long,
-        landingMs: Long,
+        takeoffMs: Double,
+        landingMs: Double,
         cmPerUnitY: Float
     ): JumpFitCheck {
         val atTakeoff = yAt(takeoffMs) ?: return check
@@ -149,12 +158,12 @@ class JumpPathWindow {
      * can't be checked.
      */
     private fun fitCheck(
-        flight: List<BarPathPoint>,
-        takeoffMs: Long,
+        flight: List<Sample>,
+        takeoffMs: Double,
         cmPerUnitY: Float
-    ): Pair<JumpFitCheck?, List<BarPathPoint>> {
+    ): Pair<JumpFitCheck?, List<Sample>> {
         if (flight.isEmpty()) return null to flight
-        val taus = flight.map { (it.timestamp - takeoffMs) / 1000.0 }
+        val taus = flight.map { (it.ms - takeoffMs) / 1000.0 }
         val heights = flight.map { (flight.first().normalizedY - it.normalizedY) * cmPerUnitY / 100.0 }
         val (check, kept) = JumpFlightValidator.checkWithoutOutliers(taus, heights) ?: return null to flight
         return check to kept.map { flight[it] }
@@ -168,10 +177,10 @@ class JumpPathWindow {
      * time since takeoff, so z + g·τ²/2 is a straight line whose slope is v0.
      * Null with too few airborne frames, or when the fit does not rise.
      */
-    private fun takeoffVelocity(flight: List<BarPathPoint>, takeoffMs: Long, cmPerUnitY: Float): Float? {
+    private fun takeoffVelocity(flight: List<Sample>, takeoffMs: Double, cmPerUnitY: Float): Float? {
         if (flight.size < ExerciseThresholds.Jump.MIN_FIT_SAMPLES) return null
-        if (flight.last().timestamp - flight.first().timestamp < ExerciseThresholds.Jump.MIN_FIT_MS) return null
-        val taus = flight.map { (it.timestamp - takeoffMs) / 1000.0 }
+        if (flight.last().ms - flight.first().ms < ExerciseThresholds.Jump.MIN_FIT_MS) return null
+        val taus = flight.map { (it.ms - takeoffMs) / 1000.0 }
         if (taus.last() - taus.first() < MIN_FIT_SPAN_S) return null
         // Height above the first airborne frame, in meters; image y grows downward.
         val lines = flight.zip(taus) { p, tau ->
@@ -186,43 +195,44 @@ class JumpPathWindow {
     }
 
     /** Each point's y as the median of it and its neighbors; the ends keep their own. */
-    private fun medianOf3(points: List<BarPathPoint>): List<Float> = points.indices.map { i ->
+    private fun medianOf3(points: List<Sample>): List<Float> = points.indices.map { i ->
         if (i == 0 || i == points.lastIndex) points[i].normalizedY
         else listOf(points[i - 1].normalizedY, points[i].normalizedY, points[i + 1].normalizedY).sorted()[1]
     }
 
     /** Center-of-mass y at [timeMs], interpolated between the frames around it. */
-    private fun yAt(timeMs: Long): Float? {
-        val after = recent.firstOrNull { it.timestamp >= timeMs } ?: return null
-        val before = recent.lastOrNull { it.timestamp <= timeMs } ?: return after.normalizedY
-        if (after.timestamp == before.timestamp) return after.normalizedY
-        val f = (timeMs - before.timestamp).toFloat() / (after.timestamp - before.timestamp)
+    private fun yAt(timeMs: Double): Float? {
+        val after = recent.firstOrNull { it.ms >= timeMs } ?: return null
+        val before = recent.lastOrNull { it.ms <= timeMs } ?: return after.normalizedY
+        if (after.ms == before.ms) return after.normalizedY
+        val f = ((timeMs - before.ms) / (after.ms - before.ms)).toFloat()
         return before.normalizedY + f * (after.normalizedY - before.normalizedY)
     }
 
     /** Standing is a stretch of [ExerciseThresholds.Jump.STILL_MS] on the ground with the center of mass at rest. */
-    private fun trackStanding(point: BarPathPoint, newPhase: MovementPhase, cmPerUnitY: Float?) {
+    private fun trackStanding(sample: Sample, newPhase: MovementPhase, cmPerUnitY: Float?) {
+        val point = sample.point
         if (newPhase != MovementPhase.IDLE) {
             stillFrom = null
             return
         }
         val anchor = stillFrom
         if (anchor == null || abs(point.normalizedY - anchor.normalizedY) > STILL_RANGE) {
-            stillFrom = point
+            stillFrom = sample
             stillYs.clear()
             stillScales.clear()
         }
         stillYs += point.normalizedY
         cmPerUnitY?.let { stillScales += it }
 
-        val since = stillFrom!!.timestamp
-        if (point.timestamp - since < ExerciseThresholds.Jump.STILL_MS || point.normalizedY <= 0f) return
+        val since = stillFrom!!.ms
+        if (sample.ms - since < ExerciseThresholds.Jump.STILL_MS || point.normalizedY <= 0f) return
         val realWorldScale = point.realWorldYCm / point.normalizedY
         standing = Standing(
             y = stillYs.average().toFloat(),
             cmPerUnitY = stillScales.sorted().getOrNull(stillScales.size / 2) ?: realWorldScale,
             realWorldCmPerUnitY = realWorldScale,
-            atMs = point.timestamp
+            atMs = sample.ms
         )
     }
 

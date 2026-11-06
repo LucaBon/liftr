@@ -222,7 +222,7 @@ class JumpPathWindowTest {
         val window = JumpPathWindow()
         val landingMs = jumpLandingLower(window, dropM = 0.10)
 
-        val check = window.pathForLanding(landingMs + 50, (landingMs - 1000).toFloat(), 1000, landingMs)
+        val check = window.pathForLanding(landingMs + 50, (landingMs - 1000).toFloat(), 1000.0, landingMs.toDouble())
             .excursion!!.fitCheck!!
 
         assertEquals(10f, check.landingDropCm!!, 1f)
@@ -235,7 +235,7 @@ class JumpPathWindowTest {
         val window = JumpPathWindow()
         val landingMs = jumpLandingLower(window, dropM = 0.10)
 
-        val check = window.pathForLanding(landingMs + 50, (landingMs - 1000).toFloat(), 1000, landingMs + 34)
+        val check = window.pathForLanding(landingMs + 50, (landingMs - 1000).toFloat(), 1000.0, (landingMs + 34).toDouble())
             .excursion!!.fitCheck!!
 
         assertFalse(check.timingOk)

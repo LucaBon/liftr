@@ -143,7 +143,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                         onProgress, COARSE_PASS_SHARE, 1f
                     )
                     logger.i(TAG, "Dense pass: ${dense.poses.size} poses around ${windows.size} takeoffs/landings")
-                    (coarse.poses + dense.poses).sortedBy { it.timestamp }
+                    (coarse.poses + dense.poses).sortedBy { it.timestampUs }
                 }
             } finally {
                 poseSource.close()
@@ -167,7 +167,8 @@ class AnalyzeVideoUseCase @Inject constructor(
                 if (measured != null) lastKnownPosition = measured
                 BidirectionalVelocityCalculator.PositionSample(
                     positionMeters = measured ?: lastKnownPosition ?: 0f,
-                    timestampMs = pose.timestamp
+                    timestampMs = pose.timestamp,
+                    timestampUs = pose.timestampUs
                 )
             }
             val velocities = BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
@@ -339,7 +340,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             val pathPoint = extractBarPathPoint(pose, velocity, params)
             jumpPath?.onFrame(
                 pathPoint, newPhase, now,
-                JumpPathWindow.cmPerUnitY(pose, params.calibrationData.userHeight)
+                JumpPathWindow.cmPerUnitY(pose, params.calibrationData.userHeight),
+                nowUs = pose.timestampUs
             )
             if (newPhase in ACTIVE_PHASES) {
                 pathPoint?.let { currentRepBarPoints.add(it) }
@@ -357,7 +359,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 transition.depthValidation?.let { currentRepDepthValidation = it }
                 // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
                 val jumpWindow = transition.jump?.let {
-                    jumpPath?.pathForLanding(now, it.flightTimeMs, it.takeoffAtMs?.toLong(), it.landingAtMs?.toLong())
+                    jumpPath?.pathForLanding(now, it.flightTimeMs, it.takeoffAtMs, it.landingAtMs)
                 }
                 jumpWindow?.let { window ->
                     currentRepBarPoints = window.points.toMutableList()
