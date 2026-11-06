@@ -453,5 +453,6 @@
     <string name="lift_filmed_from_front">Filmed from the front: form checks and scores assume a side view, so they may be wrong. Film from the side.</string>
     <string name="jump_filmed_from_front">Filmed from the front: heights may be off if you moved toward or away from the camera. Film jumps from the side.</string>
     <string name="import_video">Import video</string>
+    <string name="import_video_as">Import video as %1$s</string>
     <string name="high_speed_unavailable_hint">In-app recording is limited to 60 fps. For jumps, cleans and snatches, record in slow motion with your phone\'s camera and import the video.</string>
 </resources>

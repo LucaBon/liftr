@@ -20,5 +20,6 @@
     <string name="catch_power">Power</string>
     <string name="catch_squat">Squat</string>
     <string name="import_video">Importa video</string>
+    <string name="import_video_as">Importa video come %1$s</string>
     <string name="high_speed_unavailable_hint">La registrazione nell\'app è limitata a 60 fps. Per salti, clean e snatch registra in slow-motion con la fotocamera del telefono e importa il video.</string>
 </resources>

@@ -471,8 +471,9 @@ fun WorkoutScreen(
                                 )
                             }
 
+                            // The import is analyzed as the exercise selected above: say which.
                             TextButton(onClick = importVideo) {
-                                Text(stringResource(R.string.import_video))
+                                Text(stringResource(R.string.import_video_as, uiState.selectedExercise.label()))
                             }
                         }
                     } else {
