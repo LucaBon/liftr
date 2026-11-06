@@ -1,6 +1,7 @@
 package com.liftr.domain.model
 
 import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
@@ -31,6 +32,8 @@ import com.liftr.domain.model.BarPathData
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
  * @property repPeakPowers Per-jump peak power (Sayers), null where body mass is unknown; empty for lifts
+ * @property repMechanics Per-jump mean push-off force, velocity and power (Samozino), null where
+ *   body mass or the push-off distance is unknown; empty for lifts
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -54,7 +57,8 @@ data class SetSummary(
     val cameraView: CameraView = CameraView.UNKNOWN,
     /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
     val videoSpeedSuspect: Boolean = false,
-    val repPeakPowers: List<Watts?> = emptyList()
+    val repPeakPowers: List<Watts?> = emptyList(),
+    val repMechanics: List<JumpMechanics?> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 

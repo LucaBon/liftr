@@ -2,6 +2,7 @@ package com.liftr.domain.usecase
 
 import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.calculator.CameraViewClassifier
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import com.liftr.domain.exercise.normalizedXY
@@ -273,6 +274,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repApexHeights = mutableListOf<Meters?>()
         val repFittedGravities = mutableListOf<Float>()
         val repPeakPowers = mutableListOf<Watts?>()
+        val repMechanics = mutableListOf<JumpMechanics?>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -473,6 +475,11 @@ class AnalyzeVideoUseCase @Inject constructor(
                     repJumpHeights.add(it.height)
                     repApexHeights.add(it.apexHeight)
                     repPeakPowers.add((strategy as? JumpStrategy)?.peakPower(it, params.calibrationData, params.weight))
+                    repMechanics.add(
+                        (strategy as? JumpStrategy)?.pushOffMechanics(
+                            it, repBarPaths.last().excursion, params.calibrationData, params.weight
+                        )
+                    )
                 }
 
                 onProgress(
@@ -509,7 +516,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         } else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(
-                cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers,
+                cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers, repMechanics = repMechanics,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
                         .format(repFittedGravities))
