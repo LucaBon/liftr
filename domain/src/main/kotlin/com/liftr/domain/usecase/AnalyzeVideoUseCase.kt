@@ -4,6 +4,8 @@ import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.calculator.CameraViewClassifier
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.calculator.CenterOfMassCalculator
+import com.liftr.domain.exercise.normalizedXY
+import com.liftr.domain.exercise.trackingPoint
 import com.liftr.domain.exercise.BarPathAnalyzer
 import com.liftr.domain.exercise.BidirectionalVelocityCalculator
 import com.liftr.domain.exercise.ExercisePhaseState
@@ -537,33 +539,13 @@ class AnalyzeVideoUseCase @Inject constructor(
     }
 
     private fun trackingNormalizedXY(pose: PoseResult, params: Params): Pair<Float, Float>? {
-        val landmarks = pose.landmarks
-        return when (params.exerciseType) {
-            // No bar to follow: track the whole body's center of mass, plus
-            // the bar on the shoulders for a loaded jump.
-            ExerciseType.VERTICAL_JUMP, ExerciseType.APPROACH_JUMP -> CenterOfMassCalculator.centerOfMass(pose)
-            ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
-                pose,
-                CenterOfMassCalculator.loadFraction(
-                    params.weight.value,
-                    params.calibrationData.anthropometricData?.userWeight
-                )
+        val loadFraction = if (params.exerciseType == ExerciseType.LOADED_JUMP) {
+            CenterOfMassCalculator.loadFraction(
+                params.weight.value,
+                params.calibrationData.anthropometricData?.userWeight
             )
-            ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT ->
-                averageXY(landmarks.getOrNull(PoseResult.LEFT_SHOULDER), landmarks.getOrNull(PoseResult.RIGHT_SHOULDER))
-            ExerciseType.BENCH_PRESS, ExerciseType.DEADLIFT ->
-                averageXY(landmarks.getOrNull(PoseResult.LEFT_WRIST), landmarks.getOrNull(PoseResult.RIGHT_WRIST))
-            else -> averageXY(
-                landmarks.getOrNull(PoseResult.LEFT_SHOULDER),
-                landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-            )
-        }
-    }
-
-    private fun averageXY(a: PoseKeypoint?, b: PoseKeypoint?): Pair<Float, Float>? {
-        if (a == null || b == null) return null
-        if (a.visibility < 0.5f || b.visibility < 0.5f) return null
-        return Pair((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+        } else 0f
+        return normalizedXY(pose, trackingPoint(params.exerciseType), loadFraction)
     }
 
     private fun phaseLabel(phase: MovementPhase): String? = when (phase) {

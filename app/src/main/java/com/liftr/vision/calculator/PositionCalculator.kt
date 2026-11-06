@@ -2,6 +2,8 @@ package com.liftr.vision.calculator
 
 import com.liftr.domain.model.BodyPartPositions
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.exercise.normalizedXY
+import com.liftr.domain.exercise.trackingPoint
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PoseKeypoint
@@ -301,31 +303,10 @@ class PositionCalculator @Inject constructor(
     }
 
     /**
-     * Calculate bar position in pixels based on exercise type
+     * Tracked bar position in normalized image coordinates for the exercise type
      */
-    fun getBarPosition(poseResult: PoseResult, exerciseType: ExerciseType): Pair<Float, Float>? {
-        val landmarks = poseResult.landmarks
-
-        return when (exerciseType) {
-            ExerciseType.FRONT_SQUAT, ExerciseType.BACK_SQUAT, ExerciseType.DEADLIFT -> {
-                // Use hip midpoint
-                val leftHip = landmarks.getOrNull(23) ?: return null
-                val rightHip = landmarks.getOrNull(24) ?: return null
-                if (leftHip.visibility < 0.5f || rightHip.visibility < 0.5f) return null
-                getMidpoint(leftHip, rightHip)
-            }
-
-            ExerciseType.BENCH_PRESS, ExerciseType.CLEAN, ExerciseType.SNATCH -> {
-                // Use wrist midpoint
-                val leftWrist = landmarks.getOrNull(15) ?: return null
-                val rightWrist = landmarks.getOrNull(16) ?: return null
-                if (leftWrist.visibility < 0.5f || rightWrist.visibility < 0.5f) return null
-                getMidpoint(leftWrist, rightWrist)
-            }
-
-            else -> null
-        }
-    }
+    fun getBarPosition(poseResult: PoseResult, exerciseType: ExerciseType): Pair<Float, Float>? =
+        normalizedXY(poseResult, trackingPoint(exerciseType))
 
     /**
      * Convert normalized position to meters using calibration data
@@ -514,9 +495,5 @@ class PositionCalculator @Inject constructor(
             pixelsPerMeter = calibrationData.pixelsPerMeter,
             quality = com.liftr.domain.model.CalibrationQuality.FALLBACK
         )
-    }
-
-    private fun getMidpoint(p1: PoseKeypoint, p2: PoseKeypoint): Pair<Float, Float> {
-        return Pair((p1.x + p2.x) / 2f, (p1.y + p2.y) / 2f)
     }
 }

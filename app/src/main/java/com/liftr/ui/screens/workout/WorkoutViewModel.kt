@@ -24,6 +24,8 @@ import com.liftr.vision.camera.CameraManager
 import com.liftr.vision.camera.VideoRecordingManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.liftr.domain.exercise.BarPathAnalyzer
+import com.liftr.domain.exercise.normalizedXY
+import com.liftr.domain.exercise.trackingPoint
 import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.exercise.RepQualityScorer
@@ -977,29 +979,13 @@ class WorkoutViewModel @Inject constructor(
         velocityData: com.liftr.domain.model.VelocityData?,
         exerciseType: ExerciseType
     ): BarPathPoint? {
-        val landmarks = poseResult.landmarks
-        val (nx, ny) = when (exerciseType) {
-            ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> {
-                val left = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-                val right = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-                averageXY(left, right) ?: return null
-            }
-            ExerciseType.BENCH_PRESS, ExerciseType.DEADLIFT -> {
-                val left = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-                val right = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-                averageXY(left, right) ?: return null
-            }
-            ExerciseType.VERTICAL_JUMP, ExerciseType.APPROACH_JUMP ->
-                CenterOfMassCalculator.centerOfMass(poseResult) ?: return null
-            ExerciseType.LOADED_JUMP -> CenterOfMassCalculator.centerOfMass(
-                poseResult,
-                CenterOfMassCalculator.loadFraction(
-                    _uiState.value.weight.value,
-                    calibrationData?.anthropometricData?.userWeight
-                )
-            ) ?: return null
-            else -> return null
-        }
+        val loadFraction = if (exerciseType == ExerciseType.LOADED_JUMP) {
+            CenterOfMassCalculator.loadFraction(
+                _uiState.value.weight.value,
+                calibrationData?.anthropometricData?.userWeight
+            )
+        } else 0f
+        val (nx, ny) = normalizedXY(poseResult, trackingPoint(exerciseType), loadFraction) ?: return null
 
         val ppm = calibrationData?.pixelsPerMeter ?: 1f
         val imageWidth = poseResult.imageWidth.toFloat()
@@ -1013,12 +999,6 @@ class WorkoutViewModel @Inject constructor(
             velocity = velocityData?.instantaneous ?: MetersPerSecond(0f),
             timestamp = System.currentTimeMillis()
         )
-    }
-
-    private fun averageXY(a: PoseKeypoint?, b: PoseKeypoint?): Pair<Float, Float>? {
-        if (a == null || b == null) return null
-        if (a.visibility < 0.5f || b.visibility < 0.5f) return null
-        return Pair((a.x + b.x) / 2f, (a.y + b.y) / 2f)
     }
 
     /**
