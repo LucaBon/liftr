@@ -281,10 +281,10 @@ class AnalyticsRepositoryImpl @Inject constructor(
             val jumps = repDao.getRepsForSetSync(set.id)
                 .filter { it.jumpData != null }
                 .sortedBy { it.repNumber }
-                .map { JumpRepRecord(set.timestamp, set.id, it.repNumber, it.jumpData!!) }
+                .map { JumpRepRecord(set.timestamp, set.id, it.repNumber, it.jumpData!!, set.weight) }
             // Sets saved before per-jump data was kept still have their best height.
             jumps.ifEmpty {
-                listOfNotNull(set.jumpHeight?.let { JumpRepRecord(set.timestamp, set.id, 1, RepJumpData(it * 100f)) })
+                listOfNotNull(set.jumpHeight?.let { JumpRepRecord(set.timestamp, set.id, 1, RepJumpData(it * 100f), set.weight) })
             }
         }
     }

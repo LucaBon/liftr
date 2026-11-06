@@ -37,6 +37,11 @@ package com.liftr.domain.exercise
  *   (camera upside down); frames the other way up are mistracked
  * @property flippedSinceMs Since when frames have been the other way up from
  *   the baseline, back to back; for long enough, the camera itself was turned
+ * @property contactStartMs When the feet touched the floor at the end of the
+ *   last counted jump (its landing crossing moved down to the floor, see
+ *   [com.liftr.domain.model.JumpData.contactTimeMs]); the next takeoff times
+ *   its ground contact from here. Null before the first jump, after a flight
+ *   that wasn't counted, and once the athlete has rested for STILL_MS.
  */
 data class JumpTrackingState(
     val baselineFootY: Float,
@@ -61,7 +66,8 @@ data class JumpTrackingState(
     val stillHipsY: Float? = null,
     val stillSinceMs: Double? = null,
     val upsideDown: Boolean = false,
-    val flippedSinceMs: Double? = null
+    val flippedSinceMs: Double? = null,
+    val contactStartMs: Double? = null
 ) {
     val isAirborne: Boolean get() = takeoffMs != null
 }

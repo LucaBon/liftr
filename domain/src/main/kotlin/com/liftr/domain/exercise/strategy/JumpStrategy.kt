@@ -1,5 +1,6 @@
 package com.liftr.domain.exercise.strategy
 
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.domain.exercise.ExerciseCriteria
 import com.liftr.domain.exercise.ExerciseMetrics
 import com.liftr.domain.exercise.ExercisePhaseState
@@ -16,6 +17,7 @@ import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.JumpData
+import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
@@ -253,7 +255,9 @@ class JumpStrategy(
             } else {
                 tracking.copy(
                     lowestHipsY = null, takeoffCandidateMs = null, takeoffMs = null, flightSamples = emptyList(),
-                    previousFootY = frame.footY, previousTimestamp = timestamp
+                    previousFootY = frame.footY, previousTimestamp = timestamp,
+                    // Set again below if this flight counts as a jump.
+                    contactStartMs = null
                 )
             }
         )
@@ -294,7 +298,15 @@ class JumpStrategy(
                 heightFromTakeoffToApex(firstOff, toes.getOrNull(onFloor)?.first, apexMs, spanPerMeter)
             }
         val fittedGravity = fitGravity(airborneSamples(tracking.flightSamples, landingLevel), spanPerMeter)
-        val jump = fromFlight.copy(apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs)
+        // Ground contact (see JumpData): both crossings moved down to the
+        // floor by the time the toes take between it and the timing level.
+        val clipMs = JumpData.timingLevelClipMs(crossingFlightMs, timingLevelMeters)
+        val contactTimeMs = tracking.contactStartMs?.takeUnless { approach }
+            ?.let { (takeoffMs - clipMs - it).toFloat() }
+            ?.takeIf { it in Jump.MIN_CONTACT_MS..Jump.MAX_CONTACT_MS }
+        val jump = fromFlight.copy(
+            apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs, contactTimeMs = contactTimeMs
+        )
         val flightMs = jump.flightTimeMs
         if (flightMs < minFlightMs) {
             logger.d(TAG, "Flight of %.0f ms is too short for a jump".format(flightMs))
@@ -317,12 +329,14 @@ class JumpStrategy(
                 grounded, repCompleted = false, debugInfo = "Head did not rise", flightGravity = fittedGravity
             )
         }
-        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f".format(
+        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f, contact %s".format(
             flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a",
-            takeoffGround, landingGround
+            takeoffGround, landingGround, contactTimeMs?.let { "%.0f ms".format(it) } ?: "n/a"
         ))
+        // A run-up's strides are no rebound contacts: approach jumps time none.
+        val landed = if (approach) grounded else grounded.copy(jump = grounded.jump?.copy(contactStartMs = landingMs + clipMs))
         return PhaseTransitionResult(
-            newState = grounded,
+            newState = landed,
             repCompleted = true,
             debugInfo = "Landed: %.1f cm".format(jump.height.value * 100),
             jump = jump,
@@ -414,6 +428,14 @@ class JumpStrategy(
             )
         }
         next = settled
+
+        // Resting for STILL_MS since the landing ends the rebound: the next
+        // takeoff starts a fresh jump, with no contact time.
+        val contactStart = next.contactStartMs
+        val stillSince = next.stillSinceMs
+        if (contactStart != null && stillSince != null && timestamp - maxOf(stillSince, contactStart) >= Jump.STILL_MS) {
+            next = next.copy(contactStartMs = null)
+        }
 
         val hipDrop = frame.hipsY - tracking.baselineHipsY
         val phase = state.currentPhase
@@ -839,10 +861,37 @@ class JumpStrategy(
      * flight time, so jump power comes from here.
      */
     fun peakPower(jump: JumpData, calibrationData: CalibrationData, load: Kilograms): Watts? {
-        val bodyMass = calibrationData.anthropometricData?.userWeight?.takeIf { it > 0f } ?: return null
-        val systemMass = bodyMass + if (exerciseType == ExerciseType.LOADED_JUMP) load.value else 0f
+        val systemMass = systemMass(calibrationData, load) ?: return null
         val power = 60.7f * jump.height.value * 100f + 45.3f * systemMass - 2055f
         return if (power > 0f) Watts(power) else null
+    }
+
+    /**
+     * Mean push-off force, velocity and power of [jump] by Samozino's simple
+     * method (see [JumpMechanics]), with the push-off distance measured from
+     * its center-of-mass [excursion] and the same system mass as [peakPower].
+     *
+     * Null without a body mass, without an excursion (never seen standing, or
+     * an approach jump, whose dip from standing means nothing after a run-up),
+     * or when the measured push-off is implausible. No assumed push-off
+     * distance stands in: a guessed hPO moves the force as much as the jump.
+     */
+    fun pushOffMechanics(
+        jump: JumpData,
+        excursion: JumpExcursion?,
+        calibrationData: CalibrationData,
+        load: Kilograms
+    ): JumpMechanics? {
+        if (approach || excursion == null) return null
+        val systemMass = systemMass(calibrationData, load) ?: return null
+        val pushOffCm = JumpMechanics.pushOffCm(excursion) ?: return null
+        return JumpMechanics.of(jump.height.value, pushOffCm / 100f, systemMass)
+    }
+
+    /** Body mass from the calibration, plus [load] for a loaded jump; null without a body mass. */
+    private fun systemMass(calibrationData: CalibrationData, load: Kilograms): Float? {
+        val bodyMass = calibrationData.anthropometricData?.userWeight?.takeIf { it > 0f } ?: return null
+        return bodyMass + if (exerciseType == ExerciseType.LOADED_JUMP) load.value else 0f
     }
 
     override fun validateForm(

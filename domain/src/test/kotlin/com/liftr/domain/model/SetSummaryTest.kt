@@ -6,6 +6,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -200,5 +201,48 @@ class SetSummaryTest {
             ),
             aggregated
         )
+    }
+
+    // --- RSI ---
+
+    private fun withRsis(vararg rsis: Float?) =
+        createSummary(rsis.map { createScore(80) }).copy(repReactiveStrengthIndices = rsis.toList())
+
+    @Test
+    fun `best five mean RSI averages the five best rebounds, ignoring jumps without a contact`() {
+        val summary = withRsis(null, 1.0f, 2.0f, 1.5f, null, 2.5f, 0.5f, 1.8f, 2.2f)
+
+        // Best five: 2.5, 2.2, 2.0, 1.8, 1.5.
+        assertEquals(2.0f, summary.bestFiveMeanRsi!!, 1e-5f)
+        assertEquals(2.5f, summary.bestRsi!!, 1e-5f)
+        assertEquals(2.0f, summary.setRsi!!, 1e-5f)
+    }
+
+    @Test
+    fun `suspect jumps stay out of the set's RSI`() {
+        val summary = withRsis(null, 1.2f, 3.5f, 1.4f).copy(
+            repJumpQualities = listOf(JumpQuality.OK, JumpQuality.OK, JumpQuality.SUSPECT, JumpQuality.UNCHECKED)
+        )
+
+        assertEquals(1.4f, summary.bestRsi!!, 1e-5f)
+        assertEquals(1.4f, summary.setRsi!!, 1e-5f)
+    }
+
+    @Test
+    fun `fewer than five rebounds give only the best single RSI`() {
+        val summary = withRsis(null, 1.2f, 1.6f, 1.4f, 1.1f)
+
+        assertNull(summary.bestFiveMeanRsi)
+        assertEquals(1.6f, summary.bestRsi!!, 1e-5f)
+        assertEquals(1.6f, summary.setRsi!!, 1e-5f)
+    }
+
+    @Test
+    fun `a set without rebounds has no RSI`() {
+        val summary = withRsis(null, null)
+
+        assertNull(summary.bestFiveMeanRsi)
+        assertNull(summary.bestRsi)
+        assertNull(summary.setRsi)
     }
 }

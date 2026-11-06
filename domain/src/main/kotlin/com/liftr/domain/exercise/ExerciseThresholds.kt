@@ -423,6 +423,20 @@ object ExerciseThresholds {
         /** Feet and hips resting this long mark the standing position, wherever they are */
         const val STILL_MS = 300L
 
+        /**
+         * Shortest ground contact between a landing and the next takeoff that counts as a
+         * rebound. Pogo jumps reach ~120 ms; under 80 ms the feet never really touched down
+         * (or the landing was timed wrong), so no contact time is reported.
+         */
+        const val MIN_CONTACT_MS = 80f
+
+        /**
+         * Longest ground contact that still counts as a rebound. Repeated countermovement
+         * jumps spend 400-900 ms on the ground; longer is a fresh jump, not a rebound, and
+         * gets no contact time. Resting for [STILL_MS] ends the rebound sooner.
+         */
+        const val MAX_CONTACT_MS = 1000f
+
         /** A flight whose head rises less than this fraction of the height it implies is not a jump */
         const val MIN_HEAD_RISE_FRACTION = 0.5f
 
@@ -462,6 +476,16 @@ object ExerciseThresholds {
          * The LESS screen scores sagittal knee displacement under 45° as a stiff landing.
          */
         const val STIFF_LANDING_KNEE_FLEXION_DEG = 45f
+
+        /**
+         * Plausible push-off distance (m), from the lowest point of the dip to
+         * takeoff. Squat and countermovement jumps push off over roughly
+         * 0.25-0.50 m; outside this range the dip or the takeoff height was
+         * mistracked, and Samozino's force (inversely proportional to it)
+         * would be far off.
+         */
+        const val MIN_PUSH_OFF_M = 0.10f
+        const val MAX_PUSH_OFF_M = 0.70f
     }
 
     /**

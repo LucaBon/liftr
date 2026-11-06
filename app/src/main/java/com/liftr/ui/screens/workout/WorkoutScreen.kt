@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -55,6 +56,7 @@ import com.liftr.ui.components.ScoreBreakdownRow
 import com.liftr.ui.common.depthPartLabelRes
 import com.liftr.domain.model.ScoreGrade
 import com.liftr.domain.model.SetSummary
+import com.liftr.domain.model.JumpQuality
 import com.liftr.ui.components.AnalysisProgressBanner
 import com.liftr.ui.components.AnalysisResultsReadyChip
 import com.liftr.ui.components.BarPathOverlay
@@ -78,6 +80,7 @@ import com.liftr.util.findActivity
 import com.liftr.vision.pose.PreviewPoseSampler
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.util.isPortrait
 import com.liftr.util.preferredScreenOrientation
 import com.liftr.util.rememberOrientation
@@ -742,12 +745,29 @@ fun SetSummarySheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
+            if (isJump && summary.allJumpsSuspect) {
+                Text(
+                    text = stringResource(R.string.jump_all_suspect),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.sm)
+                        .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
             if (isJump) {
                 JumpHeightList(
                     heights = summary.repJumpHeights,
                     apexHeights = summary.repApexHeights,
                     velocities = summary.repVelocities,
-                    powers = summary.repPeakPowers
+                    powers = summary.repPeakPowers,
+                    suspect = { summary.jumpQuality(it) == JumpQuality.SUSPECT },
+                    excludedCount = summary.excludedJumpCount,
+                    mechanics = summary.repMechanics,
+                    contactTimesMs = summary.repContactTimesMs,
+                    rsis = summary.repReactiveStrengthIndices
                 )
             } else {
                 // Overall score bar
@@ -835,6 +855,17 @@ fun SetSummarySheet(
                         value = "%.2f m/s".format(summary.avgVelocity.value)
                     )
                 }
+                if (isJump) {
+                    summary.setRsi?.let { rsi ->
+                        StatItem(
+                            label = stringResource(
+                                if (summary.bestFiveMeanRsi != null) R.string.set_summary_rsi_best_five
+                                else R.string.set_summary_best_rsi
+                            ),
+                            value = "%.2f".format(rsi)
+                        )
+                    }
+                }
                 StatItem(
                     label = stringResource(R.string.set_summary_velocity_loss),
                     value = "${(summary.velocityLossPercent * 100).toInt()}%%"
@@ -854,13 +885,23 @@ fun SetSummarySheet(
     }
 }
 
-/** One row per jump: height, takeoff velocity and, with a body mass, peak power. */
+/**
+ * One row per jump: height, takeoff velocity and, with a body mass, peak power.
+ * Jumps that failed the free-fall check stay listed, so the lifter sees every
+ * jump, but are dimmed and marked: their numbers don't count toward best and
+ * average, and [excludedCount] says how many were left out.
+ */
 @Composable
 private fun JumpHeightList(
     heights: List<Meters>,
     apexHeights: List<Meters?>,
     velocities: List<MetersPerSecond>,
-    powers: List<Watts?>
+    powers: List<Watts?>,
+    suspect: (Int) -> Boolean,
+    excludedCount: Int,
+    mechanics: List<JumpMechanics?>,
+    contactTimesMs: List<Float?>,
+    rsis: List<Float?>
 ) {
     Column {
         if (apexHeights.any { it != null }) {
@@ -871,6 +912,11 @@ private fun JumpHeightList(
             )
         }
         heights.forEachIndexed { index, height ->
+            val isSuspect = suspect(index)
+            val color = if (isSuspect) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            else Color.Unspecified
+            val contactMs = contactTimesMs.getOrNull(index)
+            val rsi = rsis.getOrNull(index)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -878,17 +924,49 @@ private fun JumpHeightList(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.set_summary_jump_number, index + 1),
-                    style = MaterialTheme.typography.bodyMedium
+                    text = stringResource(R.string.set_summary_jump_number, index + 1) +
+                        (if (isSuspect) "  \u26A0" else ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = color
                 )
                 Text(
                     text = jumpHeights(height, apexHeights.getOrNull(index)) +
                         (velocities.getOrNull(index)?.let { "  \u00B7  %.2f m/s".format(it.value) } ?: "") +
                         (powers.getOrNull(index)?.let { "  \u00B7  %.0f W".format(it.value) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = if (isSuspect) FontWeight.Normal else FontWeight.SemiBold,
+                    color = color
                 )
             }
+            mechanics.getOrNull(index)?.let {
+                Text(
+                    text = stringResource(
+                        R.string.jump_push_off_summary,
+                        it.pushOffM * 100f, it.meanForceN, it.meanVelocity, it.meanPowerW
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
+                )
+            }
+            // Rebound jumps: the ground contact before the takeoff, and RSI.
+            if (contactMs != null && rsi != null) {
+                Text(
+                    text = stringResource(R.string.jump_contact_rsi, contactMs, rsi),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
+                )
+            }
+        }
+        if (excludedCount > 0) {
+            Text(
+                text = "\u26A0 " + pluralStringResource(R.plurals.jump_suspect_excluded, excludedCount, excludedCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
     Spacer(modifier = Modifier.height(Spacing.md))

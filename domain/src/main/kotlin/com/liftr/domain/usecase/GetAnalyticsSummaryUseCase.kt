@@ -1,8 +1,10 @@
 package com.liftr.domain.usecase
 
+import com.liftr.domain.calculator.ForceVelocityProfile
 import com.liftr.domain.model.AnalyticsSummary
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.TimeRange
+import com.liftr.domain.model.jumpsThatCount
 import com.liftr.domain.repository.AnalyticsRepository
 import javax.inject.Inject
 
@@ -43,6 +45,12 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             analyticsRepository.getJumpReps(params.exerciseType, params.timeRange)
         } else emptyList()
 
+        // A profile needs loads; other jumps are all at bodyweight. Suspect
+        // jumps stay out of it, as they do of the averages and trends.
+        val forceVelocityProfile = if (params.exerciseType == ExerciseType.LOADED_JUMP) {
+            ForceVelocityProfile.fit(jumpReps.jumpsThatCount { it.quality })
+        } else null
+
         val recentWorkouts = analyticsRepository.getRecentWorkouts()
 
         return AnalyticsSummary(
@@ -56,7 +64,8 @@ class GetAnalyticsSummaryUseCase @Inject constructor(
             totalSets = recentWorkouts.sumOf { it.sets.size },
             totalReps = recentWorkouts.sumOf { it.getTotalReps() },
             jumpReps = jumpReps,
-            scoreBreakdown = scoreBreakdown
+            scoreBreakdown = scoreBreakdown,
+            forceVelocityProfile = forceVelocityProfile
         )
     }
 }
