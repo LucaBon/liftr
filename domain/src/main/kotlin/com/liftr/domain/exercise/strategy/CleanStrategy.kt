@@ -12,6 +12,7 @@ import com.liftr.domain.exercise.PhaseTransitionResult
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
@@ -34,10 +35,10 @@ import kotlin.math.abs
  *   IDLE        → waiting for lift start
  *   ECCENTRIC   → FIRST_PULL  (wrists rising from floor to knees, controlled)
  *   BOTTOM      → SECOND_PULL (explosive hip extension, bar accelerates upward)
- *   CONCENTRIC  → CATCH/RECOVERY (wrists decelerate, lifter drops under bar to front rack, stands up)
+ *   CONCENTRIC  → CATCH/RECOVERY (wrists decelerate, lifter receives the bar in front rack, stands up)
  *   TOP         → LOCKOUT (standing tall with bar in front rack position)
  *
- * Rep is counted at CONCENTRIC → TOP transition (full recovery to standing).
+ * Rep is counted at CONCENTRIC → TOP transition (standing, SETTLE_MS after the catch started).
  *
  * Coordinate system: Y decreases going UP (smaller Y = higher on screen).
  * Upward displacement = startingY - currentY (positive = moved up).
@@ -381,7 +382,10 @@ class CleanStrategy @Inject constructor(
             hipOk && kneeOk
         }
 
-        if (recoveryAchieved) {
+        // Still extended from the pull is not yet a recovery: wait for any re-bend to show.
+        val settled = state.catchTime?.let { poseResult.timestampUs / 1000 - it >= ExerciseThresholds.Catch.SETTLE_MS } ?: true
+
+        if (recoveryAchieved && settled) {
             logger.d(TAG, "Phase: CONCENTRIC/CATCH -> TOP/LOCKOUT (rep completed)")
             return PhaseTransitionResult(
                 newState = state.withCurrentPhase(MovementPhase.TOP),
@@ -542,6 +546,9 @@ class CleanStrategy @Inject constructor(
         checkBarCrash(frames, calibrationData),
         checkForwardJump(frames, calibrationData)
     )
+
+    override fun classifyCatch(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): CatchType? =
+        classifyCatch(frames, positionCalculator, calibrationData)
 
     /**
      * Check for early arm bend during the first pull.

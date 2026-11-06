@@ -220,7 +220,10 @@ class CleanStrategyFormTest {
         rack(0.45f, P(0.42f, 0.70f), P(0.58f, 0.76f)),              // 14 recovery
         rack(0.40f, P(0.45f, 0.65f), P(0.55f, 0.75f)),              // 15
         rack(0.35f, P(0.48f, 0.61f), P(0.52f, 0.74f)),              // 16
-        rack(0.30f, P(0.50f, 0.58f), P(0.50f, 0.74f))               // 17 standing: rep
+        rack(0.30f, P(0.50f, 0.58f), P(0.50f, 0.74f)),              // 17 standing
+        rack(0.30f, P(0.50f, 0.58f), P(0.50f, 0.74f)),              // 18
+        rack(0.30f, P(0.50f, 0.58f), P(0.50f, 0.74f)),              // 19
+        rack(0.30f, P(0.50f, 0.58f), P(0.50f, 0.74f))               // 20 300 ms after the catch: rep
     )
 
     /**

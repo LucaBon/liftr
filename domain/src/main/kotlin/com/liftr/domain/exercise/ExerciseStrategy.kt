@@ -2,6 +2,7 @@ package com.liftr.domain.exercise
 
 import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.JumpData
@@ -91,6 +92,15 @@ interface ExerciseStrategy {
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState? = null
     ): List<FormIssue> = emptyList()
+
+    /**
+     * How the lifter caught the bar in this rep (Olympic lifts); null where the
+     * exercise has no catch or it can't be told. Stateless like [validateRep].
+     */
+    fun classifyCatch(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData
+    ): CatchType? = null
 
     /**
      * Gets the list of required landmark indices for this exercise.

@@ -12,6 +12,7 @@ import com.liftr.domain.exercise.PhaseTransitionResult
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
@@ -31,7 +32,8 @@ import kotlin.math.sign
  *
  * The snatch is a single-movement overhead lift (floor → overhead) — the bar travels
  * from the floor to a locked-out position overhead in one continuous pull, with the
- * lifter dropping into a deep squat to receive the bar overhead.
+ * lifter usually dropping into a squat to receive the bar overhead. A muscle snatch
+ * (no re-bend under the bar) counts too; [classifyCatch] labels how each rep was caught.
  *
  * Phase mapping (repurposing MovementPhase enum):
  *   IDLE        → waiting for pull start
@@ -188,7 +190,6 @@ class SnatchStrategy @Inject constructor(
             val newState = state
                 .withStartingPosition(state.currentHeadY, state.currentShouldersY, hipsY)
                 .withStartingWristsY(wristsY)
-                .withHighestHipsY(hipsY)
                 .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestampUs)
 
             logger.d(TAG, "Starting position set: wristsY=%.2f m, hipsY=%.2f m"
@@ -220,8 +221,6 @@ class SnatchStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
-                    // Hips tracked from here to their highest point, to see the drop under the bar.
-                    .withHighestHipsY(hipsY)
                     .withOlympicLiftData(firstPullStartTime = timestampUs / 1000),
                 repCompleted = false,
                 debugInfo = "First pull started: %.2f m wrist rise".format(wristRise)
@@ -258,9 +257,7 @@ class SnatchStrategy @Inject constructor(
 
         val hipVelocity = upwardVelocity(state.previousHipsY, hipsY, state.previousTimestamp, nowUs)
 
-        val newState = state
-            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
-            .withHighestHipsY(minOf(state.highestHipsY ?: hipsY, hipsY))
+        val newState = state.withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
 
         logger.d(TAG, "FIRST_PULL: hipVelocity=%.2f m/s".format(hipVelocity))
 
@@ -297,12 +294,10 @@ class SnatchStrategy @Inject constructor(
     /**
      * BOTTOM (SECOND_PULL) -> CONCENTRIC (CATCH)
      *
-     * KEY DIFFERENCE from Clean: the snatch catch is received overhead.
-     * The catch needs both:
-     *  - wrists at least CATCH_WRIST_ABOVE_HEAD above the head, and
-     *  - hips dropped at least CATCH_HIP_DROP below their highest point in the
-     *    pull: the lifter has gone down under the bar. Wrists overhead at full
-     *    extension (a high pull, arms flung up) is not yet a catch.
+     * KEY DIFFERENCE from Clean: the snatch catch is received overhead: wrists at
+     * least CATCH_WRIST_ABOVE_HEAD above the head. The hips need not drop (muscle
+     * snatch); a bar flung up and falling back is filtered at the lockout,
+     * which waits Catch.SETTLE_MS.
      */
     private fun detectSecondPullToCatch(
         state: ExercisePhaseState,
@@ -319,10 +314,7 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val highestHipsY = listOfNotNull(state.highestHipsY, hipsY).minOrNull()
-        val newState = state
-            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
-            .withHighestHipsY(highestHipsY)
+        val newState = state.withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
 
         // Detect overhead catch: wrists are above (or at) head level
         // In our coordinate system: smaller Y = higher. Wrists above head means wristsY < headY.
@@ -339,16 +331,11 @@ class SnatchStrategy @Inject constructor(
             startingWristsY != null && (startingWristsY - wristsY) > 0.3f
         }
 
-        // Larger Y = lower: the hips have dropped under the bar since their highest point.
-        val hipDrop = if (hipsY != null && highestHipsY != null) hipsY - highestHipsY else null
-        val droppedUnder = hipDrop != null && hipDrop >= ExerciseThresholds.Snatch.CATCH_HIP_DROP
-        val caughtOverhead = wristsOverhead && droppedUnder
+        logger.d(TAG, "SECOND_PULL: wristsY=%.2f, headY=%.2f, overhead=$wristsOverhead"
+            .format(wristsY, headY ?: Float.NaN))
 
-        logger.d(TAG, ("SECOND_PULL: wristsY=%.2f, headY=%.2f, hipDrop=%.2f, overhead=$wristsOverhead, " +
-            "under=$droppedUnder").format(wristsY, headY ?: Float.NaN, hipDrop ?: Float.NaN))
-
-        if (caughtOverhead) {
-            logger.d(TAG, "Phase: BOTTOM/SECOND_PULL -> CONCENTRIC/CATCH (wrists overhead, hips under)")
+        if (wristsOverhead) {
+            logger.d(TAG, "Phase: BOTTOM/SECOND_PULL -> CONCENTRIC/CATCH (wrists overhead)")
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.CONCENTRIC)
@@ -424,7 +411,10 @@ class SnatchStrategy @Inject constructor(
             "kneeAngle=${kneeAngle?.let { "%.1f°".format(it) } ?: "N/A"}, " +
             "hipOk=$hipOk, kneeOk=$kneeOk")
 
-        if (hipOk && kneeOk) {
+        // Still extended from the pull is not yet a lockout: wait for any re-bend to show.
+        val settled = state.catchTime?.let { poseResult.timestampUs / 1000 - it >= ExerciseThresholds.Catch.SETTLE_MS } ?: true
+
+        if (hipOk && kneeOk && settled) {
             logger.d(TAG, "Phase: CONCENTRIC/OVERHEAD_STABILIZE -> TOP/LOCKOUT (rep completed)")
             return PhaseTransitionResult(
                 newState = state.withCurrentPhase(MovementPhase.TOP),
@@ -518,7 +508,13 @@ class SnatchStrategy @Inject constructor(
         frames: List<AnalyzeRepUseCase.RepFrame>,
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState?
-    ): List<FormIssue> = listOfNotNull(checkCatchDepth(frames, calibrationData))
+    ): List<FormIssue> = listOfNotNull(
+        // No catch depth to judge in a muscle snatch: the lifter does not go under the bar.
+        if (classifyCatch(frames, calibrationData) == CatchType.MUSCLE) null else checkCatchDepth(frames, calibrationData)
+    )
+
+    override fun classifyCatch(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): CatchType? =
+        classifyCatch(frames, positionCalculator, calibrationData)
 
     /** Near-side wrist above the nose: the bar is overhead. */
     private fun isOverhead(poseResult: PoseResult): Boolean {

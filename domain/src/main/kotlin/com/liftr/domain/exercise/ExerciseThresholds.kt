@@ -219,6 +219,27 @@ object ExerciseThresholds {
     }
 
     /**
+     * How an Olympic lift (snatch, clean) was caught, judged on the hips after the second pull.
+     */
+    object Catch {
+        /** Hips going down less than this from their highest point is no re-bend under the bar: a muscle catch (m) */
+        const val MUSCLE_MAX_HIP_DROP = 0.10f
+
+        /** Hips at or below the knees at the lowest point is a squat catch, above is a power catch (m, 0 = knee level) */
+        const val SQUAT_HIP_BELOW_KNEE = 0.0f
+
+        /**
+         * A rep counts only this long after the catch starts (ms). The catch starts while
+         * the lifter is still extended, so counting at once would end the rep before any
+         * re-bend and read every catch as muscle; a bar flung up and falling back is no rep either.
+         */
+        const val SETTLE_MS = 300L
+
+        /** Hip height is median-filtered over this window (ms) so one noisy frame is not the lowest point */
+        const val HIP_SMOOTH_MS = 100L
+    }
+
+    /**
      * Thresholds for snatch exercise (Olympic lift).
      */
     object Snatch {
@@ -255,8 +276,6 @@ object ExerciseThresholds {
         /** Minimum velocity at 1RM — Kipp et al. (2012) */
         const val MIN_VELOCITY_AT_1RM = 0.90f
 
-        /** Hips must have dropped this far below their highest point in the pull to count as the catch (m) */
-        const val CATCH_HIP_DROP = 0.05f
 
         /** Elbow angle below which the arms are bent overhead after the catch (press-out, degrees) */
         const val PRESS_OUT_ELBOW_ANGLE = 160f

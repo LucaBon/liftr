@@ -9,6 +9,7 @@ import com.liftr.domain.exercise.worstPerKind
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseResult
@@ -51,7 +52,9 @@ class AnalyzeRepUseCase @Inject constructor(
 
     data class Result(
         val formValidation: FormValidationResult,
-        val exerciseMetrics: ExerciseMetrics?
+        val exerciseMetrics: ExerciseMetrics?,
+        /** How the bar was caught (Olympic lifts); null where not applicable or not measurable. */
+        val catchType: CatchType? = null
     )
 
     /**
@@ -88,6 +91,10 @@ class AnalyzeRepUseCase @Inject constructor(
         val isValid = aggregatedIssues.none { it.severity == Severity.CRITICAL }
         val formValidation = FormValidationResult(isValid = isValid, issues = aggregatedIssues)
 
+        val catchType = runCatching { strategy.classifyCatch(params.bufferedFrames, params.calibrationData) }
+            .onFailure { logger.w(TAG, "classifyCatch failed: ${it.message}") }
+            .getOrNull()
+
         val metrics = if (params.finalVelocityData != null) {
             runCatching {
                 strategy.calculateMetrics(
@@ -99,7 +106,7 @@ class AnalyzeRepUseCase @Inject constructor(
                 .getOrNull()
         } else null
 
-        Result(formValidation = formValidation, exerciseMetrics = metrics)
+        Result(formValidation = formValidation, exerciseMetrics = metrics, catchType = catchType)
     }
 
     companion object {

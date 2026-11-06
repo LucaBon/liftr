@@ -154,7 +154,7 @@ class CleanStrategyIntegrationTest {
         assertFalse(result.repCompleted)
         state = result.newState
 
-        // Frame 6 (t=1330): recovery — hips return near starting position (fallback path, low-visibility landmarks)
+        // Frame 6 (t=1600, 300 ms after the catch): recovery — hips return near starting position (fallback path, low-visibility landmarks)
         // startingHipsY = 2.00, currentHipsY = 2.05 → abs(2.05 - 2.00) = 0.05 <= 0.10 threshold
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
             headY = 100f, shouldersY = 200f, hipsY = 502f, kneesY = 600f,
@@ -162,7 +162,7 @@ class CleanStrategyIntegrationTest {
         )
         every { positionCalculator.pixelsToMeters(502f, any(), any()) } returns 2.05f  // hips near starting
 
-        result = strategy.detectPhase(createMockPoseResult(1330L), calibrationData, state)
+        result = strategy.detectPhase(createMockPoseResult(1600L), calibrationData, state)
         assertEquals(MovementPhase.TOP, result.newState.currentPhase)
         assertTrue(result.repCompleted)
     }

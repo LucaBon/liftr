@@ -158,7 +158,13 @@ class SnatchStrategyIntegrationTest {
         )
         every { positionCalculator.pixelsToMeters(502f, any(), any()) } returns 2.05f  // hips near starting
 
+        // Too soon after the catch (66 ms): still extended from the pull, not yet a lockout.
         result = strategy.detectPhase(createMockPoseResult(1264L), calibrationData, state)
+        assertEquals(MovementPhase.CONCENTRIC, result.newState.currentPhase)
+        assertFalse(result.repCompleted)
+
+        // 300 ms after the catch the lockout counts.
+        result = strategy.detectPhase(createMockPoseResult(1500L), calibrationData, state)
         assertEquals(MovementPhase.TOP, result.newState.currentPhase)
         assertTrue(result.repCompleted)
     }
@@ -184,16 +190,11 @@ class SnatchStrategyIntegrationTest {
     }
 
     @Test
-    fun `wrists overhead without the hips dropping is not the catch`() {
-        var state = intoSecondPull()
+    fun `wrists overhead is the catch whether or not the hips drop (muscle snatch)`() {
+        val state = intoSecondPull()
 
-        // Wrists 0.10 m above the head, hips still at their highest: arms flung up, not caught.
-        state = phase(1300L, wristsY = 40f, hipsY = 190f, state = state)
-        assertEquals(MovementPhase.BOTTOM, state.currentPhase)
-
-        // Hips go down under the bar with the wrists overhead: the catch.
-        state = phase(1400L, wristsY = 40f, hipsY = 215f, state = state)
-        assertEquals(MovementPhase.CONCENTRIC, state.currentPhase)
+        // Wrists 0.10 m above the head, hips still at their highest: a muscle snatch.
+        assertEquals(MovementPhase.CONCENTRIC, phase(1300L, wristsY = 40f, hipsY = 190f, state = state).currentPhase)
     }
 
     @Test
