@@ -80,6 +80,7 @@ import com.liftr.vision.camera.CameraManager
 import javax.inject.Inject
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Meters
+import com.liftr.domain.value.Watts
 import com.liftr.domain.model.ExerciseType
 import com.liftr.ui.common.label
 
@@ -706,7 +707,8 @@ fun SetSummarySheet(
                 JumpHeightList(
                     heights = summary.repJumpHeights,
                     apexHeights = summary.repApexHeights,
-                    velocities = summary.repVelocities
+                    velocities = summary.repVelocities,
+                    powers = summary.repPeakPowers
                 )
             } else {
                 // Overall score bar
@@ -804,9 +806,14 @@ fun SetSummarySheet(
     }
 }
 
-/** One row per jump: height and takeoff velocity. */
+/** One row per jump: height, takeoff velocity and, with a body mass, peak power. */
 @Composable
-private fun JumpHeightList(heights: List<Meters>, apexHeights: List<Meters?>, velocities: List<MetersPerSecond>) {
+private fun JumpHeightList(
+    heights: List<Meters>,
+    apexHeights: List<Meters?>,
+    velocities: List<MetersPerSecond>,
+    powers: List<Watts?>
+) {
     Column {
         if (apexHeights.any { it != null }) {
             Text(
@@ -828,7 +835,8 @@ private fun JumpHeightList(heights: List<Meters>, apexHeights: List<Meters?>, ve
                 )
                 Text(
                     text = jumpHeights(height, apexHeights.getOrNull(index)) +
-                        (velocities.getOrNull(index)?.let { "  \u00B7  %.2f m/s".format(it.value) } ?: ""),
+                        (velocities.getOrNull(index)?.let { "  \u00B7  %.2f m/s".format(it.value) } ?: "") +
+                        (powers.getOrNull(index)?.let { "  \u00B7  %.0f W".format(it.value) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )

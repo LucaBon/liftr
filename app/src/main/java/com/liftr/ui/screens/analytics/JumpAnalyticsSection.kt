@@ -137,6 +137,15 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
                     StatItem(label = stringResource(R.string.analytics_best_takeoff_velocity), value = "%.2f m/s".format(speeds.max()))
                 }
             }
+            jumps.mapNotNull { it.jump.peakPowerW }.takeIf { it.isNotEmpty() }?.let { powers ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_peak_power), value = "%.0f W".format(powers.average()))
+                    StatItem(label = stringResource(R.string.analytics_best_peak_power), value = "%.0f W".format(powers.max()))
+                }
+            }
         }
     }
 }
