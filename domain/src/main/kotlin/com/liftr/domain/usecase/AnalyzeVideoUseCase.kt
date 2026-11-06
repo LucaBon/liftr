@@ -304,7 +304,8 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             val transition = strategy.detectPhase(pose, params.calibrationData, phaseState)
             val newPhase = transition.newState.currentPhase
-            transition.flightGravity?.let(repFittedGravities::add)
+            // Only accepted jumps: a discarded flight's fit says nothing about the video speed.
+            if (transition.repCompleted) transition.flightGravity?.let(repFittedGravities::add)
             phaseState = transition.newState
             landing?.let {
                 if (pose.timestampUs <= it.untilUs && newPhase != MovementPhase.TOP) it.frames += AnalyzeRepUseCase.RepFrame(pose, newPhase) else finishLanding()

@@ -108,4 +108,11 @@ class JumpGravityCheckTest {
         assertFalse(VideoSpeedCheck.looksSlowMotion(listOf(9.81f / 9), 1f))         // stretch 3
         assertFalse(VideoSpeedCheck.looksSlowMotion(listOf(9.0f), 1f))
     }
+
+    @Test
+    fun `one bad flight does not decide the check`() {
+        val slow = 9.81f / 16
+        assertTrue(VideoSpeedCheck.looksSlowMotion(listOf(slow, slow, 9.8f), 1f))
+        assertFalse(VideoSpeedCheck.looksSlowMotion(listOf(9.8f, 9.8f, slow), 1f))
+    }
 }
