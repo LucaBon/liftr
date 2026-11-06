@@ -80,6 +80,7 @@ class VideoFrameExtractor(
     }.buffer(2)
 
     private fun readMetadata() {
+        if (com.liftr.BuildConfig.DEBUG) VideoMetadataProbe.probe(videoFile)
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(videoFile.absolutePath)
