@@ -35,6 +35,7 @@ import com.liftr.domain.exercise.TempoState
 import com.liftr.domain.exercise.TempoTracker
 import com.liftr.domain.exercise.VelocityLossState
 import com.liftr.domain.exercise.VelocityLossTracker
+import com.liftr.domain.exercise.strategy.JumpStrategy
 import com.liftr.domain.feedback.IFeedbackEmitter
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.AggregateFormIssue
@@ -67,6 +68,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
+import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPoseDetector
 import com.liftr.ui.common.UiError
 import com.liftr.ui.common.toUiError
@@ -185,6 +187,7 @@ class WorkoutViewModel @Inject constructor(
     private var setRepVelocities = mutableListOf<MetersPerSecond>()
     private var setJumpHeights = mutableListOf<Meters>()
     private var setApexHeights = mutableListOf<Meters?>()
+    private var setPeakPowers = mutableListOf<Watts?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -446,7 +449,8 @@ class WorkoutViewModel @Inject constructor(
                 jump = RepJumpData.from(
                     flightHeightCm = height.value * 100f,
                     apexHeightCm = summary.repApexHeights.getOrNull(index)?.let { it.value * 100f },
-                    barPath = summary.repBarPaths.getOrNull(index)
+                    barPath = summary.repBarPaths.getOrNull(index),
+                    peakPowerW = summary.repPeakPowers.getOrNull(index)?.value
                 )
             )
         }
@@ -929,6 +933,10 @@ class WorkoutViewModel @Inject constructor(
         jump?.let {
             setJumpHeights.add(it.height)
             setApexHeights.add(it.apexHeight)
+            // Peak power needs no per-rep state: a fresh strategy computes it.
+            setPeakPowers.add(calib?.let { c ->
+                JumpStrategy(_uiState.value.selectedExercise, logger).peakPower(it, c, _uiState.value.weight)
+            })
         }
 
         // Build Rep domain object for persistence
@@ -1173,6 +1181,7 @@ class WorkoutViewModel @Inject constructor(
         setRepVelocities.clear()
         setJumpHeights.clear()
         setApexHeights.clear()
+        setPeakPowers.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1564,7 +1573,8 @@ class WorkoutViewModel @Inject constructor(
             aggregateFormIssues = aggregateFormIssues(scores),
             repBarPaths = setBarPaths.toList(),
             repJumpHeights = setJumpHeights.toList(),
-            repApexHeights = setApexHeights.toList()
+            repApexHeights = setApexHeights.toList(),
+            repPeakPowers = setPeakPowers.toList()
         )
     }
 

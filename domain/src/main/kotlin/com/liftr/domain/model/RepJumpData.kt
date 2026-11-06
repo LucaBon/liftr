@@ -18,6 +18,8 @@ import kotlinx.serialization.Serializable
  * @property standingYCm Standing height, in the path's units
  * @property fitCheck Whether the center-of-mass flight looked like free fall
  * @property path Center-of-mass path from the dip to the landing
+ * @property peakPowerW Peak power in watts (Sayers, from jump height and system
+ *   mass); null without a body mass, and in rows saved before it was measured
  */
 @Serializable
 data class RepJumpData(
@@ -30,7 +32,8 @@ data class RepJumpData(
     val peakRiseCm: Float? = null,
     val standingYCm: Float? = null,
     val fitCheck: JumpFitCheck? = null,
-    val path: List<JumpPathSample> = emptyList()
+    val path: List<JumpPathSample> = emptyList(),
+    val peakPowerW: Float? = null
 ) {
     /** The path as [BarPathData], for the replay card. */
     fun toBarPathData(repNumber: Int): BarPathData {
@@ -46,7 +49,12 @@ data class RepJumpData(
     }
 
     companion object {
-        fun from(flightHeightCm: Float, apexHeightCm: Float?, barPath: BarPathData?): RepJumpData {
+        fun from(
+            flightHeightCm: Float,
+            apexHeightCm: Float?,
+            barPath: BarPathData?,
+            peakPowerW: Float? = null
+        ): RepJumpData {
             val excursion = barPath?.excursion
             return RepJumpData(
                 flightHeightCm = flightHeightCm,
@@ -60,7 +68,8 @@ data class RepJumpData(
                 fitCheck = excursion?.fitCheck,
                 path = barPath?.points.orEmpty().map {
                     JumpPathSample(it.timestamp, it.normalizedX, it.normalizedY, it.realWorldXCm, it.realWorldYCm, it.velocity.value)
-                }
+                },
+                peakPowerW = peakPowerW
             )
         }
     }
