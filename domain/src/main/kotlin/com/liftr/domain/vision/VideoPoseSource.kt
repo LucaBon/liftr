@@ -24,7 +24,7 @@ interface VideoPoseSource {
      * emitted with a null pose. Each collection decodes the video again with a
      * fresh pose model, so a video can be analyzed in several passes.
      */
-    fun poses(include: (timestampMs: Long) -> Boolean = { true }): Flow<Frame>
+    fun poses(include: (timestampUs: Long) -> Boolean = { true }): Flow<Frame>
 
     /** Releases the decoder. */
     fun close()

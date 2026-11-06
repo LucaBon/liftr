@@ -140,10 +140,10 @@ class AnalyzeVideoUseCase @Inject constructor(
                 if (windows.isEmpty() || coarse.skippedFrames == 0) {
                     coarse.poses
                 } else {
-                    val analyzed = coarse.poses.mapTo(HashSet()) { it.timestamp }
+                    val analyzed = coarse.poses.mapTo(HashSet()) { it.timestampUs }
                     val dense = detectPoses(
                         poseSource,
-                        { t -> t !in analyzed && windows.any { t in it } },
+                        { t -> t !in analyzed && windows.any { w -> t / 1_000 in w } },
                         onProgress, COARSE_PASS_SHARE, 1f
                     )
                     logger.i(TAG, "Dense pass: ${dense.poses.size} poses around ${windows.size} takeoffs/landings")
@@ -194,7 +194,7 @@ class AnalyzeVideoUseCase @Inject constructor(
     /** Runs one decoding pass, analyzing the frames [include] accepts. */
     private suspend fun detectPoses(
         poseSource: VideoPoseSource,
-        include: (Long) -> Boolean,
+        include: (timestampUs: Long) -> Boolean,
         onProgress: (Progress) -> Unit,
         progressFrom: Float,
         progressTo: Float
@@ -220,10 +220,10 @@ class AnalyzeVideoUseCase @Inject constructor(
         return PassResult(poses, skipped)
     }
 
-    /** Accepts frames at least [intervalMs] apart, thinning faster video to that rate. */
+    /** Accepts frames (by µs time) at least [intervalMs] apart, thinning faster video to that rate. */
     private fun everyMs(intervalMs: Long): (Long) -> Boolean {
         var last = Long.MIN_VALUE / 2
-        return { t -> (t - last >= intervalMs).also { if (it) last = t } }
+        return { t -> (t - last >= intervalMs * 1_000).also { if (it) last = t } }
     }
 
     /**
