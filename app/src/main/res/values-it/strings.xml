@@ -36,4 +36,21 @@
     <string name="analytics_jump_power">Potenza</string>
     <string name="analytics_jump_push_off_force">Forza di spinta</string>
     <string name="jump_push_off_summary">Spinta %1$.0f cm · %2$.0f N · %3$.2f m/s · %4$.0f W</string>
+    <string name="analytics_fv_profile">Profilo forza-velocità</string>
+    <string name="analytics_fv_hint">Salta con almeno 2 carichi diversi per ottenere il tuo profilo forza-velocità</string>
+    <string name="analytics_fv_rejected">Questi salti non danno un profilo forza-velocità utilizzabile: la forza dovrebbe calare al crescere della velocità. Salta con carichi più distanti, dal corpo libero a pesante.</string>
+    <string name="analytics_fv_based_on">Miglior salto per ciascuno di %1$d carichi · spinta %2$.0f cm</string>
+    <string name="analytics_fv_f0">Forza max (F0)</string>
+    <string name="analytics_fv_v0">Velocità max (V0)</string>
+    <string name="analytics_fv_pmax">Potenza max</string>
+    <string name="analytics_fv_r2">Adattamento (R²)</string>
+    <string name="analytics_fv_slope">Pendenza</string>
+    <string name="analytics_fv_optimal_slope">Pendenza ottimale</string>
+    <string name="analytics_fv_force_deficit">Deficit di forza del %1$.0f%%: allena la forza per saltare più in alto</string>
+    <string name="analytics_fv_velocity_deficit">Deficit di velocità del %1$.0f%%: allena la velocità per saltare più in alto</string>
+    <string name="analytics_fv_balanced">Ben bilanciato (%1$.0f%% dall\'ottimo)</string>
+    <string name="analytics_fv_heights">Il profilo prevede %1$.0f cm, %2$.0f cm con il profilo ottimale alla stessa potenza</string>
+    <string name="analytics_fv_low_confidence">Affidabilità bassa: usa 3 o più carichi, dal corpo libero a pesante, con salti costanti</string>
+    <string name="analytics_fv_points">Miglior salto per carico</string>
+    <string name="analytics_fv_line">Retta stimata</string>
 </resources>

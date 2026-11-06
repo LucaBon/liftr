@@ -170,7 +170,10 @@ fun AnalyticsScreen(
                     // Exercise-specific charts
                     if (isJump) {
                         item {
-                            JumpAnalyticsSection(jumps = summary.jumpReps)
+                            JumpAnalyticsSection(
+                                jumps = summary.jumpReps,
+                                forceVelocityProfile = summary.forceVelocityProfile
+                            )
                         }
                     } else if (uiState.selectedExercise != null) {
                         if (summary.velocityTrend.isEmpty()) {

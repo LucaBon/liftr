@@ -1,5 +1,6 @@
 package com.liftr.domain.model
 
+import com.liftr.domain.calculator.ForceVelocityProfileResult
 import com.liftr.domain.value.Kilograms
 
 enum class TimeRange(val displayName: String, val days: Int) {
@@ -35,7 +36,9 @@ data class AnalyticsSummary(
     val totalReps: Int,
     val jumpReps: List<JumpRepRecord> = emptyList(),
     /** Average points per scoring component over the range's reps that stored them. */
-    val scoreBreakdown: ScoreBreakdown? = null
+    val scoreBreakdown: ScoreBreakdown? = null,
+    /** Jump force-velocity profile over the range; only for loaded jumps, null otherwise. */
+    val forceVelocityProfile: ForceVelocityProfileResult? = null
 )
 
 /**
@@ -43,12 +46,14 @@ data class AnalyticsSummary(
  *
  * @property setId The set it belongs to
  * @property repNumber 1-indexed jump number within the set
+ * @property loadKg External load of the set (0 for bodyweight), for the force-velocity profile
  */
 data class JumpRepRecord(
     val timestamp: Long,
     val setId: Long,
     val repNumber: Int,
-    val jump: RepJumpData
+    val jump: RepJumpData,
+    val loadKg: Float = 0f
 ) {
     val quality: JumpQuality get() = jump.quality
 }
