@@ -106,7 +106,8 @@ class VideoAnalysisService : LifecycleService() {
         val weight: Kilograms,
         val targetReps: Int,
         val calibrationData: CalibrationData,
-        val tempoPrescription: TempoPrescription?
+        val tempoPrescription: TempoPrescription?,
+        val knownCaptureFps: Int?
     )
 
     private val requests = Channel<AnalysisRequest>(Channel.UNLIMITED)
@@ -134,7 +135,8 @@ class VideoAnalysisService : LifecycleService() {
                             weight = request.weight,
                             targetReps = request.targetReps,
                             calibrationData = request.calibrationData,
-                            tempoPrescription = request.tempoPrescription
+                            tempoPrescription = request.tempoPrescription,
+                            knownCaptureFps = request.knownCaptureFps
                         )
                     }
                 } finally {
@@ -168,6 +170,7 @@ class VideoAnalysisService : LifecycleService() {
 
         val weight = intent.getFloatExtra(EXTRA_WEIGHT, 0f)
         val targetReps = intent.getIntExtra(EXTRA_TARGET_REPS, 0)
+        val knownCaptureFps = intent.getIntExtra(EXTRA_CAPTURE_FPS, 0).takeIf { it > 0 }
         val videoFile = File(videoPath)
         if (!videoFile.exists() || videoFile.length() <= 0L) {
             logger.e(TAG, "Recording file missing or empty: $videoPath")
@@ -189,7 +192,8 @@ class VideoAnalysisService : LifecycleService() {
                 weight = Kilograms(weight.coerceAtLeast(0f)),
                 targetReps = targetReps,
                 calibrationData = inputs.calibrationData,
-                tempoPrescription = inputs.tempoPrescription
+                tempoPrescription = inputs.tempoPrescription,
+                knownCaptureFps = knownCaptureFps
             )
         ).isSuccess
 
@@ -219,7 +223,8 @@ class VideoAnalysisService : LifecycleService() {
         weight: Kilograms,
         targetReps: Int,
         calibrationData: CalibrationData,
-        tempoPrescription: TempoPrescription?
+        tempoPrescription: TempoPrescription?,
+        knownCaptureFps: Int?
     ) {
         try {
             showProgress(AnalyzeVideoUseCase.Progress(0, 1, 0f, 0))
@@ -262,6 +267,7 @@ class VideoAnalysisService : LifecycleService() {
                         )
                     },
                     logger = logger,
+                    knownCaptureFps = knownCaptureFps,
                     beforeFrame = ::waitWhileRecording
                 ),
                 onProgress = { progress ->
@@ -441,6 +447,7 @@ class VideoAnalysisService : LifecycleService() {
         private const val EXTRA_TARGET_REPS = "target_reps"
         private const val EXTRA_OWNER = "owner"
         private const val EXTRA_INPUTS_KEY = "inputs_key"
+        private const val EXTRA_CAPTURE_FPS = "capture_fps"
 
         private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
 
@@ -522,7 +529,8 @@ class VideoAnalysisService : LifecycleService() {
             weight: Kilograms,
             targetReps: Int,
             calibrationData: CalibrationData,
-            tempoPrescription: TempoPrescription? = null
+            tempoPrescription: TempoPrescription? = null,
+            knownCaptureFps: Int? = null
         ): Intent {
             val inputsKey = UUID.randomUUID().toString()
             pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription)
@@ -533,6 +541,7 @@ class VideoAnalysisService : LifecycleService() {
                 putExtra(EXTRA_EXERCISE_TYPE, exerciseType.name)
                 putExtra(EXTRA_WEIGHT, weight.value)
                 putExtra(EXTRA_TARGET_REPS, targetReps)
+                knownCaptureFps?.let { putExtra(EXTRA_CAPTURE_FPS, it) }
             }
         }
     }

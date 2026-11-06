@@ -48,6 +48,15 @@ class CameraManager @Inject constructor(
     private var preview: Preview? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var videoCapture: VideoCapture<Recorder>? = null
+
+    /**
+     * Frame rate the current recording binding is known to run at: the
+     * high-speed session's rate. Null for normal recording, where CameraX
+     * only gets a requested target rate and the actual one is not reported.
+     */
+    @Volatile
+    var recordingFps: Int? = null
+        private set
     private var currentMode: CameraMode = CameraMode.ANALYSIS_ONLY
 
     @Volatile
@@ -402,6 +411,7 @@ class CameraManager @Inject constructor(
         }
         isInitializing = true
         val bindToken = ++bindGeneration
+        recordingFps = null
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         cameraProviderFuture.addListener({
@@ -434,11 +444,13 @@ class CameraManager @Inject constructor(
                             cameraProvider?.unbindAll()
                             camera = cameraProvider?.bindToLifecycle(lifecycleOwner, currentCameraSelector, session.config)
                             videoCapture = session.videoCapture
+                            recordingFps = session.fps
                         }
                     }.onFailure { e ->
                         Log.w(TAG_CAMERA, "High-speed session failed, using normal recording", e)
                         camera = null
                         videoCapture = null
+                        recordingFps = null
                     }
                 }
                 if (camera != null) {
@@ -575,6 +587,7 @@ class CameraManager @Inject constructor(
             imageAnalysis = null
             preview = null
             videoCapture = null
+            recordingFps = null
             currentMode = CameraMode.ANALYSIS_ONLY
 
             // Clear lens distortion intrinsics cache

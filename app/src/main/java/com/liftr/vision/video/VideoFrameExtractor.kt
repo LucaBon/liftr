@@ -36,7 +36,8 @@ import kotlin.math.roundToInt
  */
 class VideoFrameExtractor(
     private val videoFile: File,
-    private val logger: Logger
+    private val logger: Logger,
+    private val knownCaptureFps: Int? = null
 ) : Closeable {
 
     /** Video metadata (populated once extraction starts; size is of the upright frames). */
@@ -110,7 +111,7 @@ class VideoFrameExtractor(
                 frameCount != null && frameCount > 0 && durationMs > 0 -> frameCount * 1_000f / durationMs
                 else -> metadataCaptureFps ?: DEFAULT_FPS
             }
-            timeBase = VideoTimeBase.resolve(fps, null, metadataCaptureFps, ptsDeltasUs)
+            timeBase = VideoTimeBase.resolve(fps, knownCaptureFps, metadataCaptureFps, ptsDeltasUs)
         } finally {
             runCatching { retriever.release() }
         }

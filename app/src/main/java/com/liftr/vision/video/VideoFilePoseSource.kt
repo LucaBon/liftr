@@ -11,6 +11,7 @@ import java.io.File
  * [VideoPoseSource] that decodes [videoFile] with [VideoFrameExtractor] and runs
  * a pose detector from [createPoseDetector] on the selected frames. Each pass
  * gets its own detector: its VIDEO running mode needs increasing timestamps.
+ * [knownCaptureFps] is the rate the app recorded at, null for imported videos.
  * [beforeFrame] runs before each detection and may suspend to pause the pass;
  * decoding stops too, a couple of frames ahead.
  */
@@ -18,10 +19,11 @@ class VideoFilePoseSource(
     videoFile: File,
     private val createPoseDetector: () -> VideoFramePoseDetector,
     logger: Logger,
+    knownCaptureFps: Int? = null,
     private val beforeFrame: suspend () -> Unit = {}
 ) : VideoPoseSource {
 
-    private val extractor = VideoFrameExtractor(videoFile, logger)
+    private val extractor = VideoFrameExtractor(videoFile, logger, knownCaptureFps)
 
     override val totalFrames: Int get() = extractor.totalFrames
 

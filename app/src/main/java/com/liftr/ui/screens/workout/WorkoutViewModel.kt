@@ -1362,7 +1362,8 @@ class WorkoutViewModel @Inject constructor(
                 weight = state.weight,
                 targetReps = state.targetReps.value,
                 calibrationData = calibration,
-                tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null
+                tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null,
+                knownCaptureFps = cameraManager.recordingFps
             )
             ContextCompat.startForegroundService(context, intent)
             logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")

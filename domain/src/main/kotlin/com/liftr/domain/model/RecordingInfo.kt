@@ -10,11 +10,13 @@ import java.io.File
  * @property timestamp When the recording started (epoch millis)
  * @property sizeBytes Size of the file in bytes
  * @property analyzed Whether post-exercise analysis already completed for this file
+ * @property captureFps Frame rate the app recorded at, or null when unknown (imported videos, files read back from disk)
  */
 data class RecordingInfo(
     val file: File,
     val exerciseType: ExerciseType,
     val timestamp: Long,
     val sizeBytes: Long,
-    val analyzed: Boolean = false
+    val analyzed: Boolean = false,
+    val captureFps: Int? = null
 )
