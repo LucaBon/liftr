@@ -25,7 +25,7 @@ object JumpFlightValidator {
     /**
      * [taus] are the times since takeoff in seconds, [heights] the center of
      * mass height in meters (any origin). Null with fewer than
-     * [Jump.MIN_CHECK_SAMPLES] frames, too few to estimate a curvature.
+     * [Jump.MIN_CHECK_MS] of flight, too little to estimate a curvature.
      */
     fun check(taus: List<Double>, heights: List<Double>): JumpFitCheck? = evaluate(taus, heights)?.check
 
@@ -56,6 +56,7 @@ object JumpFlightValidator {
     private fun evaluate(taus: List<Double>, heights: List<Double>): Evaluation? {
         val n = taus.size
         if (n < Jump.MIN_CHECK_SAMPLES || heights.size != n) return null
+        if ((taus.last() - taus.first()) * 1000 < Jump.MIN_CHECK_MS) return null
         val mean = taus.average()
         val u = taus.map { it - mean }
         val y = heights.indices.map { heights[it] + G * taus[it] * taus[it] / 2 }

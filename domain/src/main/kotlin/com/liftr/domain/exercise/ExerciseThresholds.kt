@@ -129,8 +129,8 @@ object ExerciseThresholds {
         /** Near-zero velocity threshold for hitch detection in m/s */
         const val HITCH_VELOCITY_THRESHOLD = 0.02f
 
-        /** Consecutive frames below hitch threshold to trigger warning */
-        const val HITCH_FRAME_COUNT = 3
+        /** Time below hitch threshold to trigger warning (3 frames at 30 fps) */
+        const val HITCH_MS = 100L
     }
 
     /**
@@ -291,10 +291,16 @@ object ExerciseThresholds {
         /** Longer flights mean tracking was lost (h > 1.2 m) */
         const val MAX_FLIGHT_MS = 1000f
 
-        /** Airborne frames needed to fit the flight parabola (~100 ms at 30 fps) */
+        /** Airborne time the samples must span to fit the flight parabola (4 frames at 30 fps) */
+        const val MIN_FIT_MS = 95L
+
+        /** Airborne time the samples must span to check the flight against free fall (6 frames at 30 fps) */
+        const val MIN_CHECK_MS = 160L
+
+        /** Fewest airborne samples a parabola fit takes whatever the frame rate (3 unknowns, one spare) */
         const val MIN_FIT_SAMPLES = 4
 
-        /** Airborne frames needed to check the flight against free fall (~200 ms at 30 fps) */
+        /** Fewest airborne samples a free-fall check takes whatever the frame rate */
         const val MIN_CHECK_SAMPLES = 6
 
         /** Gravity fitted to the flight may differ from 9.81 by this much, in m/s² */
@@ -327,8 +333,11 @@ object ExerciseThresholds {
         /** Past the peak, feet below this fraction of it may have landed */
         const val SETTLED_FRACTION_OF_PEAK = 0.5f
 
-        /** Per-frame toe descent below which falling feet count as landed (~0.7 cm) */
-        const val SETTLED_DESCENT = 0.004f
+        /** Toe descent speed, in body spans per second, below which falling feet count as landed (~0.7 cm per frame at 30 fps) */
+        const val SETTLED_DESCENT_SPEED = 0.12f
+
+        /** Frame time the smoothing factors below are given for (30 fps) */
+        const val SMOOTHING_FRAME_MS = 33L
 
         /** Feet and hips resting this long mark the standing position, wherever they are */
         const val STILL_MS = 300L
@@ -339,7 +348,7 @@ object ExerciseThresholds {
         /** Landmark visibility accepted for head, hips and feet (feet drop to 0.4-0.5 in the air) */
         const val MIN_VISIBILITY = 0.3f
 
-        /** Smoothing factor for re-anchoring the standing baseline */
+        /** Smoothing factor per [SMOOTHING_FRAME_MS] for re-anchoring the standing baseline */
         const val BASELINE_SMOOTHING = 0.2f
 
         /** Approach jumps: strides and bounds stay below this flight (~15 cm); a jump goes above */
@@ -354,6 +363,9 @@ object ExerciseThresholds {
          * per second; landmark jitter stays under 0.2.
          */
         const val APPROACH_STANCE_SPEED = 0.5f
+
+        /** Approach jumps: stance heights older than this are dropped when looking for the floor (15 frames at 30 fps) */
+        const val APPROACH_STANCE_WINDOW_MS = 500L
 
         /** Approach jumps: a toe planted this long is in stance, and its height is the floor (3 frames at 40 fps, 4 at 30) */
         const val APPROACH_STANCE_MS = 80L

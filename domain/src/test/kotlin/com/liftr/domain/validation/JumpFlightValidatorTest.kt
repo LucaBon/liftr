@@ -75,6 +75,23 @@ class JumpFlightValidatorTest {
     }
 
     @Test
+    fun `too short a flight is not checked at any frame rate`() {
+        val taus = (0 until 20).map { it / 240.0 }
+        val heights = taus.map { 2.5 * it - 9.81 * it * it / 2 }
+
+        assertNull(JumpFlightValidator.check(taus, heights))
+    }
+
+    @Test
+    fun `a long enough flight is checked at 120 fps`() {
+        val random = Random(7)
+        val taus = (0 until 60).map { it / 120.0 }
+        val heights = taus.map { 2.5 * it - 9.81 * it * it / 2 + 0.003 * random.nextGaussian() }
+
+        assertTrue(JumpFlightValidator.check(taus, heights)!!.passed)
+    }
+
+    @Test
     fun `too few frames are not checked`() {
         val (taus, heights) = flight()
 

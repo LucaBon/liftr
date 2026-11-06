@@ -55,15 +55,17 @@ class JumpStrategyTest {
         startMs: Long,
         flightS: Float,
         countermovement: Boolean = true,
-        landingShift: Float = 0f
+        landingShift: Float = 0f,
+        frameMs: Long = this.frameMs
     ): List<PoseResult> {
         val frames = mutableListOf<PoseResult>()
         var t = startMs
         fun add(dip: Float = 0f, rise: Float = 0f) { frames += pose(t, dip, rise); t += frameMs }
+        val perSecond = 1000f / frameMs
 
-        repeat(15) { add() }                                   // stand 0.5 s
+        repeat((perSecond / 2).toInt()) { add() }              // stand 0.5 s
         if (countermovement) {
-            val down = 9; val up = 6
+            val down = (perSecond * 0.3f).toInt(); val up = (perSecond * 0.2f).toInt()
             for (i in 1..down) add(dip = 0.20f * i / down)      // dip 20 cm
             for (i in 1..up) add(dip = 0.20f * (1f - i.toFloat() / up)) // push off
         }
@@ -76,7 +78,7 @@ class JumpStrategyTest {
             if (s >= flightS) break
             add(rise = maxOf(0f, v0 * s - g * s * s / 2f) + landingShift * s / flightS)
         }
-        repeat(15) { add(rise = landingShift) }                // land and stand
+        repeat((perSecond / 2).toInt()) { add(rise = landingShift) } // land and stand
         return frames
     }
 
@@ -107,6 +109,28 @@ class JumpStrategyTest {
 
         assertEquals(1, run.reps)
         assertEquals(expectedHeight(0.5f), run.jumps.single().height.value, 0.01f)
+    }
+
+    @Test
+    fun `same jump sampled at 30 and 120 fps gives the same rep, height and phases`() {
+        val at30 = run(jumpFrames(1000, flightS = 0.5f, frameMs = 33))
+        val at120 = JumpStrategy(ExerciseType.VERTICAL_JUMP, mockk<Logger>(relaxed = true)).let { fresh ->
+            var state = ExercisePhaseState.initial()
+            val jumps = mutableListOf<JumpData>()
+            val phases = mutableSetOf<MovementPhase>()
+            jumpFrames(1000, flightS = 0.5f, frameMs = 8).forEach { frame ->
+                val result = fresh.detectPhase(frame, calibration, state)
+                state = result.newState
+                phases += state.currentPhase
+                if (result.repCompleted) jumps += result.jump!!
+            }
+            Run(jumps.size, jumps, phases)
+        }
+
+        assertEquals(1, at30.reps)
+        assertEquals(at30.reps, at120.reps)
+        assertEquals(at30.phases, at120.phases)
+        assertEquals(at30.jumps.single().height.value, at120.jumps.single().height.value, 0.01f)
     }
 
     @Test

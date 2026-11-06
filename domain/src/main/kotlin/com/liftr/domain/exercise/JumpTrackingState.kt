@@ -71,5 +71,7 @@ data class ToeTrack(
     val x: Float,
     val y: Float,
     val slowSinceMs: Long? = null,
-    val stanceYs: List<Float> = emptyList()
+    val stanceYs: List<Float> = emptyList(),
+    /** When each of [stanceYs] was seen, in ms. */
+    val stanceTimesMs: List<Long> = emptyList()
 )

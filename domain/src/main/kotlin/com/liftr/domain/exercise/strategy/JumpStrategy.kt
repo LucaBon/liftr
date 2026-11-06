@@ -96,8 +96,6 @@ class JumpStrategy(
         private const val GROUND_WINDOW_MS = 300L
         /** The toes start to peel off this long before they cross the timing level. */
         private const val TOE_OFF_LEAD_MS = 60L
-        /** Stance heights kept per toe to find the floor. */
-        private const val STANCE_SAMPLES = 15
     }
 
     /** Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet. */
@@ -202,7 +200,8 @@ class JumpStrategy(
         val peak = tracking.flightSamples.maxOfOrNull { it.second } ?: rise
         val settled = previousRise != null &&
             rise < peak * Jump.SETTLED_FRACTION_OF_PEAK &&
-            previousRise - rise < Jump.SETTLED_DESCENT * tracking.bodySpan
+            tracking.previousTimestamp != null && timestamp > tracking.previousTimestamp &&
+            (previousRise - rise) * 1000f / (timestamp - tracking.previousTimestamp) < Jump.SETTLED_DESCENT_SPEED * tracking.bodySpan
 
         // Below the takeoff level, feet still falling are landing closer to
         // the camera: keep sampling until they settle.
@@ -398,7 +397,7 @@ class JumpStrategy(
                     next = next.copy(lowestHipsY = frame.hipsY)
                     MovementPhase.ECCENTRIC
                 } else {
-                    if (!approach) next = reanchor(next, frame)
+                    if (!approach) next = reanchor(next, frame, tracking.previousTimestamp, timestamp)
                     MovementPhase.IDLE
                 }
             }
@@ -447,9 +446,18 @@ class JumpStrategy(
         return if (atBaseline) tracking else baselineFrom(frame, timestamp)
     }
 
+    /**
+     * A smoothing [factor] given per [Jump.SMOOTHING_FRAME_MS] as the factor for the time since
+     * [previousTimestamp], so the baseline follows at the same speed at any frame rate.
+     */
+    private fun smoothing(factor: Float, previousTimestamp: Long?, timestamp: Long): Float {
+        val dt = previousTimestamp?.let { timestamp - it }?.takeIf { it > 0 } ?: return factor
+        return 1f - Math.pow((1f - factor).toDouble(), dt.toDouble() / Jump.SMOOTHING_FRAME_MS).toFloat()
+    }
+
     /** Slowly follows the standing position so posture shifts don't trip thresholds. */
-    private fun reanchor(tracking: JumpTrackingState, frame: Frame): JumpTrackingState {
-        val a = Jump.BASELINE_SMOOTHING
+    private fun reanchor(tracking: JumpTrackingState, frame: Frame, previousTimestamp: Long?, timestamp: Long): JumpTrackingState {
+        val a = smoothing(Jump.BASELINE_SMOOTHING, previousTimestamp, timestamp)
         val span = tracking.bodySpan
         val footStill = kotlin.math.abs(frame.footY - tracking.baselineFootY) < Jump.TIMING_LEVEL * span
         if (!footStill) return tracking
@@ -491,11 +499,13 @@ class JumpStrategy(
             } else {
                 // A heel rolling off the floor must not pull the floor with it.
                 val ys = if (before.stanceYs.size < 2 || kotlin.math.abs(toe.y - median(before.stanceYs)) <= timingLevel) {
-                    (before.stanceYs + toe.y).takeLast(STANCE_SAMPLES)
+                    before.stanceYs + toe.y
                 } else {
                     before.stanceYs
                 }
-                ToeTrack(toe.x, toe.y, before.slowSinceMs ?: tracking.previousTimestamp, ys)
+                val times = if (ys.size > before.stanceYs.size) before.stanceTimesMs + timestamp else before.stanceTimesMs
+                val fresh = times.indexOfFirst { timestamp - it <= Jump.APPROACH_STANCE_WINDOW_MS }.coerceAtLeast(0)
+                ToeTrack(toe.x, toe.y, before.slowSinceMs ?: tracking.previousTimestamp, ys.drop(fresh), times.drop(fresh))
             }
         }
         val stance = tracks.filter {
@@ -526,7 +536,7 @@ class JumpStrategy(
         )
         if (!tracking.isAirborne) {
             next = next.copy(
-                baselineHipsY = tracking.baselineHipsY + Jump.BASELINE_SMOOTHING * (frame.hipsY - tracking.baselineHipsY)
+                baselineHipsY = tracking.baselineHipsY + smoothing(Jump.BASELINE_SMOOTHING, tracking.previousTimestamp, timestamp) * (frame.hipsY - tracking.baselineHipsY)
             )
             if (planted != null) {
                 val floor = median(planted.stanceYs)
@@ -534,7 +544,7 @@ class JumpStrategy(
                 next = next.copy(
                     baselineFootY = floor,
                     groundSamples = tracking.groundSamples.map { it.first to it.second + shift },
-                    bodySpan = span + Jump.APPROACH_SPAN_SMOOTHING * ((planted.y - frame.headY) - span)
+                    bodySpan = span + smoothing(Jump.APPROACH_SPAN_SMOOTHING, tracking.previousTimestamp, timestamp) * ((planted.y - frame.headY) - span)
                 )
             }
         }
@@ -566,7 +576,7 @@ class JumpStrategy(
      * curving downward like a flight.
      */
     private fun fitParabola(samples: List<Pair<Long, Float>>): Triple<Double, Double, Double>? {
-        if (samples.size < Jump.MIN_FIT_SAMPLES) return null
+        if (samples.size < Jump.MIN_FIT_SAMPLES || samples.last().first - samples.first().first < Jump.MIN_FIT_MS) return null
         val t0 = samples.first().first
         // Power sums for the normal equations.
         val s = DoubleArray(5)

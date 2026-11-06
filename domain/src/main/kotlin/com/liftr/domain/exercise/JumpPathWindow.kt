@@ -170,6 +170,7 @@ class JumpPathWindow {
      */
     private fun takeoffVelocity(flight: List<BarPathPoint>, takeoffMs: Long, cmPerUnitY: Float): Float? {
         if (flight.size < ExerciseThresholds.Jump.MIN_FIT_SAMPLES) return null
+        if (flight.last().timestamp - flight.first().timestamp < ExerciseThresholds.Jump.MIN_FIT_MS) return null
         val taus = flight.map { (it.timestamp - takeoffMs) / 1000.0 }
         if (taus.last() - taus.first() < MIN_FIT_SPAN_S) return null
         // Height above the first airborne frame, in meters; image y grows downward.
