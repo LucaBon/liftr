@@ -190,7 +190,10 @@ object ExerciseThresholds {
         /** Maximum downward wrist velocity at catch before bar crash warning (m/s) */
         const val BAR_CRASH_VELOCITY = 1.5f
 
-        /** Maximum horizontal displacement before forward jump warning (m) */
+        /** Shortest span the catch wrist velocity is measured over, so it is not single-frame noise at high fps (ms) */
+        const val BAR_CRASH_WINDOW_MS = 30L
+
+        /** Maximum horizontal ankle displacement from the start of the rep before forward jump warning (m) */
         const val FORWARD_JUMP_MAX = 0.10f
 
         /** Minimum velocity at 1RM — Kipp et al. (2012) */

@@ -20,6 +20,8 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.model.MovementPhase
+import com.liftr.domain.model.PoseKeypoint
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs
@@ -72,6 +74,7 @@ class CleanStrategy @Inject constructor(
 
     companion object {
         private const val TAG = "CleanStrategy"
+        private const val MIN_JOINT_VISIBILITY = 0.5f
     }
 
     override fun detectPhase(
@@ -444,108 +447,63 @@ class CleanStrategy @Inject constructor(
     }
 
     /**
+     * The given joints on the body side facing the camera, or null if neither
+     * side has them all visible. Filmed side-on, the far side is hidden behind
+     * the body, so averaging or requiring both sides reads it wrong.
+     * The side whose least visible joint is seen better wins.
+     */
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
+        fun side(indices: List<Int>): List<PoseKeypoint>? =
+            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
+        val candidates = listOfNotNull(side(left), side(right))
+            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
+        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
+    }
+
+    /** Angle in degrees at the middle joint, on the side facing the camera. */
+    private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {
+        val (a, b, c) = nearSide(poseResult, left, right) ?: return null
+        val sx = poseResult.aspectScaleX
+        return coordinateCalculator.angleBetweenPoints(
+            ax = a.x * sx, ay = a.y,
+            bx = b.x * sx, by = b.y,
+            cx = c.x * sx, cy = c.y
+        )
+    }
+
+    /** Near-side wrist, or null if neither wrist is visible. */
+    private fun nearWrist(poseResult: PoseResult): PoseKeypoint? =
+        nearSide(poseResult, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))?.first()
+
+    /**
      * Calculate hip angle: shoulder-hip-knee.
      * 180° = fully extended (standing tall), smaller = more bent.
      */
-    private fun calculateHipAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-
-        val minVis = 0.5f
-        if (leftShoulder == null || rightShoulder == null ||
-            leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null) return null
-        if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
-            leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
-
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = shoulderX, ay = shoulderY,
-            bx = hipX, by = hipY,
-            cx = kneeX, cy = kneeY
-        )
-    }
+    private fun calculateHipAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE),
+        right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE)
+    )
 
     /**
      * Calculate knee angle: hip-knee-ankle.
      * 180° = fully extended, smaller = more bent.
      */
-    private fun calculateKneeAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-        val leftAnkle = landmarks.getOrNull(PoseResult.LEFT_ANKLE)
-        val rightAnkle = landmarks.getOrNull(PoseResult.RIGHT_ANKLE)
-
-        val minVis = 0.5f
-        if (leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null ||
-            leftAnkle == null || rightAnkle == null) return null
-        if (leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis ||
-            leftAnkle.visibility < minVis || rightAnkle.visibility < minVis) return null
-
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f * poseResult.aspectScaleX
-        val ankleY = (leftAnkle.y + rightAnkle.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = hipX, ay = hipY,
-            bx = kneeX, by = kneeY,
-            cx = ankleX, cy = ankleY
-        )
-    }
+    private fun calculateKneeAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE, PoseResult.LEFT_ANKLE),
+        right = listOf(PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE, PoseResult.RIGHT_ANKLE)
+    )
 
     /**
-     * Calculate elbow angle at a single arm: shoulder-elbow-wrist.
-     * Uses the left side. 180° = fully straight, smaller = bent.
+     * Calculate elbow angle: shoulder-elbow-wrist.
+     * 180° = fully straight, smaller = bent.
      */
-    private fun calculateElbowAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW)
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-
-        val minVis = 0.5f
-        // Prefer left side; fall back to right if left is occluded
-        val (shoulder, elbow, wrist) = when {
-            leftShoulder != null && leftElbow != null && leftWrist != null &&
-                leftShoulder.visibility >= minVis && leftElbow.visibility >= minVis &&
-                leftWrist.visibility >= minVis ->
-                Triple(leftShoulder, leftElbow, leftWrist)
-            rightShoulder != null && rightElbow != null && rightWrist != null &&
-                rightShoulder.visibility >= minVis && rightElbow.visibility >= minVis &&
-                rightWrist.visibility >= minVis ->
-                Triple(rightShoulder, rightElbow, rightWrist)
-            else -> return null
-        }
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = shoulder.x, ay = shoulder.y,
-            bx = elbow.x, by = elbow.y,
-            cx = wrist.x, cy = wrist.y
-        )
-    }
+    private fun calculateElbowAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_ELBOW, PoseResult.LEFT_WRIST),
+        right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_ELBOW, PoseResult.RIGHT_WRIST)
+    )
 
     override fun calculateMetrics(
         poseResult: PoseResult,
@@ -576,10 +534,11 @@ class CleanStrategy @Inject constructor(
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
 
-        checkEarlyArmBend(poseResult)?.let { issues.add(it) }
-        checkBarCrash(poseResult)?.let { issues.add(it) }
-        checkForwardJump(poseResult, calibrationData)?.let { issues.add(it) }
-        checkElbowDrop(poseResult)?.let { issues.add(it) }
+        // ECCENTRIC = first pull: arms must stay straight until the bar passes the
+        // knees. In the second pull (BOTTOM) they bend by design to pull under.
+        if (phase == MovementPhase.ECCENTRIC) checkEarlyArmBend(poseResult)?.let { issues.add(it) }
+        // CONCENTRIC = catch/recovery, the bar is in the front rack.
+        if (phase == MovementPhase.CONCENTRIC) checkElbowDrop(poseResult)?.let { issues.add(it) }
 
         return FormValidationResult(
             isValid = issues.none { it.severity == Severity.CRITICAL },
@@ -587,10 +546,19 @@ class CleanStrategy @Inject constructor(
         )
     }
 
+    override fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
+    ): List<FormIssue> = listOfNotNull(
+        checkBarCrash(frames, calibrationData),
+        checkForwardJump(frames, calibrationData)
+    )
+
     /**
-     * Check for early arm bend during the first pull phase.
+     * Check for early arm bend during the first pull.
      * Arms should remain straight until the bar passes the knees.
-     * Elbow angle < 160° = premature bending → WARNING.
+     * Elbow angle < EARLY_ARM_BEND_ANGLE = premature bending → WARNING.
      */
     private fun checkEarlyArmBend(poseResult: PoseResult): FormIssue? {
         val elbowAngle = calculateElbowAngle(poseResult) ?: return null
@@ -606,103 +574,81 @@ class CleanStrategy @Inject constructor(
     }
 
     /**
-     * Check for bar crash at catch — excessive downward wrist velocity.
-     * Velocity > 1.5 m/s downward indicates the bar is crashing into the rack position
-     * rather than being received under control.
+     * Check for bar crash at catch: the bar falling onto the lifter instead of
+     * being met in the rack. Fastest downward wrist speed, in m/s, over any span
+     * of at least BAR_CRASH_WINDOW_MS ending in a catch (CONCENTRIC) frame.
+     * Time-based, so it holds at any fps.
      */
-    private fun checkBarCrash(poseResult: PoseResult): FormIssue? {
-        val landmarks = poseResult.landmarks
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
+    private fun checkBarCrash(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData
+    ): FormIssue? {
+        val samples = frames.mapNotNull { (pose, phase) -> nearWrist(pose)?.let { Triple(pose, phase, it.y) } }
+        var anchor = -1
+        var fastest = 0f
+        for (i in samples.indices) {
+            val (pose, phase, y) = samples[i]
+            // The newest sample at least BAR_CRASH_WINDOW_MS back anchors the span.
+            while (anchor + 1 < i && pose.timestamp - samples[anchor + 1].first.timestamp >= ExerciseThresholds.Clean.BAR_CRASH_WINDOW_MS) anchor++
+            if (anchor < 0 || phase != MovementPhase.CONCENTRIC) continue
+            val (anchorPose, _, anchorY) = samples[anchor]
+            val spanMs = pose.timestamp - anchorPose.timestamp
+            // Y grows downward: a falling bar has y increasing.
+            val drop = positionCalculator.pixelsToMeters(y - anchorY, pose, calibrationData)
+            fastest = maxOf(fastest, drop / (spanMs / 1000f))
+        }
 
-        val minVis = 0.5f
-        if (leftWrist == null || rightWrist == null) return null
-        if (leftWrist.visibility < minVis || rightWrist.visibility < minVis) return null
-
-        // Use elbow-Y vs wrist-Y comparison as a proxy for a sudden downward acceleration
-        // The primary bar-crash check uses velocity data stored in Olympic lift state.
-        // Here we use a structural heuristic: if wrists are significantly below elbow
-        // level at catch, the bar likely came crashing down.
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW)
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW)
-
-        if (leftElbow == null || rightElbow == null) return null
-        if (leftElbow.visibility < minVis || rightElbow.visibility < minVis) return null
-
-        val wristsY = (leftWrist.y + rightWrist.y) / 2f
-        val elbowsY = (leftElbow.y + rightElbow.y) / 2f
-
-        // In the front rack, elbows must be at or above wrist level.
-        // A very large downward delta (wrists much lower than elbows) suggests a bar crash.
-        // Y increases downward, so wristsY > elbowsY means wrists are below elbows.
-        val verticalDrop = wristsY - elbowsY
-        return if (verticalDrop > ExerciseThresholds.Clean.BAR_CRASH_VELOCITY) {
+        return if (fastest > ExerciseThresholds.Clean.BAR_CRASH_VELOCITY) {
             FormIssue(
                 kind = "bar_crash",
                 severity = Severity.WARNING,
-                message = "Bar crash detected at catch",
+                message = "Bar crash detected at catch (%.1f m/s)".format(fastest),
                 suggestion = "Meet the bar actively — pull yourself under it and receive it in a solid front rack"
             )
         } else null
     }
 
     /**
-     * Check for forward jump — feet should stay planted during the clean.
-     * Excessive forward displacement of the ankles from starting position → INFO.
+     * Check for forward jump — feet should land where they started. Largest
+     * horizontal near-side ankle displacement from its position at the start
+     * of the rep → INFO.
      */
     private fun checkForwardJump(
-        poseResult: PoseResult,
+        frames: List<AnalyzeRepUseCase.RepFrame>,
         calibrationData: CalibrationData
     ): FormIssue? {
-        val bodyPositions = positionCalculator.getBodyPartPositions(poseResult) ?: return null
+        fun ankleX(pose: PoseResult): Float? =
+            nearSide(pose, left = listOf(PoseResult.LEFT_ANKLE), right = listOf(PoseResult.RIGHT_ANKLE))
+                ?.first()?.x?.let { it * pose.aspectScaleX }
 
-        val anklesX = bodyPositions.anklesX ?: return null
-        val startingAnklesX = bodyPositions.anklesX  // Use current as reference if starting not stored
+        val start = frames.firstNotNullOfOrNull { (pose, _) -> ankleX(pose) } ?: return null
+        val displacement = frames.maxOfOrNull { (pose, _) ->
+            ankleX(pose)?.let { positionCalculator.pixelsToMeters(abs(it - start), pose, calibrationData) } ?: 0f
+        } ?: return null
 
-        // We need a stable starting reference. Using anklesX stored in state is ideal,
-        // but FormValidation is stateless. Use a proxy: compare ankle X to hip X.
-        // If ankle X is far forward of hip X, the lifter likely jumped forward.
-        val hipsX = bodyPositions.hipsX ?: return null
-
-        val anklesXMeters = positionCalculator.pixelsToMeters(anklesX, poseResult, calibrationData)
-        val hipsXMeters = positionCalculator.pixelsToMeters(hipsX, poseResult, calibrationData)
-
-        val forwardDrift = abs(anklesXMeters - hipsXMeters)
-
-        return if (forwardDrift > ExerciseThresholds.Clean.FORWARD_JUMP_MAX) {
+        return if (displacement > ExerciseThresholds.Clean.FORWARD_JUMP_MAX) {
             FormIssue(
                 kind = "forward_jump",
                 severity = Severity.INFO,
-                message = "Forward jump detected (%.0f cm)".format(forwardDrift * 100),
+                message = "Forward jump detected (%.0f cm)".format(displacement * 100),
                 suggestion = "Keep feet planted; drive straight up rather than forward"
             )
         } else null
     }
 
     /**
-     * Check for elbow drop at the catch/front rack position.
+     * Check for elbow drop in the front rack.
      * In a correct front rack, elbows should be at or above wrist level.
-     * If elbowsY > wristsY (elbows lower than wrists in screen coordinates), → WARNING.
-     * Note: Y increases downward, so larger Y = lower position.
+     * Near-side elbow lower than the wrist (larger Y, since Y grows downward) → WARNING.
      */
     private fun checkElbowDrop(poseResult: PoseResult): FormIssue? {
-        val landmarks = poseResult.landmarks
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW)
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW)
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
+        val (elbow, wrist) = nearSide(
+            poseResult,
+            left = listOf(PoseResult.LEFT_ELBOW, PoseResult.LEFT_WRIST),
+            right = listOf(PoseResult.RIGHT_ELBOW, PoseResult.RIGHT_WRIST)
+        ) ?: return null
 
-        val minVis = 0.5f
-        if (leftElbow == null || rightElbow == null ||
-            leftWrist == null || rightWrist == null) return null
-        if (leftElbow.visibility < minVis || rightElbow.visibility < minVis ||
-            leftWrist.visibility < minVis || rightWrist.visibility < minVis) return null
-
-        val elbowsY = (leftElbow.y + rightElbow.y) / 2f
-        val wristsY = (leftWrist.y + rightWrist.y) / 2f
-
-        // elbowsY > wristsY means elbows are physically lower than wrists (dropped elbows)
-        return if (elbowsY > wristsY) {
+        return if (elbow.y > wrist.y) {
             FormIssue(
                 kind = "elbow_drop",
                 severity = Severity.WARNING,
