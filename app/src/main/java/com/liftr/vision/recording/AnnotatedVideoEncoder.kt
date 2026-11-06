@@ -45,7 +45,7 @@ class AnnotatedVideoEncoder(
     private var trackIndex = -1
     private var muxerStarted = false
     private var colorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-    private var frameIndex = 0L
+    private var lastPtsUs = 0L
     private val bufferInfo = MediaCodec.BufferInfo()
 
     private val yuvBuffer = ByteArray(this.width * this.height * 3 / 2)
@@ -77,8 +77,8 @@ class AnnotatedVideoEncoder(
         logger.i(TAG, "Encoder started ${width}x$height @${frameRate}fps colorFormat=$colorFormat")
     }
 
-    /** Encode a single composited frame. The bitmap is scaled if needed. */
-    fun encodeFrame(bitmap: Bitmap) {
+    /** Encode a composited frame at [ptsUs] (strictly increasing, µs from the first frame). */
+    fun encodeFrame(bitmap: Bitmap, ptsUs: Long) {
         val codec = encoder ?: return
         val scaled = if (bitmap.width != width || bitmap.height != height) {
             Bitmap.createScaledBitmap(bitmap, width, height, true)
@@ -92,9 +92,8 @@ class AnnotatedVideoEncoder(
             val input: ByteBuffer = codec.getInputBuffer(inputIndex)!!
             input.clear()
             input.put(yuvBuffer)
-            val ptsUs = frameIndex * 1_000_000L / frameRate
             codec.queueInputBuffer(inputIndex, 0, yuvBuffer.size, ptsUs, 0)
-            frameIndex++
+            lastPtsUs = ptsUs
         }
         drain(false)
     }
@@ -116,7 +115,7 @@ class AnnotatedVideoEncoder(
 
         codec.queueInputBuffer(
             inputIndex, 0, 0,
-            frameIndex * 1_000_000L / frameRate,
+            lastPtsUs + 1_000_000L / frameRate,
             MediaCodec.BUFFER_FLAG_END_OF_STREAM
         )
         drain(true)

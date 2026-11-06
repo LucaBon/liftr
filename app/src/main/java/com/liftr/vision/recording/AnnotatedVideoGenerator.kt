@@ -54,6 +54,7 @@ class AnnotatedVideoGenerator @Inject constructor(
 
         var compositor: FrameCompositor? = null
         var encoder: AnnotatedVideoEncoder? = null
+        val pacer = OutputFramePacer()
         var frameCount = 0
 
         try {
@@ -65,7 +66,7 @@ class AnnotatedVideoGenerator @Inject constructor(
                 if (encoder == null) {
                     val w = (extractor.width.coerceAtLeast(2)) and 1.inv()
                     val h = (extractor.height.coerceAtLeast(2)) and 1.inv()
-                    val fps = extractor.fps.toInt().coerceIn(MIN_FPS, MAX_FPS)
+                    val fps = OutputFramePacer.outputFps(extractor.fps)
                     compositor = FrameCompositor(w, h)
                     encoder = AnnotatedVideoEncoder(
                         outputFile = params.outputFile,
@@ -77,9 +78,14 @@ class AnnotatedVideoGenerator @Inject constructor(
                     ).also { it.start() }
                 }
 
+                val ptsUs = pacer.ptsFor(frame.timestampUs)
+                if (ptsUs == null) {
+                    frame.bitmap.recycle()
+                    return@collect
+                }
                 val annotation = timeline.annotationFor(frame.timestampMs)
                 val composited = compositor!!.composite(frame.bitmap, annotation, params.header)
-                encoder!!.encodeFrame(composited)
+                encoder!!.encodeFrame(composited, ptsUs)
                 composited.recycle()
                 frame.bitmap.recycle()
                 frameCount++
@@ -115,7 +121,5 @@ class AnnotatedVideoGenerator @Inject constructor(
 
     companion object {
         private const val TAG = "AnnotatedVideoGenerator"
-        private const val MIN_FPS = 10
-        private const val MAX_FPS = 60
     }
 }
