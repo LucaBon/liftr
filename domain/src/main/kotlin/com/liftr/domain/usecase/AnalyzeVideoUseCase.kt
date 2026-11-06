@@ -513,8 +513,8 @@ class AnalyzeVideoUseCase @Inject constructor(
      */
     private fun trackingPositionMeters(pose: PoseResult, params: Params): Float? {
         val xy = trackingNormalizedXY(pose, params) ?: return null
-        val pixelY = xy.second * pose.imageHeight
-        return positionCalculator.pixelsToMeters(pixelY, pose, params.calibrationData)
+        // pixelsToMeters takes normalized y and scales by the image height itself.
+        return positionCalculator.pixelsToMeters(xy.second, pose, params.calibrationData)
     }
 
     private fun extractBarPathPoint(

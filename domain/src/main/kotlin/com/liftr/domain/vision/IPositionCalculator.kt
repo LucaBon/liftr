@@ -20,9 +20,11 @@ interface IPositionCalculator {
     fun getBodyPartPositions(poseResult: PoseResult): BodyPartPositions?
 
     /**
-     * Converts a pixel position to meters.
+     * Converts a vertical position to meters. Despite the name, the input is
+     * normalized y (0..1 of the image height); the implementation scales it to
+     * pixels itself, so callers must not pre-multiply by the image height.
      *
-     * @param pixelValue The pixel value to convert
+     * @param pixelValue The normalized y coordinate to convert
      * @param poseResult The pose result for context
      * @param calibrationData The calibration data for conversion
      * @return The value in meters
