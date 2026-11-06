@@ -491,6 +491,36 @@ class JumpStrategyTest {
     }
 
     @Test
+    fun `a takeoff glitch from an upside-down walk-in does not hide the jump that follows`() {
+        // Someone walking into frame is detected upside down, and their feet
+        // "leave the floor" before the track is lost. The real, upright jump
+        // comes later: its frames must not be skipped as upside down forever.
+        val feet = setOf(
+            PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE, PoseResult.LEFT_HEEL, PoseResult.RIGHT_HEEL,
+            PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX
+        )
+        fun flip(p: PoseResult): PoseResult {
+            val noseY = p.landmarks[PoseResult.NOSE].y
+            val toeY = p.landmarks[PoseResult.LEFT_FOOT_INDEX].y
+            return p.copy(landmarks = p.landmarks.mapIndexed { i, lm ->
+                when {
+                    i == PoseResult.NOSE -> lm.copy(y = toeY)
+                    i in feet -> lm.copy(y = noseY)
+                    else -> lm
+                }
+            })
+        }
+        // 15 standing frames, then the feet "rise" (upside down, that is the body sinking
+        // in the image) for a few frames, then nothing is tracked.
+        val glitch = (0 until 22).map { i -> pose(i * frameMs, rise = if (i < 15) 0f else -0.15f) }.map(::flip)
+
+        val run = run(glitch + jumpFrames(2500, flightS = 0.45f))
+
+        assertEquals(1, run.reps)
+        assertEquals(expectedHeight(0.45f), run.jumps.single().height.value, 0.01f)
+    }
+
+    @Test
     fun `a first frame caught while walking into place does not block the jump`() {
         // The first 3 frames are 8 cm higher (still stepping into position).
         val walkIn = (0 until 3).map { i -> pose(500L + i * frameMs, rise = 0.08f) }

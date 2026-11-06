@@ -156,7 +156,11 @@ class JumpStrategy(
         // with nothing visible, unless it lasts: then the camera was turned.
         if (frame.upsideDown != stored.upsideDown) {
             val since = stored.flippedSinceMs ?: now
-            if (stored.isAirborne || now - since < Jump.STILL_MS) {
+            // A flight can't outlast MAX_FLIGHT_MS. Past that the takeoff was a
+            // glitch (a person walking into frame, detected upside down), and
+            // skipping on would hide the real jump behind it.
+            val flying = stored.isAirborne && now - stored.takeoffMs!! <= Jump.MAX_FLIGHT_MS
+            if (flying || now - since < Jump.STILL_MS) {
                 return PhaseTransitionResult(
                     newState = currentState.copy(
                         jump = stored.copy(previousFootY = null, previousTimestamp = null, flippedSinceMs = since)
