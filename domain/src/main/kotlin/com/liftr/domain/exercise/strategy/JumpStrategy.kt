@@ -834,7 +834,7 @@ class JumpStrategy(
         val touchdown = frames.getOrNull(lastAirborne + 1)?.takeIf { lastAirborne >= 0 } ?: return null
         val startUs = touchdown.pose.timestampUs
         val peakFlexion = frames.drop(lastAirborne + 1)
-            .takeWhile { it.pose.timestampUs - startUs <= Jump.LANDING_WINDOW_MS * 1000 }
+            .takeWhile { it.phase != MovementPhase.TOP && it.pose.timestampUs - startUs <= Jump.LANDING_WINDOW_MS * 1000 }
             .mapNotNull { kneeFlexion(it.pose) }
             .maxOrNull() ?: return null
         if (peakFlexion >= Jump.STIFF_LANDING_KNEE_FLEXION_DEG) return null

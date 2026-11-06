@@ -102,24 +102,24 @@ class AnalyzeVideoJumpLandingTest {
 
     private val flight = JumpData.fromFlightTime(400f)
 
-    private fun scriptedTransition(pose: PoseResult): PhaseTransitionResult {
+    private fun scriptedTransition(pose: PoseResult, phase: (Int) -> MovementPhase = ::phaseAt): PhaseTransitionResult {
         val i = (pose.timestamp / frameMs).toInt()
         return PhaseTransitionResult(
-            ExercisePhaseState(currentPhase = phaseAt(i)),
+            ExercisePhaseState(currentPhase = phase(i)),
             repCompleted = i == landingFrame,
             jump = if (i == landingFrame) flight else null
         )
     }
 
     /** The real jump form checks, with the phases scripted by timestamp. */
-    private fun jumpStrategy(): ExerciseStrategy {
+    private fun jumpStrategy(phase: (Int) -> MovementPhase = ::phaseAt): ExerciseStrategy {
         val real = JumpStrategy(ExerciseType.VERTICAL_JUMP, logger)
         return object : ExerciseStrategy by real {
             override fun detectPhase(
                 poseResult: PoseResult,
                 calibrationData: CalibrationData,
                 currentState: ExercisePhaseState
-            ) = scriptedTransition(poseResult)
+            ) = scriptedTransition(poseResult, phase)
         }
     }
 
@@ -201,5 +201,27 @@ class AnalyzeVideoJumpLandingTest {
         assertEquals(15, buffered[0].size)
         assertTrue(buffered[0].none { it.phase == MovementPhase.TOP || it.phase == MovementPhase.IDLE })
         assertTrue(summary.repPeakPowers.isEmpty())
+    }
+
+    @Test
+    fun `another flight within the landing window does not replace the judged landing`() {
+        // A stiff landing, then 60 ms of contact and a short hop (a glitch or a
+        // quick rebound) that lands with deep knees, all within 300 ms.
+        val rebound = landingFrame + 3..landingFrame + 6
+        val poses = video(peakFlexionDeg = 15.0).mapIndexed { i, pose ->
+            if (i > rebound.last) legPose(i * frameMs, 80.0) else pose
+        }
+        val phases = { i: Int ->
+            when {
+                i in rebound -> MovementPhase.TOP
+                i > rebound.last && i < landingFrame + 20 -> MovementPhase.IDLE
+                else -> phaseAt(i)
+            }
+        }
+
+        val summary = analyze(poses, jumpStrategy(phases))
+
+        assertEquals(1, summary.repScores.size)
+        assertTrue(summary.stiffLanding())
     }
 }

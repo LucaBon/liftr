@@ -290,6 +290,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val standingShoulderRatios = mutableListOf<Float>()
         // A jump counts on landing, before the knees bend: its form is checked
         // again once the landing window has passed, with those frames added.
+        // The next flight ends the window early: its landing isn't this rep's.
         var landing: PendingLanding? = null
         suspend fun finishLanding() {
             landing?.let { repScores[it.repIndex] = it.rescore(it.frames) }
@@ -306,7 +307,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             transition.flightGravity?.let(repFittedGravities::add)
             phaseState = transition.newState
             landing?.let {
-                if (pose.timestampUs <= it.untilUs) it.frames += AnalyzeRepUseCase.RepFrame(pose, newPhase) else finishLanding()
+                if (pose.timestampUs <= it.untilUs && newPhase != MovementPhase.TOP) it.frames += AnalyzeRepUseCase.RepFrame(pose, newPhase) else finishLanding()
             }
             if (params.exerciseType.canJudgeCameraView() && params.exerciseType.isStandingPhase(newPhase)) {
                 CameraViewClassifier.shoulderWidthRatio(pose)?.let { standingShoulderRatios += it }
