@@ -112,25 +112,29 @@ class JumpStrategyTest {
     }
 
     @Test
-    fun `same jump sampled at 30 and 120 fps gives the same rep, height and phases`() {
-        val at30 = run(jumpFrames(1000, flightS = 0.5f, frameMs = 33))
-        val at120 = JumpStrategy(ExerciseType.VERTICAL_JUMP, mockk<Logger>(relaxed = true)).let { fresh ->
+    fun `same jump sampled at 30, 60, 120 and 240 fps gives the same rep, height and phases`() {
+        fun runAt(frameMs: Long): Run {
+            val fresh = JumpStrategy(ExerciseType.VERTICAL_JUMP, mockk<Logger>(relaxed = true))
             var state = ExercisePhaseState.initial()
             val jumps = mutableListOf<JumpData>()
             val phases = mutableSetOf<MovementPhase>()
-            jumpFrames(1000, flightS = 0.5f, frameMs = 8).forEach { frame ->
+            jumpFrames(1000, flightS = 0.5f, frameMs = frameMs).forEach { frame ->
                 val result = fresh.detectPhase(frame, calibration, state)
                 state = result.newState
                 phases += state.currentPhase
                 if (result.repCompleted) jumps += result.jump!!
             }
-            Run(jumps.size, jumps, phases)
+            return Run(jumps.size, jumps, phases)
         }
+        val at30 = runAt(33)
 
         assertEquals(1, at30.reps)
-        assertEquals(at30.reps, at120.reps)
-        assertEquals(at30.phases, at120.phases)
-        assertEquals(at30.jumps.single().height.value, at120.jumps.single().height.value, 0.01f)
+        for (frameMs in listOf(16L, 8L, 4L)) {
+            val other = runAt(frameMs)
+            assertEquals("reps at ${frameMs}ms", at30.reps, other.reps)
+            assertEquals("phases at ${frameMs}ms", at30.phases, other.phases)
+            assertEquals(at30.jumps.single().height.value, other.jumps.single().height.value, 0.01f)
+        }
     }
 
     @Test

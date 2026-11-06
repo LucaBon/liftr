@@ -504,7 +504,8 @@ class JumpStrategy(
                     before.stanceYs
                 }
                 val times = if (ys.size > before.stanceYs.size) before.stanceTimesMs + timestamp else before.stanceTimesMs
-                val fresh = times.indexOfFirst { timestamp - it <= Jump.APPROACH_STANCE_WINDOW_MS }.coerceAtLeast(0)
+                // No fresh sample left: drop them all so a changed floor is picked up again.
+                val fresh = times.indexOfFirst { timestamp - it <= Jump.APPROACH_STANCE_WINDOW_MS }.let { if (it < 0) times.size else it }
                 ToeTrack(toe.x, toe.y, before.slowSinceMs ?: tracking.previousTimestamp, ys.drop(fresh), times.drop(fresh))
             }
         }

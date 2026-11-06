@@ -375,15 +375,6 @@ object ExerciseThresholds {
      * Velocity calculation thresholds.
      */
     object Velocity {
-        /** Size of position history buffer for velocity calculations */
-        const val HISTORY_SIZE = 5
-
-        /** Size of velocity smoothing buffer (moving average) */
-        const val SMOOTHING_SIZE = 5
-
-        /** Minimum history size needed for accurate velocity calculation */
-        const val MIN_HISTORY_FOR_CALCULATION = 3
-
         /** Log velocity info every N frames */
         const val VELOCITY_LOG_INTERVAL = 30
     }
