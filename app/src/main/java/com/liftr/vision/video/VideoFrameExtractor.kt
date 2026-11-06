@@ -78,7 +78,7 @@ class VideoFrameExtractor(
                             width = frame.bitmap.width
                             height = frame.bitmap.height
                         }
-                        send(VideoFrame(frame.bitmap, timeBase.realTimeUs(frame.presentationTimeUs - startUs), frameIndex))
+                        send(VideoFrame(frame.bitmap, timeBase.frameRealTimeUs(frameIndex, frame.presentationTimeUs - startUs), frameIndex))
                         frameIndex++
                     }
                     if (frameIndex == 0) {

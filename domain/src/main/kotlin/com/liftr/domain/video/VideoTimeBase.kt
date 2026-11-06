@@ -23,6 +23,17 @@ object VideoTimeBase {
         /** Real time of a container time (both in microseconds from the first frame). */
         fun realTimeUs(containerUs: Long): Long =
             if (timeScale == 1f) containerUs else Math.round(containerUs / timeScale.toDouble())
+
+        /**
+         * Real time of a decoded frame. Slow-motion containers re-time the
+         * capture frames onto a ~30 fps grid with uneven steps, so the scaled
+         * PTS jitters; the capture rate gives each frame's exact time instead.
+         * [frameIndex] counts every decoded frame in presentation order, so
+         * frames the sampler skips still advance time.
+         */
+        fun frameRealTimeUs(frameIndex: Int, containerUs: Long): Long =
+            if (timeScale > 1f && captureFps > 0f) Math.round(frameIndex * 1_000_000.0 / captureFps)
+            else realTimeUs(containerUs)
     }
 
     private const val MIN_SLOWMO_SCALE = 1.5f
