@@ -2,6 +2,10 @@ package com.liftr.ui.screens.workout
 
 import android.Manifest
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import com.liftr.vision.camera.shouldWarnHighSpeedUnavailable
 import android.util.Log
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
@@ -24,6 +28,7 @@ import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -116,6 +121,13 @@ fun WorkoutScreen(
         cameraManager.updateTargetRotation(view.display?.rotation ?: android.view.Surface.ROTATION_0)
     }
     val snackbarHostState = remember { SnackbarHostState() }
+    val recordingFps by cameraManager.recordingFpsFlow.collectAsState()
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { viewModel.importVideo(it) }
+    }
+    val importVideo = {
+        videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+    }
     var showSaveDialog by remember { mutableStateOf(false) }
 
     // The toolbar arrow prompts before discarding tracked sets; system back has
@@ -431,6 +443,14 @@ fun WorkoutScreen(
                                 exercise = uiState.selectedExercise
                             )
 
+                            HighSpeedHint(
+                                visible = shouldWarnHighSpeedUnavailable(
+                                    uiState.selectedExercise,
+                                    if (uiState.repCounterEnabled) null else recordingFps
+                                ),
+                                onImport = importVideo
+                            )
+
                             val startInteractionSource = remember { MutableInteractionSource() }
                             Button(
                                 onClick = { viewModel.startRecording() },
@@ -447,6 +467,10 @@ fun WorkoutScreen(
                                         stringResource(R.string.start_recording)
                                     }
                                 )
+                            }
+
+                            TextButton(onClick = importVideo) {
+                                Text(stringResource(R.string.import_video))
                             }
                         }
                     } else {
@@ -1273,6 +1297,39 @@ fun AnalysisModeHint(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
         )
+    }
+}
+
+/** Compact, dismissible pointer to slow-motion import for the session. */
+@Composable
+fun HighSpeedHint(
+    visible: Boolean,
+    onImport: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var dismissed by rememberSaveable { mutableStateOf(false) }
+    if (!visible || dismissed) return
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.92f),
+                RoundedCornerShape(12.dp)
+            )
+            .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.high_speed_unavailable_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            TextButton(onClick = onImport) { Text(stringResource(R.string.import_video)) }
+        }
+        IconButton(onClick = { dismissed = true }) {
+            Icon(Icons.Default.Close, contentDescription = null)
+        }
     }
 }
 

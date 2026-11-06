@@ -8,6 +8,7 @@ import com.liftr.domain.calculator.CameraView
 import com.liftr.domain.calculator.CameraViewClassifier
 import com.liftr.domain.calculator.CenterOfMassCalculator
 import android.content.Context
+import android.net.Uri
 import androidx.camera.core.ImageProxy
 import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
@@ -57,6 +58,7 @@ import com.liftr.domain.model.Workout
 import com.liftr.domain.repository.CalibrationRepository
 import com.liftr.domain.repository.SettingsKeys
 import com.liftr.domain.repository.SettingsRepository
+import com.liftr.domain.repository.VideoStorageRepository
 import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.usecase.ProcessWorkoutFrameUseCase
 import com.liftr.domain.usecase.FrameProcessingResult
@@ -74,12 +76,15 @@ import com.liftr.ui.common.UiError
 import com.liftr.ui.common.toUiError
 import com.liftr.domain.model.MovementPhase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
+import java.io.File
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -95,6 +100,7 @@ class WorkoutViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val feedbackEmitter: IFeedbackEmitter,
     private val videoRecordingManager: VideoRecordingManager,
+    private val videoStorageRepository: VideoStorageRepository,
     private val videoShareManager: VideoShareManager,
     private val cameraManager: CameraManager,
     private val poseDetector: IPoseDetector,
@@ -1364,20 +1370,67 @@ class WorkoutViewModel @Inject constructor(
                 return@launch
             }
 
-            val state = _uiState.value
-            val intent = VideoAnalysisService.createIntent(
-                context = context,
-                owner = analysisOwner,
-                videoFile = videoFile,
-                exerciseType = state.selectedExercise,
-                weight = state.weight,
-                targetReps = state.targetReps.value,
-                calibrationData = calibration,
-                tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null,
-                knownCaptureFps = captureFps
-            )
-            ContextCompat.startForegroundService(context, intent)
-            logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
+            startAnalysis(videoFile, calibration, captureFps)
+        }
+    }
+
+    private fun startAnalysis(videoFile: File, calibration: CalibrationData, captureFps: Int?) {
+        val state = _uiState.value
+        val intent = VideoAnalysisService.createIntent(
+            context = context,
+            owner = analysisOwner,
+            videoFile = videoFile,
+            exerciseType = state.selectedExercise,
+            weight = state.weight,
+            targetReps = state.targetReps.value,
+            calibrationData = calibration,
+            tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null,
+            knownCaptureFps = captureFps
+        )
+        ContextCompat.startForegroundService(context, intent)
+        logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
+    }
+
+    /**
+     * Analyze a video picked from the gallery (e.g. a slow-motion clip from the
+     * phone's camera app). The capture rate comes from the file's metadata.
+     */
+    fun importVideo(uri: Uri) {
+        val state = _uiState.value
+        if (state.isRecording || state.isVideoRecording) {
+            logger.d(TAG, "importVideo ignored - recording in progress")
+            return
+        }
+        val calibration = calibrationData
+        if (calibration == null) {
+            _uiState.update { it.copy(analysisError = "Calibration required before analysis.") }
+            return
+        }
+        val exercise = state.selectedExercise
+        viewModelScope.launch {
+            // The picked file may be removed or unreadable; never leave a partial copy behind.
+            val target = videoStorageRepository.getRecordingFile(exercise, System.currentTimeMillis())
+            val copied = withContext(Dispatchers.IO) {
+                runCatching {
+                    val input = context.contentResolver.openInputStream(uri)
+                        ?: error("Cannot open $uri")
+                    input.use { src -> target.outputStream().use { src.copyTo(it) } }
+                    target.length() > 0
+                }.onFailure { logger.e(TAG, "Video import copy failed", it) }
+                    .getOrDefault(false)
+                    .also { ok -> if (!ok) videoStorageRepository.deleteRecording(target) }
+            }
+            if (!copied) {
+                _uiState.update { it.copy(analysisError = "Could not import the video.") }
+                return@launch
+            }
+            _uiState.update {
+                it.copy(
+                    analysisProgress = it.analysisProgress ?: AnalysisProgress(0, 1, 0f, 0),
+                    analysisProgressDismissed = false
+                )
+            }
+            startAnalysis(target, calibration, captureFps = null)
         }
     }
 
