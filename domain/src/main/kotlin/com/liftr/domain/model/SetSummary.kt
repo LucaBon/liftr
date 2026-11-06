@@ -20,7 +20,8 @@ import com.liftr.domain.model.BarPathData
  * @property repScores Per-rep quality scores
  * @property repVelocities Per-rep average velocities (m/s)
  * @property avgVelocity Average velocity across all reps
- * @property peakVelocity Highest single-rep velocity
+ * @property peakVelocity Highest instantaneous velocity of any rep
+ * @property repPeakVelocities Per-rep peak velocities (m/s), empty when not measured
  * @property velocityLossPercent Velocity loss from fastest to slowest rep (0.0-1.0)
  * @property overallScore Average of all rep scores
  * @property bestRepIndex Index of the highest-scoring rep
@@ -47,6 +48,7 @@ data class SetSummary(
     val repBarPaths: List<BarPathData> = emptyList(),
     val repJumpHeights: List<Meters> = emptyList(),
     val repApexHeights: List<Meters?> = emptyList(),
+    val repPeakVelocities: List<MetersPerSecond> = emptyList(),
     val cameraView: CameraView = CameraView.UNKNOWN
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)

@@ -392,7 +392,7 @@ class WorkoutViewModel @Inject constructor(
             Rep(
                 setId = 0,
                 repNumber = index + 1,
-                peakVelocity = v,
+                peakVelocity = summary.repPeakVelocities.getOrNull(index) ?: v,
                 avgVelocity = v,
                 timeUnderTension = 0f,
                 rangeOfMotion = Meters(0f),

@@ -144,6 +144,11 @@ class AnalyzeVideoUseCaseTest {
         assertEquals(ascent.average().toFloat(), repVelocities[0].value, 0.01f)
         // Averaging the slow descent in as well would read clearly lower.
         assertEquals(true, repVelocities[0].value > all.average().toFloat() + 0.05f)
+        // The rep peak is the fastest ascent frame, not the fastest of the whole rep.
+        val summary = result.getOrThrow()
+        assertEquals(1, summary.repPeakVelocities.size)
+        assertEquals(ascent.max(), summary.repPeakVelocities[0].value, 0.01f)
+        assertEquals(summary.repPeakVelocities[0].value, summary.peakVelocity.value, 0.0001f)
     }
 
     @Test

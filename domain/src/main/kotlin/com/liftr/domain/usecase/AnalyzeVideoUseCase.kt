@@ -260,6 +260,7 @@ class AnalyzeVideoUseCase @Inject constructor(
 
         val repScores = mutableListOf<RepQualityScore>()
         val repVelocities = mutableListOf<MetersPerSecond>()
+        val repPeakVelocities = mutableListOf<MetersPerSecond>()
         val repBarPaths = mutableListOf<BarPathData>()
         val repJumpHeights = mutableListOf<Meters>()
         val repApexHeights = mutableListOf<Meters?>()
@@ -272,6 +273,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         var bottomTime = 0L
         var repVelocitySum = 0f
         var repVelocityCount = 0
+        var repVelocityPeak = 0f
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
@@ -303,6 +305,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 bottomTime = now
                 repVelocitySum = 0f
                 repVelocityCount = 0
+                repVelocityPeak = 0f
             }
 
             if (newPhase != previousPhase) {
@@ -315,6 +318,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                         bottomTime = 0L
                         repVelocitySum = 0f
                         repVelocityCount = 0
+                        repVelocityPeak = 0f
                         params.tempoPrescription?.let { presc ->
                             tempoState = TempoTracker.onPhaseTransition(
                                 TempoTracker.reset(presc), newPhase, now
@@ -345,6 +349,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             if (velocity != null && params.exerciseType.isConcentricPhase(newPhase)) {
                 repVelocitySum += velocity.instantaneous.value
                 repVelocityCount++
+                repVelocityPeak = maxOf(repVelocityPeak, velocity.instantaneous.value)
             }
 
             if (transition.repCompleted) {
@@ -424,6 +429,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                     else -> MetersPerSecond(0f)
                 }
                 repVelocities.add(avgRepVelocity)
+                repPeakVelocities.add(jump?.takeoffVelocity ?: MetersPerSecond(repVelocityPeak))
                 jump?.let {
                     repJumpHeights.add(it.height)
                     repApexHeights.add(it.apexHeight)
@@ -460,7 +466,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val cameraView = if (params.exerciseType.canJudgeCameraView()) {
             CameraViewClassifier.classify(standingShoulderRatios)
         } else CameraView.UNKNOWN
-        return assembleSummary(params, repScores, repVelocities, repBarPaths, repJumpHeights)
+        return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(cameraView = cameraView, repApexHeights = repApexHeights)
     }
 
@@ -468,6 +474,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         params: Params,
         repScores: List<RepQualityScore>,
         repVelocities: List<MetersPerSecond>,
+        repPeakVelocities: List<MetersPerSecond>,
         repBarPaths: List<BarPathData>,
         repJumpHeights: List<Meters>
     ): SetSummary {
@@ -475,7 +482,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             MetersPerSecond(repVelocities.map { it.value }.average().toFloat())
         } else MetersPerSecond(0f)
 
-        val peakVelocity = repVelocities.maxByOrNull { it.value } ?: MetersPerSecond(0f)
+        val peakVelocity = repPeakVelocities.maxByOrNull { it.value } ?: MetersPerSecond(0f)
 
         val velocityLossPercent = if (repVelocities.size >= 2) {
             val fastest = repVelocities.maxOf { it.value }
@@ -490,6 +497,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             completedReps = RepCount(repScores.size),
             repScores = repScores,
             repVelocities = repVelocities,
+            repPeakVelocities = repPeakVelocities,
             avgVelocity = avgVelocity,
             peakVelocity = peakVelocity,
             velocityLossPercent = velocityLossPercent,
@@ -504,10 +512,6 @@ class AnalyzeVideoUseCase @Inject constructor(
         )
     }
 
-    /**
-     * Vertical tracking position in meters for velocity estimation — the same
-     * body part the bar-path/real-time pipeline tracks per exercise.
-     */
     /**
      * Vertical tracking position in meters, or null when the tracked joint is
      * not visible enough in this frame to measure. Callers must not treat a
