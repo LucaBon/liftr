@@ -406,19 +406,8 @@ class DeadliftStrategy @Inject constructor(
         return Lockout(achieved = hipOk && kneeOk, anglesMeasured = listOfNotNull(hipAngle, kneeAngle).size)
     }
 
-    /**
-     * The given joints on the body side facing the camera, or null if neither
-     * side has them all visible. Filmed side-on, the far side is hidden behind
-     * the body, so requiring both sides would leave the angles unmeasured.
-     * The side whose least visible joint is seen better wins.
-     */
-    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
-        fun side(indices: List<Int>): List<PoseKeypoint>? =
-            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
-        val candidates = listOfNotNull(side(left), side(right))
-            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
-        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
-    }
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? =
+        nearSideLandmarks(poseResult, left, right, MIN_JOINT_VISIBILITY)
 
     /** Angle in degrees at the middle joint, on the side facing the camera. */
     private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {
@@ -575,9 +564,14 @@ class DeadliftStrategy @Inject constructor(
 
     /** The first stall in one pull, its frames in time order. */
     private fun hitchIn(pull: List<PoseResult>, calibrationData: CalibrationData): FormIssue? {
-        val wristYs = pull.map { pose ->
-            nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))?.first()?.y
-        }
+        // Median-filtered over time so a one-frame landmark jump is not a stall.
+        val wristYs = rollingMedianOrNull(
+            pull.map { it.timestampUs },
+            pull.map { pose ->
+                nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))?.first()?.y
+            },
+            ExerciseThresholds.Deadlift.HITCH_SMOOTH_MS
+        )
         val startY = wristYs.firstOrNull { it != null } ?: return null
         var anchor = -1
         for (i in pull.indices) {

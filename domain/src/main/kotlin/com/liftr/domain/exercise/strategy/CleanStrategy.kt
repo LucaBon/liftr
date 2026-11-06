@@ -139,11 +139,11 @@ class CleanStrategy @Inject constructor(
         //                    -> CONCENTRIC(CATCH/RECOVERY) -> TOP(LOCKOUT) -> IDLE
         return when (updatedState.currentPhase) {
             MovementPhase.IDLE ->
-                detectIdleToFirstPull(updatedState, currentWristsY, currentHipsY, poseResult.timestamp)
+                detectIdleToFirstPull(updatedState, currentWristsY, currentHipsY, poseResult.timestampUs)
             MovementPhase.ECCENTRIC ->
-                detectFirstPullToSecondPull(updatedState, currentWristsY, currentHipsY, poseResult.timestamp)
+                detectFirstPullToSecondPull(updatedState, currentWristsY, currentHipsY, poseResult.timestampUs)
             MovementPhase.BOTTOM ->
-                detectSecondPullToCatch(updatedState, currentWristsY, poseResult.timestamp)
+                detectSecondPullToCatch(updatedState, currentWristsY, poseResult.timestampUs)
             MovementPhase.CONCENTRIC ->
                 detectCatchToLockout(updatedState, poseResult)
             MovementPhase.TOP ->
@@ -159,7 +159,7 @@ class CleanStrategy @Inject constructor(
         state: ExercisePhaseState,
         wristsY: Float?,
         hipsY: Float?,
-        timestamp: Long
+        timestampUs: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -174,7 +174,7 @@ class CleanStrategy @Inject constructor(
             val newState = state
                 .withStartingWristsY(wristsY)
                 .withStartingPosition(state.currentHeadY, state.currentShouldersY, hipsY)
-                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestamp)
+                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestampUs)
 
             logger.d(TAG, "Starting positions set: wristsY=%.2f m, hipsY=${hipsY?.let { "%.2f m".format(it) } ?: "N/A"}".format(wristsY))
             return PhaseTransitionResult(
@@ -194,8 +194,8 @@ class CleanStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = state
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
-                    .withOlympicLiftData(firstPullStartTime = timestamp)
-                    .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestamp),
+                    .withOlympicLiftData(firstPullStartTime = timestampUs / 1000)
+                    .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestampUs),
                 repCompleted = false,
                 debugInfo = "First pull started: %.2f m wrist rise".format(upwardDisplacement)
             )
@@ -203,7 +203,7 @@ class CleanStrategy @Inject constructor(
 
         // Update previous positions for next-frame velocity calculation
         return PhaseTransitionResult(
-            newState = state.withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestamp),
+            newState = state.withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestampUs),
             repCompleted = false,
             debugInfo = "Waiting for pull (wrist rise: %.2f m)".format(upwardDisplacement)
         )
@@ -217,7 +217,7 @@ class CleanStrategy @Inject constructor(
         state: ExercisePhaseState,
         wristsY: Float?,
         hipsY: Float?,
-        timestamp: Long
+        timestampUs: Long
     ): PhaseTransitionResult {
         if (hipsY == null) {
             return PhaseTransitionResult(
@@ -232,7 +232,7 @@ class CleanStrategy @Inject constructor(
 
         // Calculate hip upward velocity if we have previous frame data
         val hipVelocity = if (previousHipsY != null && previousTimestamp != null) {
-            val deltaTimeSeconds = (timestamp - previousTimestamp) / 1000f
+            val deltaTimeSeconds = (timestampUs - previousTimestamp) / 1_000_000f
             if (deltaTimeSeconds > 0f) {
                 // Upward velocity: positive when hips move up (Y decreases)
                 (previousHipsY - hipsY) / deltaTimeSeconds
@@ -250,7 +250,7 @@ class CleanStrategy @Inject constructor(
         val updatedState = state.withPreviousPositions(
             wristsY = wristsY ?: state.previousWristsY,
             hipsY = hipsY,
-            timestamp = timestamp
+            timestamp = timestampUs
         )
 
         if (hipVelocity != null && hipVelocity > ExerciseThresholds.Clean.FIRST_TO_SECOND_PULL_HIP_VELOCITY) {
@@ -260,7 +260,7 @@ class CleanStrategy @Inject constructor(
                     .withCurrentPhase(MovementPhase.BOTTOM)
                     .withOlympicLiftData(
                         firstPullStartTime = state.firstPullStartTime,
-                        secondPullStartTime = timestamp
+                        secondPullStartTime = timestampUs / 1000
                     ),
                 repCompleted = false,
                 debugInfo = "Second pull started: hipVelocity=%.2f m/s".format(hipVelocity)
@@ -282,7 +282,7 @@ class CleanStrategy @Inject constructor(
     private fun detectSecondPullToCatch(
         state: ExercisePhaseState,
         wristsY: Float?,
-        timestamp: Long
+        timestampUs: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -296,10 +296,9 @@ class CleanStrategy @Inject constructor(
         val previousTimestamp = state.previousTimestamp
 
         // Wrist velocity, upward-positive — the same convention hip velocity uses
-        // above and that SnatchStrategy uses for peakPullVelocity. Image Y grows
-        // downward, so a rising wrist means wristsY decreased.
+        // above. Image Y grows downward, so a rising wrist means wristsY decreased.
         val wristVelocity = if (previousWristsY != null && previousTimestamp != null) {
-            val deltaTimeSeconds = (timestamp - previousTimestamp) / 1000f
+            val deltaTimeSeconds = (timestampUs - previousTimestamp) / 1_000_000f
             if (deltaTimeSeconds > 0f) {
                 (previousWristsY - wristsY) / deltaTimeSeconds
             } else null
@@ -314,7 +313,7 @@ class CleanStrategy @Inject constructor(
         } else currentPeakPullVelocity
 
         val updatedState = state
-            .withPreviousPositions(wristsY = wristsY, timestamp = timestamp)
+            .withPreviousPositions(wristsY = wristsY, timestamp = timestampUs)
             .withOlympicLiftData(
                 peakPullVelocity = updatedPeakPullVelocity,
                 firstPullStartTime = state.firstPullStartTime,
@@ -336,7 +335,7 @@ class CleanStrategy @Inject constructor(
                         catchPosition = wristsY,
                         firstPullStartTime = state.firstPullStartTime,
                         secondPullStartTime = state.secondPullStartTime,
-                        catchTime = timestamp
+                        catchTime = timestampUs / 1000
                     ),
                 repCompleted = false,
                 debugInfo = "Catch initiated: wristVelocity=%.2f m/s".format(wristVelocity)
@@ -446,19 +445,8 @@ class CleanStrategy @Inject constructor(
         )
     }
 
-    /**
-     * The given joints on the body side facing the camera, or null if neither
-     * side has them all visible. Filmed side-on, the far side is hidden behind
-     * the body, so averaging or requiring both sides reads it wrong.
-     * The side whose least visible joint is seen better wins.
-     */
-    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
-        fun side(indices: List<Int>): List<PoseKeypoint>? =
-            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
-        val candidates = listOfNotNull(side(left), side(right))
-            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
-        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
-    }
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? =
+        nearSideLandmarks(poseResult, left, right, MIN_JOINT_VISIBILITY)
 
     /** Angle in degrees at the middle joint, on the side facing the camera. */
     private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {
@@ -576,14 +564,22 @@ class CleanStrategy @Inject constructor(
     /**
      * Check for bar crash at catch: the bar falling onto the lifter instead of
      * being met in the rack. Fastest downward wrist speed, in m/s, over any span
-     * of at least BAR_CRASH_WINDOW_MS ending in a catch (CONCENTRIC) frame.
-     * Time-based, so it holds at any fps.
+     * of at least BAR_CRASH_WINDOW_MS ending in a catch (CONCENTRIC) frame, on
+     * the median-filtered wrist height. Time-based, so it holds at any fps.
      */
     private fun checkBarCrash(
         frames: List<AnalyzeRepUseCase.RepFrame>,
         calibrationData: CalibrationData
     ): FormIssue? {
-        val samples = frames.mapNotNull { (pose, phase) -> nearWrist(pose)?.let { Triple(pose, phase, it.y) } }
+        // Median-filtered over time so a one-frame landmark jump is not a fall.
+        val smoothed = rollingMedianOrNull(
+            frames.map { it.pose.timestampUs },
+            frames.map { nearWrist(it.pose)?.y },
+            ExerciseThresholds.Clean.BAR_CRASH_SMOOTH_MS
+        )
+        val samples = frames.indices.mapNotNull { i ->
+            smoothed[i]?.let { Triple(frames[i].pose, frames[i].phase, it) }
+        }
         var anchor = -1
         var fastest = 0f
         for (i in samples.indices) {

@@ -61,7 +61,7 @@ class SquatFormChecksTest {
 
     private fun rep(vararg heelYs: Float) =
         heelYs.mapIndexed { i, y ->
-            AnalyzeRepUseCase.RepFrame(pose(heelY = y).copy(timestamp = i * 33L), MovementPhase.ECCENTRIC)
+            AnalyzeRepUseCase.RepFrame(pose(heelY = y).copy(timestamp = i * 33L, timestampUs = i * 33_000L), MovementPhase.ECCENTRIC)
         }
 
     private fun heelIssues(strategy: ExerciseStrategy, frames: List<AnalyzeRepUseCase.RepFrame>) =
@@ -69,10 +69,38 @@ class SquatFormChecksTest {
 
     @Test
     fun `heel lift fires once for a rep where the heel rises against the toe`() {
-        val issues = heelIssues(back, rep(0.9f, 0.88f, 0.85f, 0.84f, 0.85f))
+        val lifted = rep(*FloatArray(8) { 0.9f }, *FloatArray(12) { 0.85f })
+        val issues = heelIssues(back, lifted)
         assertEquals(1, issues.size)
         assertEquals(Severity.WARNING, issues.single().severity)
-        assertEquals(1, heelIssues(front, rep(0.9f, 0.85f)).size)
+        assertEquals(1, heelIssues(front, lifted).size)
+    }
+
+    /** Heel flat for [flatMs], then lifted for [liftedMs]; one frame at [outlierMs] jumps up like landmark noise. */
+    private fun heelRepAt(fps: Int, flatMs: Int, liftedMs: Int, outlierMs: Int? = null) =
+        List((flatMs + liftedMs) * fps / 1000) { i ->
+            val us = i * 1_000_000L / fps
+            val ms = us / 1000
+            val y = when {
+                outlierMs != null && ms == (outlierMs * fps / 1000) * 1000L / fps -> 0.85f
+                ms < flatMs -> 0.9f
+                else -> 0.85f
+            }
+            AnalyzeRepUseCase.RepFrame(pose(heelY = y).copy(timestamp = ms, timestampUs = us), MovementPhase.ECCENTRIC)
+        }
+
+    @Test
+    fun `a single frame heel outlier is no heel lift at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            assertTrue("$fps fps", heelIssues(back, heelRepAt(fps, flatMs = 1000, liftedMs = 0, outlierMs = 500)).isEmpty())
+        }
+    }
+
+    @Test
+    fun `a sustained heel lift fires at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            assertEquals("$fps fps", 1, heelIssues(back, heelRepAt(fps, flatMs = 600, liftedMs = 400)).size)
+        }
     }
 
     @Test

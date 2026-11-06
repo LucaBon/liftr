@@ -177,7 +177,7 @@ class DeadliftScoringChecksTest {
             val landmarks = base.landmarks.toMutableList()
             val wrist = landmarks[PoseResult.LEFT_WRIST]
             landmarks[PoseResult.LEFT_WRIST] = wrist.copy(y = wristY.toFloat())
-            base.copy(landmarks = landmarks, timestamp = tMs)
+            base.copy(landmarks = landmarks, timestamp = tMs, timestampUs = tMs * 1000)
         }
     }
 
@@ -190,6 +190,20 @@ class DeadliftScoringChecksTest {
         assertTrue(hitches(pullFrames(fps = 30, stallMs = 0, smooth = true)).isEmpty())
         assertTrue(hitches(pullFrames(fps = 120, stallMs = 0, smooth = true)).isEmpty())
         assertTrue(hitches(pullFrames(fps = 30, stallMs = 0)).isEmpty())
+    }
+
+    @Test
+    fun `a single frame wrist outlier mid-pull is no hitch at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            val frames = pullFrames(fps = fps, stallMs = 0).toMutableList()
+            // One frame jumps back to where the wrist was 150 ms earlier.
+            val i = frames.size / 2
+            val back = frames[i - 150 * fps / 1000].landmarks[PoseResult.LEFT_WRIST].y
+            val landmarks = frames[i].landmarks.toMutableList()
+            landmarks[PoseResult.LEFT_WRIST] = landmarks[PoseResult.LEFT_WRIST].copy(y = back)
+            frames[i] = frames[i].copy(landmarks = landmarks)
+            assertTrue("$fps fps", hitches(frames).isEmpty())
+        }
     }
 
     @Test

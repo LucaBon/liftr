@@ -203,6 +203,22 @@ class BenchPressFormTest {
     }
 
     @Test
+    fun `a single frame wrist outlier does not cut the chest pause short at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            val frames = simulateRep(pauseMs = 600L, fps = fps).frames.toMutableList()
+            // One frame mid-pause reads 3 cm lower: it would be the "lowest point" with no pause.
+            val atBottom = frames.indices.filter { frames[it].pose.landmarks[PoseResult.LEFT_WRIST].y == 0.7f }
+            val i = atBottom[atBottom.size / 2]
+            val landmarks = frames[i].pose.landmarks.toMutableList()
+            landmarks[PoseResult.LEFT_WRIST] = landmarks[PoseResult.LEFT_WRIST].copy(y = 0.73f)
+            frames[i] = frames[i].copy(pose = frames[i].pose.copy(landmarks = landmarks))
+
+            val kinds = strategy.validateRep(frames, calibrationData, null).map { it.kind }
+            assertEquals("$fps fps", listOf("chest_pause"), kinds)
+        }
+    }
+
+    @Test
     fun `a rep without a descent reports no chest pause`() {
         val frames = List(6) { AnalyzeRepUseCase.RepFrame(pose(timestampMs = it * 33L), MovementPhase.TOP) }
 

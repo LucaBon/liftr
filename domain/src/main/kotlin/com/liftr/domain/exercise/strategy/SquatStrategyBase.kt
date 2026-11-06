@@ -513,14 +513,20 @@ abstract class SquatStrategyBase(
     /**
      * Heel lift: over the rep, the heel rising relative to the toe. The foot
      * pitch of the first readable frame is the flat-foot reference; the rep
-     * reports at most one issue.
+     * reports at most one issue. The pitch is median-filtered over
+     * HEEL_LIFT_SMOOTH_MS, so a lift must be sustained, at any fps.
      */
     override fun validateRep(
         frames: List<AnalyzeRepUseCase.RepFrame>,
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState?
     ): List<FormIssue> {
-        val slopes = frames.mapNotNull { footSlope(it.pose) }
+        // Median-filtered over time so a one-frame landmark jump is not a lift.
+        val slopes = rollingMedianOrNull(
+            frames.map { it.pose.timestampUs },
+            frames.map { footSlope(it.pose) },
+            ExerciseThresholds.SquatForm.HEEL_LIFT_SMOOTH_MS
+        ).filterNotNull()
         val reference = slopes.firstOrNull() ?: return emptyList()
         if (reference - slopes.min() <= ExerciseThresholds.SquatForm.HEEL_LIFT_WARNING) return emptyList()
         return listOf(

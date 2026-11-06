@@ -79,6 +79,9 @@ object ExerciseThresholds {
          */
         const val HEEL_LIFT_WARNING = 0.2f
 
+        /** Foot pitch is median-filtered over this window (ms): a lift must last over half of it to count */
+        const val HEEL_LIFT_SMOOTH_MS = 200L
+
         /** Below this torso segment length (image-height units) the angle is too noisy to read */
         const val MIN_TORSO_LENGTH = 0.01f
     }
@@ -113,6 +116,9 @@ object ExerciseThresholds {
 
         /** Wrist travel (m) under which the bar counts as resting at the chest */
         const val PAUSE_BAND = 0.01f
+
+        /** Wrist height is median-filtered over this window (ms) so single-frame landmark jumps do not break the pause */
+        const val PAUSE_SMOOTH_MS = 150L
 
         /** Chest pauses shorter than this (ms) are touch-and-go */
         const val TOUCH_AND_GO_MAX_PAUSE_MS = 300L
@@ -158,6 +164,9 @@ object ExerciseThresholds {
         /** Time below hitch threshold to trigger warning (3 frames at 30 fps) */
         const val HITCH_MS = 100L
 
+        /** Wrist height is median-filtered over this window (ms) so single-frame landmark jumps do not read as a stall */
+        const val HITCH_SMOOTH_MS = 100L
+
         /** Bar rise from the start of the pull before a stall counts as a hitch, in meters */
         const val HITCH_MIN_RISE = 0.10f
     }
@@ -196,8 +205,11 @@ object ExerciseThresholds {
         /** Maximum downward wrist velocity at catch before bar crash warning (m/s) */
         const val BAR_CRASH_VELOCITY = 1.5f
 
-        /** Shortest span the catch wrist velocity is measured over, so it is not single-frame noise at high fps (ms) */
-        const val BAR_CRASH_WINDOW_MS = 30L
+        /** Shortest span the catch wrist velocity is measured over (ms), at least two frames even at 30 fps */
+        const val BAR_CRASH_WINDOW_MS = 60L
+
+        /** Wrist height is median-filtered over this window (ms) so single-frame landmark jumps do not read as a crash */
+        const val BAR_CRASH_SMOOTH_MS = 100L
 
         /** Maximum horizontal ankle displacement from the start of the rep before forward jump warning (m) */
         const val FORWARD_JUMP_MAX = 0.10f

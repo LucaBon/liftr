@@ -56,12 +56,42 @@ class CleanStrategyFormTest {
     @Test
     fun `bar dropping fast onto the rack at the catch is a bar crash, once`() {
         val frames = goodRep().toMutableList()
-        // The bar falls 14 cm in one frame at the catch (4.2 m/s), then rides down.
-        frames[10] = rack(sy = 0.53f, hip = P(0.40f, 0.72f), knee = P(0.60f, 0.76f))
-        frames[11] = rack(sy = 0.54f, hip = P(0.40f, 0.74f), knee = P(0.60f, 0.76f))
-        frames[12] = rack(sy = 0.55f, hip = P(0.40f, 0.76f), knee = P(0.60f, 0.76f))
-        frames[13] = rack(sy = 0.55f, hip = P(0.40f, 0.76f), knee = P(0.60f, 0.76f))
+        // The bar falls 12 cm per frame (3.6 m/s) for three frames at the catch.
+        frames[10] = rack(sy = 0.52f, hip = P(0.40f, 0.72f), knee = P(0.60f, 0.76f))
+        frames[11] = rack(sy = 0.58f, hip = P(0.40f, 0.74f), knee = P(0.60f, 0.76f))
+        frames[12] = rack(sy = 0.64f, hip = P(0.40f, 0.76f), knee = P(0.60f, 0.76f))
+        frames[13] = rack(sy = 0.64f, hip = P(0.40f, 0.76f), knee = P(0.60f, 0.76f))
         assertEquals(listOf("bar_crash"), replay(frames).map { it.kind })
+    }
+
+    /** Catch-phase frames at [fps] for 600 ms; the wrist height (image-height units) comes from [wristY] at t ms. */
+    private fun catchFrames(fps: Int, wristY: (Int) -> Float): List<AnalyzeRepUseCase.RepFrame> =
+        List(600 * fps / 1000) { i ->
+            val ms = (i * 1000L / fps).toInt()
+            val pose = rack(sy = wristY(ms), hip = P(0.40f, 0.74f), knee = P(0.60f, 0.76f))
+                .pose(1_000L + ms)
+            AnalyzeRepUseCase.RepFrame(pose, MovementPhase.CONCENTRIC)
+        }
+
+    private fun crashes(frames: List<AnalyzeRepUseCase.RepFrame>) =
+        strategy.validateRep(frames, calibrationData, ExercisePhaseState.initial()).filter { it.kind == "bar_crash" }
+
+    @Test
+    fun `a single frame wrist outlier is no bar crash at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            val outlierMs = (300 * fps / 1000) * 1000 / fps
+            val frames = catchFrames(fps) { ms -> if (ms == outlierMs) 0.64f else 0.5f }
+            assertTrue("$fps fps", crashes(frames).isEmpty())
+        }
+    }
+
+    @Test
+    fun `a sustained fall of the bar fires at 30 and 240 fps`() {
+        for (fps in listOf(30, 240)) {
+            // 1.2 image heights per second is 2.4 m/s, for 200 ms.
+            val frames = catchFrames(fps) { ms -> 0.45f + 1.2f * (minOf(ms, 400) - 200).coerceAtLeast(0) / 1000f }
+            assertEquals("$fps fps", 1, crashes(frames).size)
+        }
     }
 
     @Test

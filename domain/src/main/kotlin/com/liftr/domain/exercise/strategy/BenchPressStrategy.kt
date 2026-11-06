@@ -130,18 +130,8 @@ class BenchPressStrategy @Inject constructor(
         )
     }
 
-    /**
-     * Landmarks of the side facing the camera (the bench is filmed side-on, so
-     * the far arm is often occluded). The side whose least visible joint is
-     * seen better wins; null when neither side is fully visible.
-     */
-    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
-        fun side(indices: List<Int>): List<PoseKeypoint>? =
-            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
-        return listOfNotNull(side(left), side(right))
-            .filter { joints -> joints.all { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD } }
-            .maxByOrNull { joints -> joints.minOf { it.visibility } }
-    }
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? =
+        nearSideLandmarks(poseResult, left, right, PoseKeypoint.VISIBILITY_THRESHOLD)
 
     private fun detectIdleTransition(state: ExercisePhaseState, wristsY: Float?): PhaseTransitionResult {
         if (wristsY == null) {
@@ -418,16 +408,23 @@ class BenchPressStrategy @Inject constructor(
      * Chest pause: the bar rests at the wrist's lowest point. The pause is the
      * contiguous span of frames around that point whose wrist stays within
      * PAUSE_BAND of it, measured on frame timestamps (ms) so it holds at any
-     * fps. Reported as an INFO issue carrying the duration in ms in
+     * fps, on the median-filtered wrist height. Reported as an INFO issue carrying the duration in ms in
      * its message: touch_and_go when shorter than TOUCH_AND_GO_MAX_PAUSE_MS,
      * chest_pause otherwise. Reps without
      * a real descent (no chest touch in the frames) report nothing.
      */
     private fun checkChestPause(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): FormIssue? {
-        val samples = frames.mapNotNull { (pose, _) ->
-            val wrist = nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))
-                ?.first() ?: return@mapNotNull null
-            Triple(pose.timestamp, wrist.y, pose)
+        // Median-filtered over time so a one-frame landmark jump is neither the
+        // lowest point nor a break in the pause.
+        val smoothed = rollingMedianOrNull(
+            frames.map { it.pose.timestampUs },
+            frames.map { (pose, _) ->
+                nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))?.first()?.y
+            },
+            ExerciseThresholds.BenchPress.PAUSE_SMOOTH_MS
+        )
+        val samples = frames.indices.mapNotNull { i ->
+            smoothed[i]?.let { Triple(frames[i].pose.timestamp, it, frames[i].pose) }
         }
         if (samples.size < 2) return null
         val low = samples.indices.maxByOrNull { samples[it].second } ?: return null
