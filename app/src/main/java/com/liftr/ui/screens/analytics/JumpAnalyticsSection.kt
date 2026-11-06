@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.liftr.R
 import com.liftr.domain.model.JumpRepRecord
+import com.liftr.domain.model.RepJumpData
 import com.liftr.ui.components.BarPathReplayCard
 import com.liftr.ui.components.charts.ChartSeries
 import com.liftr.ui.components.charts.MultiLineTrendChart
@@ -31,6 +32,7 @@ private val ApexColor = Color(0xFF4CAF50)
 private val DipColor = Color(0xFF2196F3)
 private val PeakColor = Color(0xFFE91E63)
 private val VelocityColor = Color(0xFF9C27B0)
+private val MeanPowerColor = Color(0xFF009688)
 
 /**
  * Jump analytics: averages, jump height and center-of-mass trends per jump,
@@ -70,6 +72,29 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
                 xLabels = xLabels,
                 unit = "m/s",
                 decimals = 1
+            )
+        }
+
+        if (jumps.any { it.jump.peakPowerW != null || it.jump.meanPowerW != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.analytics_jump_power))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_peak_power), PeakColor, jumps.map { it.jump.peakPowerW }),
+                    ChartSeries(stringResource(R.string.jump_mean_power), MeanPowerColor, jumps.map { it.jump.meanPowerW })
+                ),
+                xLabels = xLabels,
+                unit = "W"
+            )
+        }
+
+        if (jumps.any { it.jump.meanForceN != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.analytics_jump_push_off_force))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_mean_force), DipColor, jumps.map { it.jump.meanForceN })
+                ),
+                xLabels = xLabels,
+                unit = "N"
             )
         }
 
@@ -144,6 +169,28 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
                 ) {
                     StatItem(label = stringResource(R.string.jump_peak_power), value = "%.0f W".format(powers.average()))
                     StatItem(label = stringResource(R.string.analytics_best_peak_power), value = "%.0f W".format(powers.max()))
+                }
+            }
+            // Push-off fields are all null together, so averaging each over its non-null values matches up.
+            val pushOffs = jumps.map { it.jump }.filter { it.meanForceN != null }
+            if (pushOffs.isNotEmpty()) {
+                fun avgOf(format: String, value: (RepJumpData) -> Float?) =
+                    format.format(pushOffs.mapNotNull(value).average())
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_push_off), value = avgOf("%.0f cm") { it.pushOffCm })
+                    StatItem(label = stringResource(R.string.jump_mean_force), value = avgOf("%.0f N") { it.meanForceN })
+                    StatItem(label = stringResource(R.string.jump_mean_velocity), value = avgOf("%.2f m/s") { it.meanVelocity })
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_mean_power), value = avgOf("%.0f W") { it.meanPowerW })
+                    StatItem(label = stringResource(R.string.jump_relative_force), value = avgOf("%.1f N/kg") { it.relativeForce })
+                    StatItem(label = stringResource(R.string.jump_relative_power), value = avgOf("%.1f W/kg") { it.relativePower })
                 }
             }
         }

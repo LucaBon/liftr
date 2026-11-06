@@ -15,4 +15,13 @@
     <string name="video_speed_suspect">La velocità del video sembra sbagliata (slow motion?)</string>
     <string name="jump_peak_power">Potenza di picco</string>
     <string name="analytics_best_peak_power">Miglior potenza di picco</string>
+    <string name="jump_push_off">Spinta</string>
+    <string name="jump_mean_force">Forza media</string>
+    <string name="jump_mean_velocity">Velocità media</string>
+    <string name="jump_mean_power">Potenza media</string>
+    <string name="jump_relative_force">Forza relativa</string>
+    <string name="jump_relative_power">Potenza relativa</string>
+    <string name="analytics_jump_power">Potenza</string>
+    <string name="analytics_jump_push_off_force">Forza di spinta</string>
+    <string name="jump_push_off_summary">Spinta %1$.0f cm · %2$.0f N · %3$.2f m/s · %4$.0f W</string>
 </resources>

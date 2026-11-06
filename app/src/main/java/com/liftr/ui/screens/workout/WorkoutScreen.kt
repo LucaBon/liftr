@@ -73,6 +73,7 @@ import com.liftr.util.findActivity
 import com.liftr.vision.pose.PreviewPoseSampler
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.calculator.CameraView
+import com.liftr.domain.calculator.JumpMechanics
 import com.liftr.util.isPortrait
 import com.liftr.util.preferredScreenOrientation
 import com.liftr.util.rememberOrientation
@@ -708,7 +709,8 @@ fun SetSummarySheet(
                     heights = summary.repJumpHeights,
                     apexHeights = summary.repApexHeights,
                     velocities = summary.repVelocities,
-                    powers = summary.repPeakPowers
+                    powers = summary.repPeakPowers,
+                    mechanics = summary.repMechanics
                 )
             } else {
                 // Overall score bar
@@ -812,7 +814,8 @@ private fun JumpHeightList(
     heights: List<Meters>,
     apexHeights: List<Meters?>,
     velocities: List<MetersPerSecond>,
-    powers: List<Watts?>
+    powers: List<Watts?>,
+    mechanics: List<JumpMechanics?>
 ) {
     Column {
         if (apexHeights.any { it != null }) {
@@ -839,6 +842,18 @@ private fun JumpHeightList(
                         (powers.getOrNull(index)?.let { "  \u00B7  %.0f W".format(it.value) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
+                )
+            }
+            mechanics.getOrNull(index)?.let {
+                Text(
+                    text = stringResource(
+                        R.string.jump_push_off_summary,
+                        it.pushOffM * 100f, it.meanForceN, it.meanVelocity, it.meanPowerW
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
                 )
             }
         }
