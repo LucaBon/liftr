@@ -115,8 +115,13 @@ data class SetSummary(
     private fun countedApexHeights(): List<Meters> =
         countedJumpIndices.mapNotNull { repApexHeights.getOrNull(it) }
 
+    /** RSIs of the rebound jumps that count, as for height: suspect ones are left out. */
+    private fun countedRsis(): List<Float> =
+        repReactiveStrengthIndices.indices.toList().jumpsThatCount(::jumpQuality)
+            .mapNotNull { repReactiveStrengthIndices[it] }
+
     /** Highest RSI of the set's rebound jumps; null without any. */
-    val bestRsi: Float? get() = repReactiveStrengthIndices.filterNotNull().maxOrNull()
+    val bestRsi: Float? get() = countedRsis().maxOrNull()
 
     /**
      * Mean of the [RSI_BEST_OF] best RSIs, in the manner of the RSI 10/5 test
@@ -124,7 +129,7 @@ data class SetSummary(
      * than in [bestRsi]. Null with fewer rebound jumps than that.
      */
     val bestFiveMeanRsi: Float?
-        get() = repReactiveStrengthIndices.filterNotNull()
+        get() = countedRsis()
             .takeIf { it.size >= RSI_BEST_OF }
             ?.sortedDescending()?.take(RSI_BEST_OF)?.average()?.toFloat()
 

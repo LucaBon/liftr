@@ -219,6 +219,16 @@ class SetSummaryTest {
     }
 
     @Test
+    fun `suspect jumps stay out of the set's RSI`() {
+        val summary = withRsis(null, 1.2f, 3.5f, 1.4f).copy(
+            repJumpQualities = listOf(JumpQuality.OK, JumpQuality.OK, JumpQuality.SUSPECT, JumpQuality.UNCHECKED)
+        )
+
+        assertEquals(1.4f, summary.bestRsi!!, 1e-5f)
+        assertEquals(1.4f, summary.setRsi!!, 1e-5f)
+    }
+
+    @Test
     fun `fewer than five rebounds give only the best single RSI`() {
         val summary = withRsis(null, 1.2f, 1.6f, 1.4f, 1.1f)
 
