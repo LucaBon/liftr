@@ -31,10 +31,13 @@ private val ApexColor = Color(0xFF4CAF50)
 private val DipColor = Color(0xFF2196F3)
 private val PeakColor = Color(0xFFE91E63)
 private val VelocityColor = Color(0xFF9C27B0)
+private val ContactColor = Color(0xFF795548)
+private val RsiColor = Color(0xFF009688)
 
 /**
  * Jump analytics: averages, jump height and center-of-mass trends per jump,
- * and the latest set's center-of-mass paths.
+ * contact time and RSI trends for rebound jumps, and the latest set's
+ * center-of-mass paths.
  */
 @Composable
 fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifier) {
@@ -70,6 +73,29 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
                 xLabels = xLabels,
                 unit = "m/s",
                 decimals = 1
+            )
+        }
+
+        // Rebound jumps only: the others have no contact time.
+        if (jumps.any { it.jump.contactTimeMs != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.jump_contact_time))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_contact_time), ContactColor, jumps.map { it.jump.contactTimeMs })
+                ),
+                xLabels = xLabels,
+                unit = "ms"
+            )
+        }
+        if (jumps.any { it.jump.reactiveStrengthIndex != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.jump_rsi))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_rsi), RsiColor, jumps.map { it.jump.reactiveStrengthIndex })
+                ),
+                xLabels = xLabels,
+                unit = "",
+                decimals = 2
             )
         }
 
@@ -144,6 +170,18 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
                 ) {
                     StatItem(label = stringResource(R.string.jump_peak_power), value = "%.0f W".format(powers.average()))
                     StatItem(label = stringResource(R.string.analytics_best_peak_power), value = "%.0f W".format(powers.max()))
+                }
+            }
+            val contacts = jumps.mapNotNull { it.jump.contactTimeMs }
+            val rsis = jumps.mapNotNull { it.jump.reactiveStrengthIndex }
+            if (contacts.isNotEmpty() && rsis.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_contact_time), value = "%.0f ms".format(contacts.average()))
+                    StatItem(label = stringResource(R.string.jump_rsi), value = "%.2f".format(rsis.average()))
+                    StatItem(label = stringResource(R.string.set_summary_best_rsi), value = "%.2f".format(rsis.max()))
                 }
             }
         }

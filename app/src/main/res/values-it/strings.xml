@@ -15,4 +15,9 @@
     <string name="video_speed_suspect">La velocità del video sembra sbagliata (slow motion?)</string>
     <string name="jump_peak_power">Potenza di picco</string>
     <string name="analytics_best_peak_power">Miglior potenza di picco</string>
+    <string name="jump_contact_time">Tempo di contatto</string>
+    <string name="jump_rsi">RSI</string>
+    <string name="jump_contact_rsi">Contatto %1$.0f ms  ·  RSI %2$.2f</string>
+    <string name="set_summary_best_rsi">Miglior RSI</string>
+    <string name="set_summary_rsi_best_five">RSI (migliori 5)</string>
 </resources>

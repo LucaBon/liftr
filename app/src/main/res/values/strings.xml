@@ -433,6 +433,11 @@
     <string name="analytics_best_takeoff_velocity">Best takeoff speed</string>
     <string name="jump_peak_power">Peak power</string>
     <string name="analytics_best_peak_power">Best peak power</string>
+    <string name="jump_contact_time">Contact time</string>
+    <string name="jump_rsi">RSI</string>
+    <string name="jump_contact_rsi">Contact %1$.0f ms  ·  RSI %2$.2f</string>
+    <string name="set_summary_best_rsi">Best RSI</string>
+    <string name="set_summary_rsi_best_five">RSI (best 5)</string>
     <string name="jump_heights_legend">Flight time / takeoff to peak</string>
     <string name="jump_heights_cm">%1$.0f / %2$.0f cm</string>
     <string name="analytics_jump_averages">Averages over %d jumps</string>

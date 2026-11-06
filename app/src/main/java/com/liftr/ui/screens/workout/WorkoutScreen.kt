@@ -708,7 +708,9 @@ fun SetSummarySheet(
                     heights = summary.repJumpHeights,
                     apexHeights = summary.repApexHeights,
                     velocities = summary.repVelocities,
-                    powers = summary.repPeakPowers
+                    powers = summary.repPeakPowers,
+                    contactTimesMs = summary.repContactTimesMs,
+                    rsis = summary.repReactiveStrengthIndices
                 )
             } else {
                 // Overall score bar
@@ -787,6 +789,17 @@ fun SetSummarySheet(
                         value = "%.2f m/s".format(summary.avgVelocity.value)
                     )
                 }
+                if (isJump) {
+                    summary.setRsi?.let { rsi ->
+                        StatItem(
+                            label = stringResource(
+                                if (summary.bestFiveMeanRsi != null) R.string.set_summary_rsi_best_five
+                                else R.string.set_summary_best_rsi
+                            ),
+                            value = "%.2f".format(rsi)
+                        )
+                    }
+                }
                 StatItem(
                     label = stringResource(R.string.set_summary_velocity_loss),
                     value = "${(summary.velocityLossPercent * 100).toInt()}%%"
@@ -812,7 +825,9 @@ private fun JumpHeightList(
     heights: List<Meters>,
     apexHeights: List<Meters?>,
     velocities: List<MetersPerSecond>,
-    powers: List<Watts?>
+    powers: List<Watts?>,
+    contactTimesMs: List<Float?>,
+    rsis: List<Float?>
 ) {
     Column {
         if (apexHeights.any { it != null }) {
@@ -823,6 +838,8 @@ private fun JumpHeightList(
             )
         }
         heights.forEachIndexed { index, height ->
+            val contactMs = contactTimesMs.getOrNull(index)
+            val rsi = rsis.getOrNull(index)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -839,6 +856,16 @@ private fun JumpHeightList(
                         (powers.getOrNull(index)?.let { "  \u00B7  %.0f W".format(it.value) } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
+                )
+            }
+            // Rebound jumps: the ground contact before the takeoff, and RSI.
+            if (contactMs != null && rsi != null) {
+                Text(
+                    text = stringResource(R.string.jump_contact_rsi, contactMs, rsi),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.End
                 )
             }
         }
