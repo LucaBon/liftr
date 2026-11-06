@@ -43,10 +43,12 @@ data class AnalyticsSummary(
  *
  * @property setId The set it belongs to
  * @property repNumber 1-indexed jump number within the set
+ * @property loadKg External load of the set (0 for bodyweight), for the force-velocity profile
  */
 data class JumpRepRecord(
     val timestamp: Long,
     val setId: Long,
     val repNumber: Int,
-    val jump: RepJumpData
+    val jump: RepJumpData,
+    val loadKg: Float = 0f
 )
