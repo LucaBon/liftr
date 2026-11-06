@@ -1,6 +1,7 @@
 package com.liftr.domain.usecase
 
 import com.liftr.domain.exercise.ExerciseStrategyFactory
+import com.liftr.domain.exercise.ExerciseThresholds
 import com.liftr.domain.exercise.strategy.JumpStrategy
 import com.liftr.domain.exercise.strategy.ReboundFrames
 import com.liftr.domain.logging.Logger
@@ -85,6 +86,37 @@ class AnalyzeVideoReboundTest {
         }
         val trueBestFive = (1 until flights.size).map { flights[it] / contacts[it - 1] }.sortedDescending().take(5).average()
         assertEquals(trueBestFive, summary.bestFiveMeanRsi!!.toDouble(), trueBestFive * 0.03)
+    }
+
+    @Test
+    fun `pogo contacts shorter than a dense window are timed from the every-frame windows`() {
+        // ~4 coarse frames on the ground: the landing and next takeoff windows overlap.
+        val pogoFlights = listOf(0.30, 0.30, 0.28, 0.30)
+        val pogoContacts = listOf(0.12, 0.14, 0.13)
+        val summary = analyze(ReboundFrames.rebounds(240, pogoFlights, pogoContacts, contactDipM = 0.02))
+
+        assertEquals(pogoFlights.size, summary.repContactTimesMs.size)
+        assertNull(summary.repContactTimesMs.first())
+        // Within a frame: what the strategy gets from every frame too (short flights
+        // leave a few ms of timing-level clip uncorrected), so the windows lose nothing.
+        for (i in 1 until pogoFlights.size) {
+            assertEquals("contact $i", pogoContacts[i - 1] * 1000, summary.repContactTimesMs[i]!!.toDouble(), 1000.0 / 240)
+        }
+        // Four jumps, three rebounds: the set's RSI is the best single one.
+        assertNull(summary.bestFiveMeanRsi)
+        assertEquals(summary.bestRsi, summary.setRsi)
+    }
+
+    @Test
+    fun `a rest between jumps gives that jump no contact time through the video path`() {
+        val rest = ExerciseThresholds.Jump.STILL_MS / 1000.0 + 0.4
+        val summary = analyze(
+            ReboundFrames.rebounds(240, listOf(0.45, 0.42, 0.40), listOf(0.2, rest), contactDipM = 0.0)
+        )
+
+        assertEquals(3, summary.repContactTimesMs.size)
+        assertEquals(200.0, summary.repContactTimesMs[1]!!.toDouble(), 2.0)
+        assertNull(summary.repContactTimesMs[2])
     }
 
     @Test

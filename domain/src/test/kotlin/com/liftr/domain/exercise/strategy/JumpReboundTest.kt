@@ -89,6 +89,24 @@ class JumpReboundTest {
     }
 
     @Test
+    fun `pogo contacts around 130 ms are timed within a frame at 30, 60 and 240 fps`() {
+        val pogoFlights = listOf(0.30, 0.30, 0.28, 0.30, 0.29)
+        val pogoContacts = listOf(0.12, 0.14, 0.13, 0.15)
+        for (fps in listOf(30, 60, 240)) {
+            val jumps = run(rebounds(fps, pogoFlights, pogoContacts, contactDipM = 0.02))
+
+            assertEquals("fps $fps", pogoFlights.size, jumps.size)
+            assertNull(jumps.first().contactTimeMs)
+            for (i in 1 until jumps.size) {
+                assertEquals(
+                    "pogo contact $i at $fps fps", pogoContacts[i - 1] * 1000,
+                    jumps[i].contactTimeMs!!.toDouble(), 1000.0 / fps
+                )
+            }
+        }
+    }
+
+    @Test
     fun `resting longer than STILL_MS between jumps gives no contact time`() {
         val pauseS = ExerciseThresholds.Jump.STILL_MS / 1000.0 + 0.3
         val jumps = run(rebounds(60, listOf(0.45, 0.42, 0.40), listOf(0.2, pauseS), contactDipM = 0.0))
