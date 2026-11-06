@@ -8,6 +8,8 @@ import com.liftr.domain.exercise.normalizedXY
 import com.liftr.domain.exercise.trackingPoint
 import com.liftr.domain.exercise.BarPathAnalyzer
 import com.liftr.domain.exercise.BidirectionalVelocityCalculator
+import com.liftr.domain.exercise.BarSeries
+import com.liftr.domain.exercise.EndcapTracker
 import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.ExerciseStrategyFactory
 import com.liftr.domain.exercise.FormIssue
@@ -22,6 +24,8 @@ import com.liftr.domain.model.AggregateFormIssue
 import com.liftr.domain.model.aggregateFormIssues
 import com.liftr.domain.model.BarPathData
 import com.liftr.domain.model.BarPathPoint
+import com.liftr.domain.model.BarSample
+import com.liftr.domain.model.RepBarData
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
@@ -41,6 +45,7 @@ import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.EndcapDetection
 import com.liftr.domain.vision.VideoPoseSource
 import com.liftr.domain.model.MovementPhase
 import kotlinx.coroutines.Dispatchers
@@ -58,11 +63,17 @@ import javax.inject.Inject
  * [AnalyzeRepUseCase]) so the produced [SetSummary] is byte-for-byte compatible
  * with the live pipeline's output and renders in the identical summary sheet.
  *
- * 1. Decode frames and detect pose per frame ([VideoPoseSource], heavy model).
+ * 1. Decode frames and detect pose per frame ([VideoPoseSource], heavy model),
+ *    plus the barbell endcaps when the source detects them.
  * 2. Smooth velocities bidirectionally ([BidirectionalVelocityCalculator]).
  * 3. Walk frames: phase detection + rep counting (`ExerciseStrategy`).
  * 4. Per rep: form validation ([AnalyzeRepUseCase]), quality scoring, bar path.
  * 5. Assemble a [SetSummary].
+ *
+ * Barbell lifts with endcap detections also get a separate bar series
+ * ([BarSeries]: endcap positions only, never mixed with the pose) and per-rep
+ * bar velocities over the reps found from the pose. Everything else in the
+ * summary comes from the pose alone, as without endcaps.
  */
 class AnalyzeVideoUseCase @Inject constructor(
     private val positionCalculator: IPositionCalculator,
@@ -127,10 +138,12 @@ class AnalyzeVideoUseCase @Inject constructor(
             // model on all of them. Pass 1 analyzes a steady subset; for jumps,
             // pass 2 then analyzes every frame around each takeoff and landing,
             // where the flight timing comes from.
+            val endcapsByTimestamp = HashMap<Long, List<EndcapDetection>>()
             val poseResults = try {
                 val coarseShare = if (params.exerciseType.isJumpExercise()) COARSE_PASS_SHARE else 1f
                 val coarse = detectPoses(
-                    poseSource, everyMs(coarseIntervalMs(params.exerciseType)), onProgress, 0f, coarseShare
+                    poseSource, everyMs(coarseIntervalMs(params.exerciseType)), onProgress, 0f, coarseShare,
+                    endcapsByTimestamp
                 )
                 val windows = if (params.exerciseType.isJumpExercise()) jumpWindows(params, coarse.poses) else emptyList()
                 if (windows.isEmpty() || coarse.skippedFrames == 0) {
@@ -140,7 +153,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                     val dense = detectPoses(
                         poseSource,
                         { t -> t !in analyzed && windows.any { t in it } },
-                        onProgress, COARSE_PASS_SHARE, 1f
+                        onProgress, COARSE_PASS_SHARE, 1f, endcapsByTimestamp
                     )
                     logger.i(TAG, "Dense pass: ${dense.poses.size} poses around ${windows.size} takeoffs/landings")
                     (coarse.poses + dense.poses).sortedBy { it.timestamp }
@@ -173,7 +186,10 @@ class AnalyzeVideoUseCase @Inject constructor(
             val velocities = BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
-            val summary = buildSummary(params, poseResults, velocities, onProgress, onFrameAnnotation)
+            // The bar's own series, independent of the pose positions above.
+            val barSamples = barSeries(params, poseResults, endcapsByTimestamp)
+
+            val summary = buildSummary(params, poseResults, velocities, barSamples, onProgress, onFrameAnnotation)
 
             logger.i(TAG, "Analysis complete: ${summary.completedReps.value} reps, score=${summary.overallScore}")
             Result.success(summary)
@@ -185,19 +201,26 @@ class AnalyzeVideoUseCase @Inject constructor(
 
     private class PassResult(val poses: List<PoseResult>, val skippedFrames: Int)
 
-    /** Runs one decoding pass, analyzing the frames [include] accepts. */
+    /**
+     * Runs one decoding pass, analyzing the frames [include] accepts. The
+     * endcaps of each frame with a pose go into [endcaps] by pose timestamp.
+     */
     private suspend fun detectPoses(
         poseSource: VideoPoseSource,
         include: (Long) -> Boolean,
         onProgress: (Progress) -> Unit,
         progressFrom: Float,
-        progressTo: Float
+        progressTo: Float,
+        endcaps: MutableMap<Long, List<EndcapDetection>>
     ): PassResult {
         val poses = mutableListOf<PoseResult>()
         var frameIndex = 0
         var skipped = 0
         poseSource.poses { t -> include(t).also { if (!it) skipped++ } }.collect { frame ->
-            frame.pose?.let { poses.add(it) }
+            frame.pose?.let {
+                poses.add(it)
+                if (frame.endcaps.isNotEmpty()) endcaps[it.timestamp] = frame.endcaps
+            }
             frameIndex++
             val total = poseSource.totalFrames.coerceAtLeast(1)
             val passFraction = (frameIndex.toFloat() / total).coerceIn(0f, 1f)
@@ -251,6 +274,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         params: Params,
         poseResults: List<PoseResult>,
         velocities: List<VelocityData>,
+        barSamples: List<BarSample?>?,
         onProgress: (Progress) -> Unit,
         onFrameAnnotation: ((FrameAnnotation) -> Unit)? = null
     ): SetSummary {
@@ -274,6 +298,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         var repVelocitySum = 0f
         var repVelocityCount = 0
         var repVelocityPeak = 0f
+        val repBars = mutableListOf<RepBarData>()
+        val barRep = barSamples?.let { BarSeries.RepAccumulator() }
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
@@ -306,6 +332,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 repVelocitySum = 0f
                 repVelocityCount = 0
                 repVelocityPeak = 0f
+                barRep?.reset()
             }
 
             if (newPhase != previousPhase) {
@@ -319,6 +346,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                         repVelocitySum = 0f
                         repVelocityCount = 0
                         repVelocityPeak = 0f
+                        barRep?.reset()
                         params.tempoPrescription?.let { presc ->
                             tempoState = TempoTracker.onPhaseTransition(
                                 TempoTracker.reset(presc), newPhase, now
@@ -351,6 +379,11 @@ class AnalyzeVideoUseCase @Inject constructor(
                 repVelocityCount++
                 repVelocityPeak = maxOf(repVelocityPeak, velocity.instantaneous.value)
             }
+            barRep?.onFrame(
+                barSamples?.getOrNull(i),
+                active = newPhase in ACTIVE_PHASES,
+                concentric = params.exerciseType.isConcentricPhase(newPhase)
+            )
 
             if (transition.repCompleted) {
                 // A rep complete at lockout (deadlift) reports its lockout here, scored as its depth part.
@@ -430,6 +463,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 }
                 repVelocities.add(avgRepVelocity)
                 repPeakVelocities.add(jump?.takeoffVelocity ?: MetersPerSecond(repVelocityPeak))
+                barRep?.let { repBars.add(it.result()) }
                 jump?.let {
                     repJumpHeights.add(it.height)
                     repApexHeights.add(it.apexHeight)
@@ -467,7 +501,12 @@ class AnalyzeVideoUseCase @Inject constructor(
             CameraViewClassifier.classify(standingShoulderRatios)
         } else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
-            .copy(cameraView = cameraView, repApexHeights = repApexHeights)
+            .copy(
+                cameraView = cameraView,
+                repApexHeights = repApexHeights,
+                barSeries = barSamples?.filterNotNull().orEmpty(),
+                repBars = repBars
+            )
     }
 
     private fun assembleSummary(
@@ -540,6 +579,30 @@ class AnalyzeVideoUseCase @Inject constructor(
             velocity = velocity?.instantaneous ?: MetersPerSecond(0f),
             timestamp = pose.timestamp
         )
+    }
+
+    /**
+     * The bar series for barbell lifts, 1:1 with [poseResults] (null where the
+     * endcap isn't tracked), or null when there is none: jumps, or no endcap
+     * detected at all.
+     */
+    private fun barSeries(
+        params: Params,
+        poseResults: List<PoseResult>,
+        endcapsByTimestamp: Map<Long, List<EndcapDetection>>
+    ): List<BarSample?>? {
+        if (params.exerciseType.isJumpExercise() || endcapsByTimestamp.isEmpty()) return null
+        val tracker = EndcapTracker()
+        val samples = BarSeries.build(poseResults, endcapsByTimestamp, tracker) { y, pose ->
+            positionCalculator.pixelsToMeters(y, pose, params.calibrationData)
+        }
+        logger.i(
+            TAG,
+            "Bar series: endcap in ${samples.count { it != null }}/${poseResults.size} frames, " +
+                "endcap scale ${tracker.pixelsPerMeter()?.let { "%.0f px/m".format(it) } ?: "n/a"} " +
+                "(calibration ${"%.0f".format(params.calibrationData.pixelsPerMeter)} px/m)"
+        )
+        return samples
     }
 
     private fun trackingNormalizedXY(pose: PoseResult, params: Params): Pair<Float, Float>? {

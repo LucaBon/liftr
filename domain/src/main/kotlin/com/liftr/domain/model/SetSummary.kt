@@ -29,6 +29,10 @@ import com.liftr.domain.model.BarPathData
  * @property aggregateFormIssues Form issues grouped with which reps they occurred in
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
+ * @property barSeries The tracked barbell endcap over the whole set (video analysis of
+ *   barbell lifts only, empty otherwise); independent of the pose-based values above
+ * @property repBars Per-rep bar measurements from [barSeries], 1:1 with [repScores]
+ *   when there is a bar series, empty otherwise
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -49,7 +53,9 @@ data class SetSummary(
     val repJumpHeights: List<Meters> = emptyList(),
     val repApexHeights: List<Meters?> = emptyList(),
     val repPeakVelocities: List<MetersPerSecond> = emptyList(),
-    val cameraView: CameraView = CameraView.UNKNOWN
+    val cameraView: CameraView = CameraView.UNKNOWN,
+    val barSeries: List<BarSample> = emptyList(),
+    val repBars: List<RepBarData> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 

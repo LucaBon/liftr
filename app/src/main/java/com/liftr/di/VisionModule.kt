@@ -1,5 +1,6 @@
 package com.liftr.di
 
+import com.liftr.domain.vision.EndcapDetector
 import com.liftr.domain.vision.IMovementPhaseDetector
 import com.liftr.domain.vision.IPoseDetector
 import com.liftr.domain.vision.IPositionCalculator
@@ -7,6 +8,7 @@ import com.liftr.domain.vision.ISquatPhaseDetector
 import com.liftr.domain.vision.IVelocityCalculator
 import com.liftr.vision.calculator.PositionCalculator
 import com.liftr.vision.calculator.VelocityCalculator
+import com.liftr.vision.endcap.TfliteEndcapDetector
 import com.liftr.vision.pose.PoseDetector
 import com.liftr.vision.tracking.MovementPhaseDetector
 import com.liftr.vision.tracking.SquatPhaseDetector
@@ -72,4 +74,15 @@ abstract class VisionModule {
     abstract fun bindSquatPhaseDetector(
         impl: SquatPhaseDetector
     ): ISquatPhaseDetector
+
+    /**
+     * Binds TfliteEndcapDetector to EndcapDetector.
+     *
+     * NOT a singleton: it holds a native interpreter that is not thread-safe,
+     * so each video analysis pass gets its own instance and closes it.
+     */
+    @Binds
+    abstract fun bindEndcapDetector(
+        impl: TfliteEndcapDetector
+    ): EndcapDetector
 }

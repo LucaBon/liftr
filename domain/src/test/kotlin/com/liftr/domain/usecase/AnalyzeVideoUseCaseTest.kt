@@ -10,7 +10,9 @@ import com.liftr.domain.model.FrameAnnotation
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
+import com.liftr.domain.model.SetSummary
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.vision.EndcapDetection
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.vision.VideoPoseSource
 import io.mockk.every
@@ -19,6 +21,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -162,6 +166,129 @@ class AnalyzeVideoUseCaseTest {
             assertEquals(true, t.isConcentricPhase(MovementPhase.ECCENTRIC))
             assertEquals(true, t.isConcentricPhase(MovementPhase.BOTTOM))
             assertEquals(false, t.isConcentricPhase(c))
+        }
+    }
+
+    /** Body (all landmarks) height per frame: idle, slow descent 1..40, fast ascent 41..60, lockout 61. */
+    private val squatYs = (0..61).map {
+        when {
+            it <= 40 -> 0.6f + 0.1f * it / 40f
+            else -> 0.7f - 0.5f * (it - 40) / 20f
+        }
+    }
+
+    /** The endcap moves half as far as the body, so the two series are told apart. */
+    private fun endcapY(frame: Int) = 0.62f + (squatYs[frame] - 0.6f) * 0.5f
+
+    private class SquatRun(val summary: SetSummary, val annotations: List<FrameAnnotation>)
+
+    /** One back squat rep, with [endcapsFor] giving each frame's detections. */
+    private fun runSquat(endcapsFor: (Int) -> List<EndcapDetection>): SquatRun = runBlocking {
+        val calculator = mockk<IPositionCalculator> {
+            every { pixelsToMeters(any(), any(), any()) } answers {
+                firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
+            }
+        }
+        var frame = 0
+        val strategy = mockk<ExerciseStrategy> {
+            every { detectPhase(any(), any(), any()) } answers {
+                val i = frame++
+                val phase = when {
+                    i == 0 -> MovementPhase.IDLE
+                    i <= 40 -> MovementPhase.ECCENTRIC
+                    i <= 60 -> MovementPhase.CONCENTRIC
+                    else -> MovementPhase.TOP
+                }
+                PhaseTransitionResult(ExercisePhaseState(currentPhase = phase), repCompleted = i == 61)
+            }
+        }
+        val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
+        val useCase = AnalyzeVideoUseCase(
+            calculator, factory, mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true)
+        )
+        val poses = squatYs.mapIndexed { i, y -> poseAt(y, i * 50L) }
+        val source = object : VideoPoseSource {
+            override val totalFrames = poses.size
+            override fun poses(include: (Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
+                poses.forEachIndexed { i, pose -> emit(VideoPoseSource.Frame(pose.timestamp, pose, endcapsFor(i))) }
+            }
+            override fun close() = Unit
+        }
+        val annotations = mutableListOf<FrameAnnotation>()
+        val result = useCase.invoke(
+            AnalyzeVideoUseCase.Params(
+                videoFile = File("set.mp4"),
+                exerciseType = ExerciseType.BACK_SQUAT,
+                weight = Kilograms(100f),
+                targetReps = 1,
+                calibrationData = CalibrationData(pixelsPerMeter, 1.75f, 0.45f)
+            ),
+            source,
+            onProgress = {},
+            onFrameAnnotation = { annotations += it }
+        )
+        SquatRun(result.getOrThrow(), annotations)
+    }
+
+    private fun endcapAt(frame: Int) = listOf(EndcapDetection(0.5f, endcapY(frame), 0.02f, 0.02f, 0.6f))
+
+    @Test
+    fun `the pose series is the same with or without endcaps`() {
+        val withoutEndcaps = runSquat { emptyList() }
+        val withEndcaps = runSquat(::endcapAt)
+
+        assertEquals(
+            withoutEndcaps.annotations.map { it.velocity.value },
+            withEndcaps.annotations.map { it.velocity.value }
+        )
+        val a = withoutEndcaps.summary
+        val b = withEndcaps.summary
+        assertEquals(a.repVelocities, b.repVelocities)
+        assertEquals(a.repPeakVelocities, b.repPeakVelocities)
+        assertEquals(a.repBarPaths, b.repBarPaths)
+        assertEquals(a.repScores, b.repScores)
+        assertEquals(a.copy(barSeries = emptyList(), repBars = emptyList()), b.copy(barSeries = emptyList(), repBars = emptyList()))
+        assertTrue(a.barSeries.isEmpty() && a.repBars.isEmpty())
+    }
+
+    @Test
+    fun `rep bar velocities come from the endcap over the concentric frames`() {
+        val run = runSquat(::endcapAt)
+        val bar = run.summary.repBars.single()
+
+        assertEquals(1f, bar.concentricCoverage, 1e-6f)
+        val ascent = run.summary.barSeries.filter { it.t in 41 * 50L..60 * 50L }.map { it.velocity!! }
+        assertEquals(ascent.average().toFloat(), bar.meanConcentricVelocity!!, 1e-4f)
+        assertEquals(ascent.max(), bar.peakConcentricVelocity!!, 1e-6f)
+        // Half the body's movement: clearly slower than the pose-based rep velocity.
+        assertTrue(bar.meanConcentricVelocity!! < run.summary.repVelocities.single().value * 0.75f)
+    }
+
+    @Test
+    fun `rep bar velocities are null when the endcap covers too little of the concentric phase`() {
+        // The endcap disappears halfway up the ascent.
+        val run = runSquat { i -> if (i <= 50) endcapAt(i) else emptyList() }
+        val bar = run.summary.repBars.single()
+
+        assertTrue(bar.concentricCoverage < 0.8f)
+        assertNull(bar.meanConcentricVelocity)
+        assertNull(bar.peakConcentricVelocity)
+        // The pose-based rep velocity is still there.
+        assertTrue(run.summary.repVelocities.single().value > 0f)
+    }
+
+    @Test
+    fun `endcap gaps stay gaps in the bar series`() {
+        // No endcap for frames 20..29: longer than the tracker's hold.
+        val run = runSquat { i -> if (i in 20..29) emptyList() else endcapAt(i) }
+        val times = run.summary.barSeries.map { it.t }.toSet()
+
+        val missing = (0..61).filter { it * 50L !in times }
+        // The first three frames of the gap are held, the rest is missing; nothing filled from the pose.
+        assertEquals((23..29).toList(), missing)
+        run.summary.barSeries.forEach { sample ->
+            val frame = (sample.t / 50L).toInt()
+            assertEquals(if (sample.held) endcapY(19) else endcapY(frame), sample.y, 0.02f)
         }
     }
 }

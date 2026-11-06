@@ -20,6 +20,7 @@ import com.liftr.domain.repository.SettingsKeys
 import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.repository.VideoStorageRepository
 import com.liftr.domain.usecase.AnalyzeVideoUseCase
+import com.liftr.domain.vision.EndcapDetector
 import com.liftr.domain.value.Kilograms
 import com.liftr.vision.camera.LensDistortionCorrector
 import com.liftr.vision.pose.VideoFramePoseDetector
@@ -45,6 +46,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
+import javax.inject.Provider
 import com.liftr.ui.common.labelRes
 
 /**
@@ -67,6 +69,7 @@ class VideoAnalysisService : LifecycleService() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var lensDistortionCorrector: LensDistortionCorrector
     @Inject lateinit var logger: Logger
+    @Inject lateinit var endcapDetectorProvider: Provider<EndcapDetector>
 
     sealed class AnalysisState {
         data object Idle : AnalysisState()
@@ -262,7 +265,9 @@ class VideoAnalysisService : LifecycleService() {
                         )
                     },
                     logger = logger,
-                    beforeFrame = ::waitWhileRecording
+                    beforeFrame = ::waitWhileRecording,
+                    // The bar endcap is tracked in barbell lifts only, never in jumps.
+                    createEndcapDetector = if (exerciseType.isJumpExercise()) null else endcapDetectorProvider::get
                 ),
                 onProgress = { progress ->
                     showProgress(progress)

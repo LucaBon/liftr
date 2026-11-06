@@ -404,7 +404,8 @@ class WorkoutViewModel @Inject constructor(
                 positionProfile = emptyList(),
                 timestamp = now,
                 qualityScore = score.totalScore,
-                scoreParts = score.parts
+                scoreParts = score.parts,
+                bar = summary.repBars.getOrNull(index)
             )
         }
         val completedSet = Set(

@@ -12,8 +12,16 @@ interface VideoPoseSource {
     /** Number of frames in the video; populated once [poses] starts emitting. */
     val totalFrames: Int
 
-    /** One decoded frame: its time, and its pose if it was analyzed and one was found. */
-    data class Frame(val timestampMs: Long, val pose: PoseResult?)
+    /**
+     * One decoded frame: its time, its pose if it was analyzed and one was
+     * found, and the barbell endcaps found in it (empty when the source runs
+     * no endcap detector).
+     */
+    data class Frame(
+        val timestampMs: Long,
+        val pose: PoseResult?,
+        val endcaps: List<EndcapDetection> = emptyList()
+    )
 
     /**
      * Cold flow with one element per decoded frame, in presentation order.

@@ -38,7 +38,8 @@ class RepMapper @Inject constructor() {
             timestamp = entity.timestamp,
             qualityScore = entity.qualityScore,
             jump = entity.jumpData,
-            scoreParts = scoreParts(entity)
+            scoreParts = scoreParts(entity),
+            bar = entity.barData
         )
     }
 
@@ -79,7 +80,8 @@ class RepMapper @Inject constructor() {
             depthScore = domain.scoreParts?.depth,
             barPathScore = domain.scoreParts?.barPath,
             tempoScore = domain.scoreParts?.tempo,
-            formScore = domain.scoreParts?.form
+            formScore = domain.scoreParts?.form,
+            barData = domain.bar
         )
     }
 

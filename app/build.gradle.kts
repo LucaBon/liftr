@@ -96,6 +96,11 @@ android {
         }
     }
 
+    // The endcap model is memory-mapped straight from the APK, which needs it stored uncompressed.
+    androidResources {
+        noCompress += "tflite"
+    }
+
     // Enable returning default values for unmocked Android classes in unit tests
     testOptions {
         unitTests {
@@ -151,6 +156,11 @@ dependencies {
 
     // MediaPipe
     implementation("com.google.mediapipe:tasks-vision:0.10.14")
+
+    // LiteRT (TFLite) interpreter for the barbell endcap detector. MediaPipe
+    // bundles its own TFLite runtime but exposes no API to run a custom model.
+    implementation("com.google.ai.edge.litert:litert:1.4.2")
+    implementation("com.google.ai.edge.litert:litert-gpu:1.4.2")
 
     // Room
     val roomVersion = "2.6.1"

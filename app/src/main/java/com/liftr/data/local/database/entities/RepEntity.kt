@@ -5,6 +5,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.liftr.domain.model.PositionProfile
+import com.liftr.domain.model.RepBarData
 import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.VelocityProfile
 
@@ -42,5 +43,6 @@ data class RepEntity(
     val depthScore: Int? = null,
     val barPathScore: Int? = null,
     val tempoScore: Int? = null,
-    val formScore: Int? = null
+    val formScore: Int? = null,
+    val barData: RepBarData? = null // Bar (endcap) velocities and path; null without endcap tracking and before version 6
 )
