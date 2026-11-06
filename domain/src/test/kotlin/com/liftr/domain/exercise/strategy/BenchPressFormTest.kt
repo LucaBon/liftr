@@ -244,34 +244,6 @@ class BenchPressFormTest {
     }
 
     @Test
-    fun `incomplete lockout fires once over the rep`() {
-        wristsY = 0.5f
-        val poses = List(6) { bentPose }
-
-        val lockout = analyse(poses, topState).filter { it.kind == "incomplete_lockout" }
-
-        assertEquals(1, lockout.size)
-    }
-
-    @Test
-    fun `bent arms mid-rep are not an incomplete lockout`() {
-        wristsY = 0.65f
-        val poses = List(6) { bentPose }
-
-        assertTrue(analyse(poses, topState).none { it.kind == "incomplete_lockout" })
-    }
-
-    @Test
-    fun `bent arms in the concentric phase near the top are not an incomplete lockout`() {
-        wristsY = 0.5f
-
-        assertTrue(
-            analyse(List(6) { bentPose }, topState, MovementPhase.CONCENTRIC)
-                .none { it.kind == "incomplete_lockout" }
-        )
-    }
-
-    @Test
     fun `a good paused rep has no faults`() {
         val rep = simulateRep(pauseMs = 1000L, fps = 30)
         wristsY = 0.5f

@@ -374,8 +374,9 @@ class BenchPressStrategy @Inject constructor(
         // Elbow flare and left/right press symmetry require a view along the bar
         // (phone past the lifter's head). The app films bench laterally, so those
         // checks are intentionally absent.
+        // No incomplete-lockout check: a rep only completes once the near
+        // elbow reaches LOCKOUT_MIN_ANGLE, so every counted rep is locked out.
         checkBarDrift(calibrationData, poseResult)?.let { issues.add(it) }
-        checkIncompleteLockout(poseResult, calibrationData, currentState, phase)?.let { issues.add(it) }
 
         return FormValidationResult(
             isValid = issues.none { it.severity == Severity.CRITICAL },
@@ -403,34 +404,6 @@ class BenchPressStrategy @Inject constructor(
                 severity = Severity.WARNING,
                 message = "Bar drifting horizontally (%.0f cm)".format(drift * 100),
                 suggestion = "Keep the bar path more vertical"
-            )
-        } else null
-    }
-
-    /**
-     * Check for incomplete lockout. Only frames with the bar back near its
-     * starting height count: the arms are meant to be bent mid-rep.
-     */
-    private fun checkIncompleteLockout(
-        poseResult: PoseResult,
-        calibrationData: CalibrationData,
-        currentState: ExercisePhaseState?,
-        phase: MovementPhase?
-    ): FormIssue? {
-        if (phase != null && phase != MovementPhase.TOP && phase != MovementPhase.IDLE) return null
-        val startingWristsY = currentState?.startingWristsY ?: return null
-        val wristsY = positionCalculator.getBodyPartPositions(poseResult)?.wristsY
-            ?.let { positionCalculator.pixelsToMeters(it, poseResult, calibrationData) } ?: return null
-        if (abs(wristsY - startingWristsY) > getCriteria().returnTolerance.value) return null
-
-        val elbowAngle = calculateElbowAngle(poseResult) ?: return null
-
-        return if (elbowAngle < ExerciseThresholds.BenchPress.LOCKOUT_MIN_ANGLE) {
-            FormIssue(
-                kind = "incomplete_lockout",
-                severity = Severity.INFO,
-                message = "Incomplete lockout (elbow angle: %.0f°)".format(elbowAngle),
-                suggestion = "Fully extend your arms at the top"
             )
         } else null
     }

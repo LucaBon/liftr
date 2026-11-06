@@ -220,8 +220,6 @@
     <!-- Bench Press Form Issues -->
     <string name="bench_bar_drift">Bar drifting horizontally</string>
     <string name="bench_bar_drift_suggestion">Keep the bar path more vertical</string>
-    <string name="bench_incomplete_lockout">Incomplete lockout</string>
-    <string name="bench_incomplete_lockout_suggestion">Fully extend your arms at the top</string>
 
     <!-- Deadlift Form Issues -->
     <string name="deadlift_back_rounding">Back rounding detected</string>
