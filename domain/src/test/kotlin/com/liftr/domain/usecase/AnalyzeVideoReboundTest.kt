@@ -47,7 +47,7 @@ class AnalyzeVideoReboundTest {
         val source = object : VideoPoseSource {
             override val totalFrames = poses.size
             override fun poses(include: (Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
-                poses.forEach { emit(VideoPoseSource.Frame(it.timestamp, it.takeIf { _ -> include(it.timestamp) })) }
+                poses.forEach { emit(VideoPoseSource.Frame(it.timestamp, it.takeIf { _ -> include(it.timestampUs) })) }
             }
             override fun close() = Unit
         }
