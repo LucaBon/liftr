@@ -10,6 +10,7 @@ import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
 import com.liftr.domain.value.Kilograms
@@ -31,11 +32,14 @@ class AnalyzeRepUseCase @Inject constructor(
     private val logger: Logger
 ) {
 
+    /** A buffered rep frame with the phase detected for it. */
+    data class RepFrame(val pose: PoseResult, val phase: MovementPhase)
+
     data class Params(
         val exerciseType: ExerciseType,
         val calibrationData: CalibrationData,
         val weight: Kilograms,
-        val bufferedPoses: List<PoseResult>,
+        val bufferedFrames: List<RepFrame>,
         val finalVelocityData: VelocityData?,
         /**
          * Phase state of the rep being analysed. Form checks that are only
@@ -56,7 +60,7 @@ class AnalyzeRepUseCase @Inject constructor(
      * `viewModelScope` (Main) at rep completion, mid-set.
      */
     suspend operator fun invoke(params: Params): Result = withContext(Dispatchers.Default) {
-        if (params.bufferedPoses.isEmpty()) {
+        if (params.bufferedFrames.isEmpty()) {
             return@withContext Result(
                 formValidation = FormValidationResult(isValid = true, issues = emptyList()),
                 exerciseMetrics = null
@@ -66,9 +70,9 @@ class AnalyzeRepUseCase @Inject constructor(
         val strategy = strategyFactory.getStrategy(params.exerciseType)
 
         val frameIssues = mutableListOf<FormIssue>()
-        for (pose in params.bufferedPoses) {
+        for ((pose, phase) in params.bufferedFrames) {
             try {
-                frameIssues += strategy.validateForm(pose, params.calibrationData, params.phaseState).issues
+                frameIssues += strategy.validateForm(pose, params.calibrationData, params.phaseState, phase).issues
             } catch (e: Exception) {
                 logger.w(TAG, "validateForm pass failed: ${e.message}")
             }
@@ -82,7 +86,7 @@ class AnalyzeRepUseCase @Inject constructor(
         val metrics = if (params.finalVelocityData != null) {
             runCatching {
                 strategy.calculateMetrics(
-                    poseResult = params.bufferedPoses.last(),
+                    poseResult = params.bufferedFrames.last().pose,
                     velocityData = params.finalVelocityData,
                     weight = params.weight
                 )

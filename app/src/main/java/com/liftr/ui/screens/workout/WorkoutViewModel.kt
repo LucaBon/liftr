@@ -170,7 +170,7 @@ class WorkoutViewModel @Inject constructor(
     private var currentRepFormIssues = mutableListOf<FormIssue>()
     // Buffered frames for the in-progress rep. Drained into AnalyzeRepUseCase
     // on rep completion so the heavy form/metric work never runs per-frame.
-    private var currentRepPoses = mutableListOf<PoseResult>()
+    private var currentRepPoses = mutableListOf<AnalyzeRepUseCase.RepFrame>()
     private var currentRepEccentricStartTime: Long = 0L
     private var currentRepBottomTime: Long = 0L
     private var currentRepDepthValidation: DepthValidationResult? = null
@@ -807,7 +807,7 @@ class WorkoutViewModel @Inject constructor(
                 currentRepBarPathPoints.add(it)
                 _currentBarPathPoints.value = currentRepBarPathPoints.toList()
             }
-            currentRepPoses.add(result.poseResult)
+            currentRepPoses.add(AnalyzeRepUseCase.RepFrame(result.poseResult, newPhase))
         }
 
         // A jump's path runs from the dip through the flight, which the phases
@@ -880,7 +880,7 @@ class WorkoutViewModel @Inject constructor(
                         exerciseType = _uiState.value.selectedExercise,
                         calibrationData = calib,
                         weight = _uiState.value.weight,
-                        bufferedPoses = currentRepPoses.toList(),
+                        bufferedFrames = currentRepPoses.toList(),
                         finalVelocityData = result.velocityData,
                         phaseState = exerciseState
                     )

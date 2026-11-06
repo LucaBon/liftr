@@ -7,6 +7,7 @@ import com.liftr.domain.exercise.FormValidationResult
 import com.liftr.domain.exercise.RepQualityScorer
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.value.Kilograms
 import io.mockk.every
 import io.mockk.mockk
@@ -33,7 +34,7 @@ class AnalyzeRepUseCaseTest {
             emptyList()
         )
         val strategy = mockk<ExerciseStrategy> {
-            every { validateForm(any(), any(), any()) } returnsMany
+            every { validateForm(any(), any(), any(), any()) } returnsMany
                 perFrame.map { FormValidationResult(isValid = it.none { i -> i.severity == Severity.CRITICAL }, issues = it) }
         }
         val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
@@ -43,12 +44,39 @@ class AnalyzeRepUseCaseTest {
                 exerciseType = ExerciseType.FRONT_SQUAT,
                 calibrationData = mockk(relaxed = true),
                 weight = Kilograms(0f),
-                bufferedPoses = List(perFrame.size) { mockk(relaxed = true) },
+                bufferedFrames = List(perFrame.size) { AnalyzeRepUseCase.RepFrame(mockk(relaxed = true), MovementPhase.CONCENTRIC) },
                 finalVelocityData = null
             )
         )
 
         assertEquals(listOf(lean(Severity.CRITICAL, 36)), result.formValidation.issues)
         assertEquals(15, RepQualityScorer.scoreForm(result.formValidation.issues))
+    }
+
+    @Test
+    fun `each frame reaches validateForm with the phase detected for it`() = runBlocking {
+        val seen = mutableListOf<MovementPhase?>()
+        val strategy = mockk<ExerciseStrategy> {
+            every { validateForm(any(), any(), any(), any()) } answers {
+                seen += arg<MovementPhase?>(3)
+                FormValidationResult(isValid = true, issues = emptyList())
+            }
+        }
+        val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
+        val phases = listOf(
+            MovementPhase.ECCENTRIC, MovementPhase.BOTTOM, MovementPhase.CONCENTRIC, MovementPhase.CONCENTRIC
+        )
+
+        AnalyzeRepUseCase(factory, mockk(relaxed = true))(
+            AnalyzeRepUseCase.Params(
+                exerciseType = ExerciseType.FRONT_SQUAT,
+                calibrationData = mockk(relaxed = true),
+                weight = Kilograms(0f),
+                bufferedFrames = phases.map { AnalyzeRepUseCase.RepFrame(mockk(relaxed = true), it) },
+                finalVelocityData = null
+            )
+        )
+
+        assertEquals(phases, seen)
     }
 }

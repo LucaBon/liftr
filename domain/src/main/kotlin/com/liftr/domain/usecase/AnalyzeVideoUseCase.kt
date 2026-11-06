@@ -267,7 +267,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
-        var currentRepPoses = mutableListOf<PoseResult>()
+        var currentRepPoses = mutableListOf<AnalyzeRepUseCase.RepFrame>()
         var currentRepDepthValidation: DepthValidationResult? = null
         var eccentricStart = 0L
         var bottomTime = 0L
@@ -343,7 +343,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             )
             if (newPhase in ACTIVE_PHASES) {
                 pathPoint?.let { currentRepBarPoints.add(it) }
-                currentRepPoses.add(pose)
+                currentRepPoses.add(AnalyzeRepUseCase.RepFrame(pose, newPhase))
             }
 
             if (velocity != null && params.exerciseType.isConcentricPhase(newPhase)) {
@@ -391,7 +391,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                             exerciseType = params.exerciseType,
                             calibrationData = params.calibrationData,
                             weight = params.weight,
-                            bufferedPoses = currentRepPoses.toList(),
+                            bufferedFrames = currentRepPoses.toList(),
                             finalVelocityData = velocity
                         )
                     )

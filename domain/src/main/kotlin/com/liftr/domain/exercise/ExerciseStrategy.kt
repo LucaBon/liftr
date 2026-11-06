@@ -68,12 +68,15 @@ interface ExerciseStrategy {
      *   the rep (e.g. how far the torso angle has changed since the setup
      *   position) need this; checks that read a single frame ignore it. Null
      *   means those relative checks are skipped rather than guessed at.
+     * @param phase Movement phase detected for this frame, when the caller has
+     *   it (replayed rep frames carry it). Null when validating a lone frame.
      * @return Form validation result with issues and suggestions
      */
     fun validateForm(
         poseResult: PoseResult,
         calibrationData: CalibrationData,
-        currentState: ExercisePhaseState? = null
+        currentState: ExercisePhaseState? = null,
+        phase: MovementPhase? = null
     ): FormValidationResult
 
     /**

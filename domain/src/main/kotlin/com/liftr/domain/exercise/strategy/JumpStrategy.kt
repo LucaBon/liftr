@@ -755,7 +755,8 @@ class JumpStrategy(
     override fun validateForm(
         poseResult: PoseResult,
         calibrationData: CalibrationData,
-        currentState: ExercisePhaseState?
+        currentState: ExercisePhaseState?,
+        phase: MovementPhase?
     ): FormValidationResult = FormValidationResult(isValid = true, issues = emptyList())
 
     override fun getRequiredLandmarks(): List<Int> = criteria.targetBodyParts

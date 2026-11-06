@@ -115,7 +115,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             repCompleted = false,
             debugInfo = "Test"
         )
-        every { strategy.validateForm(any(), any()) } returns FormValidationResult(
+        every { strategy.validateForm(any(), any(), any(), any()) } returns FormValidationResult(
             isValid = true,
             issues = emptyList()
         )
@@ -215,7 +215,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
         every { poseDetector.detectPose(any()) } returns poseResult
         every { velocityCalculator.calculate(any(), any(), any(), any()) } returns velocityData
         every { strategyFactory.getStrategy(ExerciseType.BACK_SQUAT) } returns strategy
-        every { strategy.validateForm(any(), any()) } returns FormValidationResult(
+        every { strategy.validateForm(any(), any(), any(), any()) } returns FormValidationResult(
             isValid = true,
             issues = emptyList()
         )
@@ -262,7 +262,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             repCompleted = true, // Rep completed
             debugInfo = "Rep completed"
         )
-        every { strategy.validateForm(any(), any()) } returns FormValidationResult(
+        every { strategy.validateForm(any(), any(), any(), any()) } returns FormValidationResult(
             isValid = true,
             issues = emptyList()
         )
@@ -312,7 +312,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             repCompleted = false,
             debugInfo = "Front squat"
         )
-        every { frontSquatStrategy.validateForm(any(), any()) } returns FormValidationResult(
+        every { frontSquatStrategy.validateForm(any(), any(), any(), any()) } returns FormValidationResult(
             isValid = true,
             issues = emptyList()
         )
@@ -384,7 +384,7 @@ class ProcessWorkoutFrameUseCaseIntegrationTest {
             repCompleted = false,
             debugInfo = "Test"
         )
-        every { strategy.validateForm(any(), any()) } returns FormValidationResult(
+        every { strategy.validateForm(any(), any(), any(), any()) } returns FormValidationResult(
             isValid = true,
             issues = emptyList()
         )
