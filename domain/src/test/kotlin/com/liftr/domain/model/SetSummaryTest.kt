@@ -215,6 +215,7 @@ class SetSummaryTest {
         // Best five: 2.5, 2.2, 2.0, 1.8, 1.5.
         assertEquals(2.0f, summary.bestFiveMeanRsi!!, 1e-5f)
         assertEquals(2.5f, summary.bestRsi!!, 1e-5f)
+        assertEquals(2.0f, summary.setRsi!!, 1e-5f)
     }
 
     @Test
@@ -223,6 +224,7 @@ class SetSummaryTest {
 
         assertNull(summary.bestFiveMeanRsi)
         assertEquals(1.6f, summary.bestRsi!!, 1e-5f)
+        assertEquals(1.6f, summary.setRsi!!, 1e-5f)
     }
 
     @Test
@@ -231,5 +233,6 @@ class SetSummaryTest {
 
         assertNull(summary.bestFiveMeanRsi)
         assertNull(summary.bestRsi)
+        assertNull(summary.setRsi)
     }
 }

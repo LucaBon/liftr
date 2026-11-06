@@ -85,6 +85,9 @@ data class SetSummary(
             .takeIf { it.size >= RSI_BEST_OF }
             ?.sortedDescending()?.take(RSI_BEST_OF)?.average()?.toFloat()
 
+    /** The set's RSI: [bestFiveMeanRsi] with enough rebound jumps, else [bestRsi]; null without any. */
+    val setRsi: Float? get() = bestFiveMeanRsi ?: bestRsi
+
     val avgJumpHeight: Meters?
         get() = if (repJumpHeights.isEmpty()) null
         else Meters(repJumpHeights.map { it.value }.average().toFloat())
