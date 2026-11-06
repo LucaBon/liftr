@@ -31,6 +31,8 @@ import com.liftr.domain.model.BarPathData
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
  * @property repPeakPowers Per-jump peak power (Sayers), null where body mass is unknown; empty for lifts
+ * @property repJumpQualities Per-jump [JumpQuality] from the free-fall check, aligned with
+ *   [repJumpHeights]; empty (every jump counts) for lifts and summaries built without it
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -54,21 +56,47 @@ data class SetSummary(
     val cameraView: CameraView = CameraView.UNKNOWN,
     /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
     val videoSpeedSuspect: Boolean = false,
-    val repPeakPowers: List<Watts?> = emptyList()
+    val repPeakPowers: List<Watts?> = emptyList(),
+    val repJumpQualities: List<JumpQuality> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
-    val bestJumpHeight: Meters? get() = repJumpHeights.maxByOrNull { it.value }
+    /** The jump's quality; UNCHECKED where none was recorded, so it keeps counting. */
+    fun jumpQuality(index: Int): JumpQuality = repJumpQualities.getOrElse(index) { JumpQuality.UNCHECKED }
 
-    val bestApexHeight: Meters? get() = repApexHeights.filterNotNull().maxByOrNull { it.value }
+    /**
+     * Indices of the jumps that count toward best and average: suspect ones
+     * are left out, unless every jump is suspect (see [jumpsThatCount]).
+     */
+    private val countedJumpIndices: List<Int>
+        get() = repJumpHeights.indices.toList().jumpsThatCount(::jumpQuality)
+
+    /** How many jumps were left out of best and average for failing the free-fall check. */
+    val excludedJumpCount: Int get() = repJumpHeights.indices.toList().excludedJumpCount(::jumpQuality)
+
+    /** Every jump failed the free-fall check: best and average use them anyway, with a warning. */
+    val allJumpsSuspect: Boolean get() = repJumpHeights.indices.toList().allJumpsSuspect(::jumpQuality)
+
+    val bestJumpHeight: Meters? get() = countedJumpIndices.map { repJumpHeights[it] }.maxByOrNull { it.value }
+
+    /**
+     * The set's height for its personal record: like [bestJumpHeight], but null
+     * when every jump is suspect, so a badly tracked set can't become a record.
+     */
+    val recordJumpHeight: Meters? get() = bestJumpHeight.takeUnless { allJumpsSuspect }
+
+    val bestApexHeight: Meters? get() = countedApexHeights().maxByOrNull { it.value }
 
     val avgApexHeight: Meters?
-        get() = repApexHeights.filterNotNull().takeIf { it.isNotEmpty() }
+        get() = countedApexHeights().takeIf { it.isNotEmpty() }
             ?.let { heights -> Meters(heights.map { it.value }.average().toFloat()) }
 
     val avgJumpHeight: Meters?
-        get() = if (repJumpHeights.isEmpty()) null
-        else Meters(repJumpHeights.map { it.value }.average().toFloat())
+        get() = countedJumpIndices.map { repJumpHeights[it] }.takeIf { it.isNotEmpty() }
+            ?.let { heights -> Meters(heights.map { it.value }.average().toFloat()) }
+
+    private fun countedApexHeights(): List<Meters> =
+        countedJumpIndices.mapNotNull { repApexHeights.getOrNull(it) }
 }
 
 /**

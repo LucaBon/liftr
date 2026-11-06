@@ -35,6 +35,12 @@ data class RepJumpData(
     val path: List<JumpPathSample> = emptyList(),
     val peakPowerW: Float? = null
 ) {
+    /** Whether this jump's numbers can be trusted; see [JumpQuality]. */
+    val quality: JumpQuality get() = JumpQuality.of(fitCheck)
+
+    /** The flight failed the free-fall check: keep it out of averages and records. */
+    val isSuspect: Boolean get() = quality == JumpQuality.SUSPECT
+
     /** The path as [BarPathData], for the replay card. */
     fun toBarPathData(repNumber: Int): BarPathData {
         val excursion = if (countermovementCm != null && peakRiseCm != null && standingYCm != null) {
