@@ -28,6 +28,7 @@ import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.FrameAnnotation
+import com.liftr.domain.model.JumpQuality
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.RepQualityScore
@@ -273,6 +274,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repApexHeights = mutableListOf<Meters?>()
         val repFittedGravities = mutableListOf<Float>()
         val repPeakPowers = mutableListOf<Watts?>()
+        val repJumpQualities = mutableListOf<JumpQuality>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -473,6 +475,8 @@ class AnalyzeVideoUseCase @Inject constructor(
                     repJumpHeights.add(it.height)
                     repApexHeights.add(it.apexHeight)
                     repPeakPowers.add((strategy as? JumpStrategy)?.peakPower(it, params.calibrationData, params.weight))
+                    // From the excursion the bar path just kept, so an approach jump's is UNCHECKED.
+                    repJumpQualities.add(JumpQuality.of(repBarPaths.last().excursion?.fitCheck))
                 }
 
                 onProgress(
@@ -510,6 +514,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(
                 cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers,
+                repJumpQualities = repJumpQualities,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
                         .format(repFittedGravities))
