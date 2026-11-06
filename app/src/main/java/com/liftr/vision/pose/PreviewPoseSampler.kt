@@ -35,7 +35,7 @@ class PreviewPoseSampler @Inject constructor(
                 delay(INTERVAL_MS)
                 val bitmap = previewView.bitmap ?: continue
                 val pose = withContext(Dispatchers.Default) {
-                    detector.detectPose(bitmap, SystemClock.uptimeMillis())
+                    detector.detectPose(bitmap, SystemClock.uptimeMillis() * 1_000)
                 }
                 pose?.let(onPose)
             }

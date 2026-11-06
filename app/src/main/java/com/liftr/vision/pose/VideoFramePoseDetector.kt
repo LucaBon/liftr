@@ -27,6 +27,9 @@ import java.io.Closeable
  * - is NOT a singleton — create one per analysis session and [close] it after.
  *
  * Timestamps passed to [detectPose] MUST be monotonically increasing.
+ * VIDEO mode takes whole milliseconds that must strictly increase; frames
+ * under a millisecond apart (slow motion mapped to real time) are nudged
+ * forward for the model only, the [PoseResult] keeps the frame's own time.
  *
  * @param perFrame Detect every frame on its own, without VIDEO mode's tracking
  *   and temporal filtering. That filtering bends a jump's flight away from a
@@ -44,6 +47,7 @@ class VideoFramePoseDetector(
 
     private var poseLandmarker: PoseLandmarker? = null
     private var detectionCount = 0
+    private var lastModelMs = Long.MIN_VALUE
 
     init {
         logger.i(TAG, "Initializing with model: $modelPath (${runningMode()})")
@@ -87,14 +91,20 @@ class VideoFramePoseDetector(
      * Detect the pose in a single video frame (synchronous, blocking).
      *
      * @param bitmap The video frame
-     * @param timestampMs Monotonically increasing frame timestamp in milliseconds
+     * @param timestampUs Monotonically increasing frame timestamp in microseconds
      * @return PoseResult with lens-corrected landmarks, or null if no pose detected
      */
-    fun detectPose(bitmap: Bitmap, timestampMs: Long): PoseResult? {
+    fun detectPose(bitmap: Bitmap, timestampUs: Long): PoseResult? {
         val landmarker = poseLandmarker ?: return null
 
         val mpImage = BitmapImageBuilder(bitmap).build()
-        val result = if (perFrame) landmarker.detect(mpImage) else landmarker.detectForVideo(mpImage, timestampMs)
+        val result = if (perFrame) {
+            landmarker.detect(mpImage)
+        } else {
+            val modelMs = maxOf(timestampUs / 1_000, lastModelMs + 1)
+            lastModelMs = modelMs
+            landmarker.detectForVideo(mpImage, modelMs)
+        }
 
         detectionCount++
         if (detectionCount % 100 == 0) {
@@ -119,7 +129,7 @@ class VideoFramePoseDetector(
         val isPortrait = bitmap.height > bitmap.width
 
         return PoseResult(
-            correctedLandmarks, timestampMs, bitmap.width, bitmap.height, isPortrait
+            correctedLandmarks, timestampUs / 1_000, bitmap.width, bitmap.height, isPortrait, timestampUs
         )
     }
 

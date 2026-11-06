@@ -31,7 +31,7 @@ class VideoFilePoseSource(
                 try {
                     val pose = if (include(frame.timestampMs)) {
                         beforeFrame()
-                        detector.detectPose(frame.bitmap, frame.timestampMs)
+                        detector.detectPose(frame.bitmap, frame.timestampUs)
                     } else null
                     emit(VideoPoseSource.Frame(frame.timestampMs, pose))
                 } finally {

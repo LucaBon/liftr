@@ -218,7 +218,7 @@ class PoseDetector @Inject constructor(
                 skippedFrames++
                 // Return latest cached (already-filtered) result, stamped with current frame time.
                 val cached = cachedResult.get()
-                return cached?.poseResult?.copy(timestamp = timestamp)
+                return cached?.poseResult?.copy(timestamp = timestamp, timestampUs = timestamp * 1000)
             }
 
             // Mark as processing and update timestamp
@@ -264,7 +264,7 @@ class PoseDetector @Inject constructor(
 
             // Return latest cached (already-filtered) result, stamped with current frame time.
             val cached = cachedResult.get()
-            return cached?.poseResult?.copy(timestamp = timestamp)
+            return cached?.poseResult?.copy(timestamp = timestamp, timestampUs = timestamp * 1000)
         } catch (e: Exception) {
             logger.e(TAG, "Pose detection failed", e)
             isProcessing = false

@@ -822,8 +822,8 @@ class WorkoutViewModel @Inject constructor(
                 val toWallClock = now - result.poseResult.timestamp
                 val window = jumpPath.pathForLanding(
                     now, jump.flightTimeMs,
-                    jump.takeoffAtMs?.let { it.toLong() + toWallClock },
-                    jump.landingAtMs?.let { it.toLong() + toWallClock }
+                    jump.takeoffAtMs?.let { it + toWallClock },
+                    jump.landingAtMs?.let { it + toWallClock }
                 )
                 currentRepBarPathPoints.clear()
                 currentRepBarPathPoints.addAll(window.points)
