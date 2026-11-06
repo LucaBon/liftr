@@ -110,6 +110,12 @@ object ExerciseThresholds {
 
         /** Minimum elbow angle for lockout in degrees */
         const val LOCKOUT_MIN_ANGLE = 150f
+
+        /** Wrist travel (m) under which the bar counts as resting at the chest */
+        const val PAUSE_BAND = 0.01f
+
+        /** Chest pauses shorter than this (ms) are touch-and-go */
+        const val TOUCH_AND_GO_MAX_PAUSE_MS = 300L
     }
 
     /**

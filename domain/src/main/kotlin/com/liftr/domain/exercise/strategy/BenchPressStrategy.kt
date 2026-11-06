@@ -13,8 +13,10 @@ import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.value.Joules
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Watts
@@ -114,36 +116,31 @@ class BenchPressStrategy @Inject constructor(
      * Returns angle in degrees (180 = fully extended, 90 = bent at right angle).
      */
     private fun calculateElbowAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW)
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW)
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-
-        if (leftShoulder == null || rightShoulder == null ||
-            leftElbow == null || rightElbow == null ||
-            leftWrist == null || rightWrist == null) return null
-
-        val minVisibility = 0.5f
-        if (leftShoulder.visibility < minVisibility || rightShoulder.visibility < minVisibility ||
-            leftElbow.visibility < minVisibility || rightElbow.visibility < minVisibility ||
-            leftWrist.visibility < minVisibility || rightWrist.visibility < minVisibility) return null
-
-        // Average left and right sides
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val elbowX = (leftElbow.x + rightElbow.x) / 2f * poseResult.aspectScaleX
-        val elbowY = (leftElbow.y + rightElbow.y) / 2f
-        val wristX = (leftWrist.x + rightWrist.x) / 2f * poseResult.aspectScaleX
-        val wristY = (leftWrist.y + rightWrist.y) / 2f
+        val (shoulder, elbow, wrist) = nearSide(
+            poseResult,
+            left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_ELBOW, PoseResult.LEFT_WRIST),
+            right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_ELBOW, PoseResult.RIGHT_WRIST)
+        ) ?: return null
+        val sx = poseResult.aspectScaleX
 
         return coordinateCalculator.angleBetweenPoints(
-            ax = shoulderX, ay = shoulderY,
-            bx = elbowX, by = elbowY,
-            cx = wristX, cy = wristY
+            ax = shoulder.x * sx, ay = shoulder.y,
+            bx = elbow.x * sx, by = elbow.y,
+            cx = wrist.x * sx, cy = wrist.y
         )
+    }
+
+    /**
+     * Landmarks of the side facing the camera (the bench is filmed side-on, so
+     * the far arm is often occluded). The side whose least visible joint is
+     * seen better wins; null when neither side is fully visible.
+     */
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
+        fun side(indices: List<Int>): List<PoseKeypoint>? =
+            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
+        return listOfNotNull(side(left), side(right))
+            .filter { joints -> joints.all { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD } }
+            .maxByOrNull { joints -> joints.minOf { it.visibility } }
     }
 
     private fun detectIdleTransition(state: ExercisePhaseState, wristsY: Float?): PhaseTransitionResult {
@@ -373,13 +370,12 @@ class BenchPressStrategy @Inject constructor(
         phase: MovementPhase?
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
-        val landmarks = poseResult.landmarks
 
         // Elbow flare and left/right press symmetry require a view along the bar
         // (phone past the lifter's head). The app films bench laterally, so those
         // checks are intentionally absent.
-        checkBarDrift(landmarks, calibrationData, poseResult)?.let { issues.add(it) }
-        checkIncompleteLockout(poseResult)?.let { issues.add(it) }
+        checkBarDrift(calibrationData, poseResult)?.let { issues.add(it) }
+        checkIncompleteLockout(poseResult, calibrationData, currentState, phase)?.let { issues.add(it) }
 
         return FormValidationResult(
             isValid = issues.none { it.severity == Severity.CRITICAL },
@@ -388,31 +384,18 @@ class BenchPressStrategy @Inject constructor(
     }
 
     /**
-     * Check horizontal bar drift from starting position.
+     * Check horizontal bar drift from the shoulder, on the side facing the camera.
      */
-    private fun checkBarDrift(
-        landmarks: List<com.liftr.domain.model.PoseKeypoint>,
-        calibrationData: CalibrationData,
-        poseResult: PoseResult
-    ): FormIssue? {
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST) ?: return null
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST) ?: return null
+    private fun checkBarDrift(calibrationData: CalibrationData, poseResult: PoseResult): FormIssue? {
+        val (wrist, shoulder) = nearSide(
+            poseResult,
+            left = listOf(PoseResult.LEFT_WRIST, PoseResult.LEFT_SHOULDER),
+            right = listOf(PoseResult.RIGHT_WRIST, PoseResult.RIGHT_SHOULDER)
+        ) ?: return null
 
-        if (leftWrist.visibility < 0.5f || rightWrist.visibility < 0.5f) return null
-
-        val wristsX = (leftWrist.x + rightWrist.x) / 2f * poseResult.aspectScaleX
-        val wristsXMeters = positionCalculator.pixelsToMeters(wristsX, poseResult, calibrationData)
-
-        // Compare with shoulders X as reference (bar should be roughly above shoulders)
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER) ?: return null
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER) ?: return null
-
-        if (leftShoulder.visibility < 0.5f || rightShoulder.visibility < 0.5f) return null
-
-        val shouldersX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shouldersXMeters = positionCalculator.pixelsToMeters(shouldersX, poseResult, calibrationData)
-
-        val drift = abs(wristsXMeters - shouldersXMeters)
+        // Image-width units to image-height units, which pixelsToMeters takes.
+        val driftUnits = abs(wrist.x - shoulder.x) * poseResult.aspectScaleX
+        val drift = positionCalculator.pixelsToMeters(driftUnits, poseResult, calibrationData)
 
         return if (drift > ExerciseThresholds.BenchPress.BAR_DRIFT_MAX) {
             FormIssue(
@@ -425,9 +408,21 @@ class BenchPressStrategy @Inject constructor(
     }
 
     /**
-     * Check for incomplete lockout at top of press.
+     * Check for incomplete lockout. Only frames with the bar back near its
+     * starting height count: the arms are meant to be bent mid-rep.
      */
-    private fun checkIncompleteLockout(poseResult: PoseResult): FormIssue? {
+    private fun checkIncompleteLockout(
+        poseResult: PoseResult,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?,
+        phase: MovementPhase?
+    ): FormIssue? {
+        if (phase != null && phase != MovementPhase.TOP && phase != MovementPhase.IDLE) return null
+        val startingWristsY = currentState?.startingWristsY ?: return null
+        val wristsY = positionCalculator.getBodyPartPositions(poseResult)?.wristsY
+            ?.let { positionCalculator.pixelsToMeters(it, poseResult, calibrationData) } ?: return null
+        if (abs(wristsY - startingWristsY) > getCriteria().returnTolerance.value) return null
+
         val elbowAngle = calculateElbowAngle(poseResult) ?: return null
 
         return if (elbowAngle < ExerciseThresholds.BenchPress.LOCKOUT_MIN_ANGLE) {
@@ -438,6 +433,60 @@ class BenchPressStrategy @Inject constructor(
                 suggestion = "Fully extend your arms at the top"
             )
         } else null
+    }
+
+    override fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
+    ): List<FormIssue> = listOfNotNull(checkChestPause(frames, calibrationData))
+
+    /**
+     * Chest pause: the bar rests at the wrist's lowest point. The pause is the
+     * contiguous span of frames around that point whose wrist stays within
+     * PAUSE_BAND of it, measured on frame timestamps (ms) so it holds at any
+     * fps. Reported as an INFO issue carrying the duration in ms in
+     * its message: touch_and_go when shorter than TOUCH_AND_GO_MAX_PAUSE_MS,
+     * chest_pause otherwise. Reps without
+     * a real descent (no chest touch in the frames) report nothing.
+     */
+    private fun checkChestPause(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): FormIssue? {
+        val samples = frames.mapNotNull { (pose, _) ->
+            val wrist = nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))
+                ?.first() ?: return@mapNotNull null
+            Triple(pose.timestamp, wrist.y, pose)
+        }
+        if (samples.size < 2) return null
+        val low = samples.indices.maxByOrNull { samples[it].second } ?: return null
+        val (_, lowY, lowPose) = samples[low]
+        val highestBefore = samples.take(low + 1).minOf { it.second }
+        val descent = positionCalculator.pixelsToMeters(lowY - highestBefore, lowPose, calibrationData)
+        if (descent < getCriteria().minDescentDepth.value) return null
+
+        fun atBottom(i: Int): Boolean =
+            positionCalculator.pixelsToMeters(lowY - samples[i].second, samples[i].third, calibrationData) <=
+                ExerciseThresholds.BenchPress.PAUSE_BAND
+        var first = low
+        while (first > 0 && atBottom(first - 1)) first--
+        var last = low
+        while (last < samples.lastIndex && atBottom(last + 1)) last++
+        val pauseMs = samples[last].first - samples[first].first
+
+        return if (pauseMs < ExerciseThresholds.BenchPress.TOUCH_AND_GO_MAX_PAUSE_MS) {
+            FormIssue(
+                kind = "touch_and_go",
+                severity = Severity.INFO,
+                message = "Touch-and-go: no pause on the chest ($pauseMs ms)",
+                suggestion = "Pause the bar briefly on your chest before pressing"
+            )
+        } else {
+            FormIssue(
+                kind = "chest_pause",
+                severity = Severity.INFO,
+                message = "Chest pause: $pauseMs ms",
+                suggestion = ""
+            )
+        }
     }
 
     override fun getRequiredLandmarks(): List<Int> = criteriaRef.get().targetBodyParts
