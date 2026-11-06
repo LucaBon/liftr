@@ -13,6 +13,7 @@ import com.liftr.domain.model.PoseResult
 import com.liftr.domain.vision.IPositionCalculator
 import io.mockk.every
 import io.mockk.mockk
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -152,5 +153,84 @@ class DeadliftScoringChecksTest {
         val issues = strategy.validateForm(midPull, calibrationData).issues
 
         assertTrue(issues.none { it.message.contains("lockout", ignoreCase = true) })
+    }
+
+    /**
+     * Frames of one concentric pull at [fps], the bar (near wrist) rising at 1 m/s
+     * with the knees still bent, frozen for [stallMs] from 400 ms on. A smooth
+     * pull ([stallMs] = 0) is a cosine ease that comes to rest at 1.2 s.
+     */
+    private fun pullFrames(fps: Int, stallMs: Int, smooth: Boolean = false): List<PoseResult> {
+        val frameMs = 1000.0 / fps
+        val durationMs = if (smooth) 1200 else 1000
+        return (0..(durationMs / frameMs).toInt()).map { i ->
+            val tMs = (i * frameMs).toLong()
+            val moving = when {
+                tMs < 400 -> tMs
+                tMs < 400 + stallMs -> 400L
+                else -> tMs - stallMs
+            } / 1000.0
+            // Image-height units; the mock converts at 2 m per unit.
+            val wristY = if (smooth) 0.9 - 0.3 * (1 - Math.cos(Math.PI * tMs / 1200.0)) / 2
+            else 0.9 - 0.5 * moving
+            val base = pose { side(left = true, visibility = 1f, shoulderX = 0.62f, kneeX = 0.56f, wristX = 0.53f) }
+            val landmarks = base.landmarks.toMutableList()
+            val wrist = landmarks[PoseResult.LEFT_WRIST]
+            landmarks[PoseResult.LEFT_WRIST] = wrist.copy(y = wristY.toFloat())
+            base.copy(landmarks = landmarks, timestamp = tMs)
+        }
+    }
+
+    private fun hitches(frames: List<PoseResult>) = strategy
+        .validateRep(frames.map { AnalyzeRepUseCase.RepFrame(it, MovementPhase.CONCENTRIC) }, calibrationData)
+        .filter { it.kind == "hitch" }
+
+    @Test
+    fun `a smooth pull is no hitch, even as the bar slows toward the top`() {
+        assertTrue(hitches(pullFrames(fps = 30, stallMs = 0, smooth = true)).isEmpty())
+        assertTrue(hitches(pullFrames(fps = 120, stallMs = 0, smooth = true)).isEmpty())
+        assertTrue(hitches(pullFrames(fps = 30, stallMs = 0)).isEmpty())
+    }
+
+    @Test
+    fun `a stall of 100 ms or more mid-pull is one hitch`() {
+        assertEquals(1, hitches(pullFrames(fps = 30, stallMs = 150)).size)
+    }
+
+    @Test
+    fun `the same stall at 120 fps is a hitch too`() {
+        assertEquals(1, hitches(pullFrames(fps = 120, stallMs = 150)).size)
+    }
+
+    @Test
+    fun `a stall of 60 ms is no hitch`() {
+        assertTrue(hitches(pullFrames(fps = 30, stallMs = 60)).isEmpty())
+        assertTrue(hitches(pullFrames(fps = 120, stallMs = 60)).isEmpty())
+    }
+
+    @Test
+    fun `a stall at lockout is no hitch`() {
+        val locked = pullFrames(fps = 30, stallMs = 150).map {
+            val landmarks = it.landmarks.toMutableList()
+            // Straight near side: lockout reached.
+            landmarks[PoseResult.LEFT_SHOULDER] = landmarks[PoseResult.LEFT_SHOULDER].copy(x = 0.50f)
+            landmarks[PoseResult.LEFT_KNEE] = landmarks[PoseResult.LEFT_KNEE].copy(x = 0.50f)
+            it.copy(landmarks = landmarks)
+        }
+        assertTrue(hitches(locked).isEmpty())
+    }
+
+    @Test
+    fun `a hitch is found again in the next rep`() {
+        val frames = pullFrames(fps = 30, stallMs = 150)
+        assertEquals(1, hitches(frames).size)
+        assertEquals(1, hitches(frames).size)
+    }
+
+    @Test
+    fun `validateForm alone never reports a hitch`() {
+        val issues = pullFrames(fps = 30, stallMs = 150)
+            .flatMap { strategy.validateForm(it, calibrationData, null, MovementPhase.CONCENTRIC).issues }
+        assertTrue(issues.none { it.kind == "hitch" })
     }
 }

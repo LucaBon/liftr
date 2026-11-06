@@ -22,6 +22,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.model.MovementPhase
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs
@@ -546,6 +547,64 @@ class DeadliftStrategy @Inject constructor(
             )
             else -> null
         }
+    }
+
+    override fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
+    ): List<FormIssue> = listOfNotNull(checkHitch(frames, calibrationData))
+
+    /**
+     * Check for a hitch: the bar stalling during the pull. Over any span of at
+     * least HITCH_MS the bar rose slower than HITCH_VELOCITY_THRESHOLD, after it
+     * had left the floor and before lockout. Time-based, so it holds at any fps.
+     * Each run of concentric frames is one pull; a rep reports at most one hitch.
+     */
+    private fun checkHitch(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): FormIssue? {
+        val pulls = mutableListOf<MutableList<PoseResult>>()
+        var inPull = false
+        for ((pose, phase) in frames) {
+            if (phase != MovementPhase.CONCENTRIC) { inPull = false; continue }
+            if (!inPull) { pulls.add(mutableListOf()); inPull = true }
+            val pull = pulls.last()
+            if (pull.isEmpty() || pose.timestamp > pull.last().timestamp) pull.add(pose)
+        }
+        return pulls.firstNotNullOfOrNull { hitchIn(it, calibrationData) }
+    }
+
+    /** The first stall in one pull, its frames in time order. */
+    private fun hitchIn(pull: List<PoseResult>, calibrationData: CalibrationData): FormIssue? {
+        val wristYs = pull.map { pose ->
+            nearSide(pose, left = listOf(PoseResult.LEFT_WRIST), right = listOf(PoseResult.RIGHT_WRIST))?.first()?.y
+        }
+        val startY = wristYs.firstOrNull { it != null } ?: return null
+        var anchor = -1
+        for (i in pull.indices) {
+            val y = wristYs[i] ?: continue
+            val pose = pull[i]
+            // The newest sample at least HITCH_MS back anchors the span.
+            while (anchor + 1 < i && pose.timestamp - pull[anchor + 1].timestamp >= ExerciseThresholds.Deadlift.HITCH_MS) anchor++
+            if (anchor < 0) continue
+            val anchorY = wristYs[anchor] ?: continue
+
+            val risenSinceStart = positionCalculator.pixelsToMeters(startY - y, pose, calibrationData)
+            if (risenSinceStart < ExerciseThresholds.Deadlift.HITCH_MIN_RISE) continue
+            // Slowing into lockout is normal.
+            if (checkLockout(pose).achieved) continue
+
+            val spanMs = pose.timestamp - pull[anchor].timestamp
+            val rise = positionCalculator.pixelsToMeters(anchorY - y, pose, calibrationData)
+            if (rise / (spanMs / 1000f) >= ExerciseThresholds.Deadlift.HITCH_VELOCITY_THRESHOLD) continue
+
+            return FormIssue(
+                kind = "hitch",
+                severity = Severity.WARNING,
+                message = "Bar stalled during the pull ($spanMs ms)",
+                suggestion = "Keep pushing through the floor at a steady speed"
+            )
+        }
+        return null
     }
 
     /**

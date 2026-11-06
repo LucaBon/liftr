@@ -131,6 +131,9 @@ object ExerciseThresholds {
 
         /** Time below hitch threshold to trigger warning (3 frames at 30 fps) */
         const val HITCH_MS = 100L
+
+        /** Bar rise from the start of the pull before a stall counts as a hitch, in meters */
+        const val HITCH_MIN_RISE = 0.10f
     }
 
     /**
