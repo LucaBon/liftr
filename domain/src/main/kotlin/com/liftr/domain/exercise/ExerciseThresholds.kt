@@ -64,6 +64,26 @@ object ExerciseThresholds {
     }
 
     /**
+     * Thresholds shared by the squat variants' form checks.
+     */
+    object SquatForm {
+        /** Minimum landmark visibility for the near-side joints used by form checks */
+        const val MIN_JOINT_VISIBILITY = 0.5f
+
+        /** Foot shorter than this (image-height units) is too foreshortened to read a pitch from */
+        const val MIN_FOOT_LENGTH = 0.02f
+
+        /**
+         * Heel rise relative to the setup foot pitch, as a fraction of foot length
+         * (0.2 is roughly a 12 degree change), above which the heel counts as lifted.
+         */
+        const val HEEL_LIFT_WARNING = 0.2f
+
+        /** Below this torso segment length (image-height units) the angle is too noisy to read */
+        const val MIN_TORSO_LENGTH = 0.01f
+    }
+
+    /**
      * Thresholds for bench press exercise.
      */
     object BenchPress {
