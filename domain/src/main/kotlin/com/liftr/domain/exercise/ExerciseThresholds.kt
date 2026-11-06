@@ -228,7 +228,7 @@ object ExerciseThresholds {
         /** Wrists must be within this distance above head level at catch (m) */
         const val CATCH_WRIST_ABOVE_HEAD = 0.05f
 
-        /** Maximum X drift for overhead stability check (m) */
+        /** How far the wrists may sink below head level before the bar counts as dropped from overhead (m) */
         const val OVERHEAD_STABILITY_DRIFT = 0.05f
 
         /** Hips at or below knees for sufficient catch depth (m, 0 = at knee level) */
@@ -242,6 +242,12 @@ object ExerciseThresholds {
 
         /** Minimum velocity at 1RM — Kipp et al. (2012) */
         const val MIN_VELOCITY_AT_1RM = 0.90f
+
+        /** Hips must have dropped this far below their highest point in the pull to count as the catch (m) */
+        const val CATCH_HIP_DROP = 0.05f
+
+        /** Elbow angle below which the arms are bent overhead after the catch (press-out, degrees) */
+        const val PRESS_OUT_ELBOW_ANGLE = 160f
     }
 
     /**

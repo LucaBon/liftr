@@ -135,13 +135,15 @@ class SnatchStrategyIntegrationTest {
         assertFalse(result.repCompleted)
         state = result.newState
 
-        // Frame 4: wrists overhead — headY=0.50, wristsY=0.40 → (headY - wristsY) = 0.10 >= 0.05 → CONCENTRIC
+        // Frame 4: wrists overhead — headY=0.50, wristsY=0.40 → (headY - wristsY) = 0.10 >= 0.05,
+        // and hips dropped under the bar (2.10 vs highest 1.95) → CONCENTRIC
         // In snatch coordinates: wristsY < headY means wrists are above head (smaller Y = higher position)
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
-            headY = 100f, shouldersY = 200f, hipsY = 490f, kneesY = 600f,
+            headY = 100f, shouldersY = 200f, hipsY = 520f, kneesY = 600f,
             wristsY = 640f, anklesY = 650f
         )
         every { positionCalculator.pixelsToMeters(640f, any(), any()) } returns 0.40f  // wrists above head
+        every { positionCalculator.pixelsToMeters(520f, any(), any()) } returns 2.10f  // hips dropped under
 
         result = strategy.detectPhase(createMockPoseResult(1198L), calibrationData, state)
         assertEquals(MovementPhase.CONCENTRIC, result.newState.currentPhase)
@@ -159,6 +161,55 @@ class SnatchStrategyIntegrationTest {
         result = strategy.detectPhase(createMockPoseResult(1264L), calibrationData, state)
         assertEquals(MovementPhase.TOP, result.newState.currentPhase)
         assertTrue(result.repCompleted)
+    }
+
+    /** Drives the lift from the floor into the second pull; hips peak at 1.90 m. */
+    private fun intoSecondPull(): ExercisePhaseState {
+        every { positionCalculator.pixelsToMeters(any(), any(), any()) } answers { firstArg<Float>() / 100f }
+        var state = ExercisePhaseState.initial()
+        // Floor: head 0.50, hips 2.00, wrists 3.00 (meters, larger = lower).
+        state = phase(1000L, wristsY = 300f, hipsY = 200f, state = state)
+        state = phase(1100L, wristsY = 290f, hipsY = 200f, state = state)
+        assertEquals(MovementPhase.ECCENTRIC, state.currentPhase)
+        state = phase(1200L, wristsY = 250f, hipsY = 190f, state = state)
+        assertEquals(MovementPhase.BOTTOM, state.currentPhase)
+        return state
+    }
+
+    private fun phase(timestamp: Long, wristsY: Float, hipsY: Float, state: ExercisePhaseState): ExercisePhaseState {
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 50f, shouldersY = 100f, hipsY = hipsY, kneesY = 250f, wristsY = wristsY, anklesY = 290f
+        )
+        return strategy.detectPhase(createMockPoseResult(timestamp), calibrationData, state).newState
+    }
+
+    @Test
+    fun `wrists overhead without the hips dropping is not the catch`() {
+        var state = intoSecondPull()
+
+        // Wrists 0.10 m above the head, hips still at their highest: arms flung up, not caught.
+        state = phase(1300L, wristsY = 40f, hipsY = 190f, state = state)
+        assertEquals(MovementPhase.BOTTOM, state.currentPhase)
+
+        // Hips go down under the bar with the wrists overhead: the catch.
+        state = phase(1400L, wristsY = 40f, hipsY = 215f, state = state)
+        assertEquals(MovementPhase.CONCENTRIC, state.currentPhase)
+    }
+
+    @Test
+    fun `hips dropping without the wrists overhead is not the catch`() {
+        var state = intoSecondPull()
+
+        state = phase(1300L, wristsY = 150f, hipsY = 215f, state = state)
+        assertEquals(MovementPhase.BOTTOM, state.currentPhase)
+    }
+
+    @Test
+    fun `peak pull velocity is the wrists' not the hips'`() {
+        val state = intoSecondPull()
+
+        // Wrists rose 0.40 m in 100 ms (4 m/s); the hips only 0.10 m (1 m/s).
+        assertEquals(4.0f, state.peakPullVelocity!!, 0.01f)
     }
 
     @Test

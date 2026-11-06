@@ -13,6 +13,7 @@ import com.liftr.domain.exercise.Severity
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
 import com.liftr.domain.value.Joules
@@ -20,9 +21,10 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.model.MovementPhase
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
-import kotlin.math.abs
+import kotlin.math.sign
 
 /**
  * Strategy for the Olympic Snatch exercise.
@@ -71,6 +73,7 @@ class SnatchStrategy @Inject constructor(
 
     companion object {
         private const val TAG = "SnatchStrategy"
+        private const val MIN_JOINT_VISIBILITY = 0.5f
     }
 
     override fun detectPhase(
@@ -215,7 +218,9 @@ class SnatchStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
-                    .withOlympicLiftData(firstPullStartTime = timestamp),
+                    // Hips tracked from here to their highest point, to see the drop under the bar.
+                    .withHighestHipsY(hipsY)
+                    .withOlympicLiftData(peakPullVelocity = null, firstPullStartTime = timestamp),
                 repCompleted = false,
                 debugInfo = "First pull started: %.2f m wrist rise".format(wristRise)
             )
@@ -234,6 +239,7 @@ class SnatchStrategy @Inject constructor(
      * Detects the explosive hip extension that signals the transition from the
      * first pull (bar to knees) to the second pull (knee to hip contact + shrug).
      * Hip velocity > FIRST_TO_SECOND_PULL_HIP_VELOCITY triggers the transition.
+     * The peak pull velocity is the bar's, so it is tracked from the wrists.
      */
     private fun detectFirstPullToSecondPull(
         state: ExercisePhaseState,
@@ -249,20 +255,13 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val previousHipsY = state.previousHipsY
-        val previousTimestamp = state.previousTimestamp
+        val hipVelocity = upwardVelocity(state.previousHipsY, hipsY, state.previousTimestamp, now)
+        val peak = peakPullVelocity(state, wristsY, now)
 
-        // Calculate hip velocity (m/s); positive = upward (Y decreasing)
-        val hipVelocity = if (previousHipsY != null && previousTimestamp != null) {
-            val deltaT = (now - previousTimestamp) / 1000f
-            if (deltaT > 0f) (previousHipsY - hipsY) / deltaT else 0f
-        } else 0f
-
-        val newState = state.withPreviousPositions(
-            wristsY = wristsY,
-            hipsY = hipsY,
-            timestamp = now
-        )
+        val newState = state
+            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = now)
+            .withHighestHipsY(minOf(state.highestHipsY ?: hipsY, hipsY))
+            .withOlympicLiftData(peakPullVelocity = peak)
 
         logger.d(TAG, "FIRST_PULL: hipVelocity=%.2f m/s".format(hipVelocity))
 
@@ -272,32 +271,43 @@ class SnatchStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.BOTTOM)
-                    .withOlympicLiftData(
-                        peakPullVelocity = hipVelocity,
-                        secondPullStartTime = now
-                    ),
+                    .withOlympicLiftData(secondPullStartTime = now),
                 repCompleted = false,
                 debugInfo = "Second pull started: hipVel=%.2f m/s".format(hipVelocity)
             )
         }
 
-        // Track peak hip velocity even before threshold is crossed
-        val updatedPeak = if (hipVelocity > (state.peakPullVelocity ?: 0f)) hipVelocity
-                          else state.peakPullVelocity
         return PhaseTransitionResult(
-            newState = newState.withOlympicLiftData(peakPullVelocity = updatedPeak),
+            newState = newState,
             repCompleted = false,
             debugInfo = "First pull: hipVel=%.2f m/s".format(hipVelocity)
         )
+    }
+
+    /** Upward speed (m/s) between the previous and this sample; 0 without a previous one. */
+    private fun upwardVelocity(previousY: Float?, y: Float, previousTimestamp: Long?, now: Long): Float {
+        if (previousY == null || previousTimestamp == null) return 0f
+        val deltaT = (now - previousTimestamp) / 1000f
+        // Smaller Y = higher, so rising is previousY - y.
+        return if (deltaT > 0f) (previousY - y) / deltaT else 0f
+    }
+
+    /** The bar's (wrists') fastest rise so far in this pull. */
+    private fun peakPullVelocity(state: ExercisePhaseState, wristsY: Float?, now: Long): Float? {
+        if (wristsY == null) return state.peakPullVelocity
+        val velocity = upwardVelocity(state.previousWristsY, wristsY, state.previousTimestamp, now)
+        return maxOf(state.peakPullVelocity ?: 0f, velocity)
     }
 
     /**
      * BOTTOM (SECOND_PULL) -> CONCENTRIC (CATCH)
      *
      * KEY DIFFERENCE from Clean: the snatch catch is received overhead.
-     * Detects catch when wrists are at or above head level (wristsY <= headY).
-     * Condition: (headY - wristsY) >= CATCH_WRIST_ABOVE_HEAD, i.e. wrists are
-     * at least CATCH_WRIST_ABOVE_HEAD above the head.
+     * The catch needs both:
+     *  - wrists at least CATCH_WRIST_ABOVE_HEAD above the head, and
+     *  - hips dropped at least CATCH_HIP_DROP below their highest point in the
+     *    pull: the lifter has gone down under the bar. Wrists overhead at full
+     *    extension (a high pull, arms flung up) is not yet a catch.
      */
     private fun detectSecondPullToCatch(
         state: ExercisePhaseState,
@@ -314,26 +324,17 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val previousHipsY = state.previousHipsY
-        val previousTimestamp = state.previousTimestamp
-
-        // Track peak pull velocity during second pull
-        val hipVelocity = if (hipsY != null && previousHipsY != null && previousTimestamp != null) {
-            val deltaT = (now - previousTimestamp) / 1000f
-            if (deltaT > 0f) (previousHipsY - hipsY) / deltaT else 0f
-        } else 0f
-
-        val updatedPeak = if (hipVelocity > (state.peakPullVelocity ?: 0f)) hipVelocity
-                          else state.peakPullVelocity
-
+        // Peak pull velocity: the bar (wrists) keeps rising through the second pull.
+        val highestHipsY = listOfNotNull(state.highestHipsY, hipsY).minOrNull()
         val newState = state
             .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = now)
-            .withOlympicLiftData(peakPullVelocity = updatedPeak)
+            .withHighestHipsY(highestHipsY)
+            .withOlympicLiftData(peakPullVelocity = peakPullVelocity(state, wristsY, now))
 
         // Detect overhead catch: wrists are above (or at) head level
         // In our coordinate system: smaller Y = higher. Wrists above head means wristsY < headY.
         // We require: headY - wristsY >= CATCH_WRIST_ABOVE_HEAD
-        val caughtOverhead = if (headY != null) {
+        val wristsOverhead = if (headY != null) {
             (headY - wristsY) >= ExerciseThresholds.Snatch.CATCH_WRIST_ABOVE_HEAD
         } else {
             // Fallback when the head landmark is occluded: assume the catch once
@@ -345,11 +346,16 @@ class SnatchStrategy @Inject constructor(
             startingWristsY != null && (startingWristsY - wristsY) > 0.3f
         }
 
-        logger.d(TAG, "SECOND_PULL: wristsY=%.2f, headY=%.2f, overhead=$caughtOverhead"
-            .format(wristsY, headY ?: Float.NaN))
+        // Larger Y = lower: the hips have dropped under the bar since their highest point.
+        val hipDrop = if (hipsY != null && highestHipsY != null) hipsY - highestHipsY else null
+        val droppedUnder = hipDrop != null && hipDrop >= ExerciseThresholds.Snatch.CATCH_HIP_DROP
+        val caughtOverhead = wristsOverhead && droppedUnder
+
+        logger.d(TAG, ("SECOND_PULL: wristsY=%.2f, headY=%.2f, hipDrop=%.2f, overhead=$wristsOverhead, " +
+            "under=$droppedUnder").format(wristsY, headY ?: Float.NaN, hipDrop ?: Float.NaN))
 
         if (caughtOverhead) {
-            logger.d(TAG, "Phase: BOTTOM/SECOND_PULL -> CONCENTRIC/CATCH (wrists overhead)")
+            logger.d(TAG, "Phase: BOTTOM/SECOND_PULL -> CONCENTRIC/CATCH (wrists overhead, hips under)")
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.CONCENTRIC)
@@ -492,6 +498,11 @@ class SnatchStrategy @Inject constructor(
     // Form validation
     // -------------------------------------------------------------------------
 
+    /**
+     * Per-frame checks while the bar is held overhead after the catch
+     * (CONCENTRIC: catch and recovery). TOP frames are skipped: a rep's buffer
+     * also holds the previous rep's bar coming down from lockout.
+     */
     override fun validateForm(
         poseResult: PoseResult,
         calibrationData: CalibrationData,
@@ -500,10 +511,10 @@ class SnatchStrategy @Inject constructor(
     ): FormValidationResult {
         val issues = mutableListOf<FormIssue>()
 
-        checkOverheadStability(poseResult, calibrationData)?.let { issues.add(it) }
-        checkCatchDepth(poseResult)?.let { issues.add(it) }
-        checkBarBehindHead(poseResult, calibrationData)?.let { issues.add(it) }
-        checkPressOut(poseResult)?.let { issues.add(it) }
+        if (phase == MovementPhase.CONCENTRIC && isOverhead(poseResult)) {
+            checkPressOut(poseResult)?.let { issues.add(it) }
+            checkBarBehindHead(poseResult, calibrationData)?.let { issues.add(it) }
+        }
 
         return FormValidationResult(
             isValid = issues.none { it.severity == Severity.CRITICAL },
@@ -511,63 +522,46 @@ class SnatchStrategy @Inject constructor(
         )
     }
 
-    /**
-     * Check overhead stability: wrist X position must not drift more than
-     * OVERHEAD_STABILITY_DRIFT from the catch X position.
-     */
-    private fun checkOverheadStability(
-        poseResult: PoseResult,
-        calibrationData: CalibrationData
-    ): FormIssue? {
-        val bodyPositions = positionCalculator.getBodyPartPositions(poseResult) ?: return null
-        if (bodyPositions.wristsX == null) return null
+    override fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
+    ): List<FormIssue> = listOfNotNull(checkCatchDepth(frames, calibrationData))
 
-        val landmarks = poseResult.landmarks
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-        val minVis = 0.5f
-        if (leftWrist == null || rightWrist == null) return null
-        if (leftWrist.visibility < minVis || rightWrist.visibility < minVis) return null
-
-        // Check left-right wrist asymmetry as a proxy for instability overhead
-        val leftWristX = positionCalculator.pixelsToMeters(leftWrist.x, poseResult, calibrationData)
-        val rightWristX = positionCalculator.pixelsToMeters(rightWrist.x, poseResult, calibrationData)
-        val asymmetry = abs(leftWristX - rightWristX)
-
-        // Use OVERHEAD_STABILITY_DRIFT as a reasonable asymmetry threshold
-        return if (asymmetry > ExerciseThresholds.Snatch.OVERHEAD_STABILITY_DRIFT) {
-            FormIssue(
-                kind = "overhead_stability",
-                severity = Severity.WARNING,
-                message = "Overhead instability: wrist asymmetry (%.0f cm)".format(asymmetry * 100),
-                suggestion = "Keep both wrists aligned overhead — engage your lats and keep the bar balanced"
-            )
-        } else null
+    /** Near-side wrist above the nose: the bar is overhead. */
+    private fun isOverhead(poseResult: PoseResult): Boolean {
+        val wrist = nearSide(poseResult, listOf(PoseResult.LEFT_WRIST), listOf(PoseResult.RIGHT_WRIST))?.first()
+            ?: return false
+        val nose = poseResult.landmarks.getOrNull(PoseResult.NOSE)
+            ?.takeIf { it.visibility >= MIN_JOINT_VISIBILITY } ?: return false
+        return wrist.y < nose.y
     }
 
     /**
-     * Check catch depth: at catch, hips should be at or below knee level.
-     * In our coordinate system, hips below knees means hipsY > kneesY (larger Y = lower).
-     * If hipsY < kneesY (hips above knees), depth is insufficient.
+     * Check catch depth: at the bottom of the catch (the lowest hips of the
+     * rep's CONCENTRIC frames), the hips should be at or below the knees.
+     * Larger Y = lower. Checked once per rep: during the recovery the hips
+     * rise above the knees, which is no fault.
      */
-    private fun checkCatchDepth(poseResult: PoseResult): FormIssue? {
-        val landmarks = poseResult.landmarks
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
+    private fun checkCatchDepth(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData
+    ): FormIssue? {
+        val bottom = frames
+            .filter { it.phase == MovementPhase.CONCENTRIC }
+            .mapNotNull { (pose, _) ->
+                nearSide(
+                    pose,
+                    left = listOf(PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE),
+                    right = listOf(PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE)
+                )?.let { (hip, knee) -> Triple(pose, hip.y, knee.y) }
+            }
+            .maxByOrNull { (_, hipY, _) -> hipY } ?: return null
 
-        val minVis = 0.5f
-        if (leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null) return null
-        if (leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
+        val (pose, hipY, kneeY) = bottom
+        val hipsBelowKnees = positionCalculator.pixelsToMeters(hipY - kneeY, pose, calibrationData)
 
-        val hipsY = (leftHip.y + rightHip.y) / 2f
-        val kneesY = (leftKnee.y + rightKnee.y) / 2f
-
-        // hipsY < kneesY means hips are higher than knees (insufficient depth)
-        return if (hipsY < kneesY) {
+        return if (hipsBelowKnees < ExerciseThresholds.Snatch.CATCH_DEPTH_THRESHOLD) {
             FormIssue(
                 kind = "catch_depth",
                 severity = Severity.INFO,
@@ -578,44 +572,47 @@ class SnatchStrategy @Inject constructor(
     }
 
     /**
-     * Check bar position: wrists should not be more than BAR_BEHIND_HEAD_MAX
-     * behind the head (in X). Excessive forward bar drift is also a concern.
+     * Check bar position overhead, seen from the side: the wrists should not be
+     * more than BAR_BEHIND_HEAD_MAX behind the nose. "Behind" is against the
+     * way the lifter faces (nose ahead of the ear); a bar in front is not this fault.
      */
     private fun checkBarBehindHead(
         poseResult: PoseResult,
         calibrationData: CalibrationData
     ): FormIssue? {
-        val bodyPositions = positionCalculator.getBodyPartPositions(poseResult) ?: return null
-        val wristsX = bodyPositions.wristsX ?: return null
+        val (ear, wrist) = nearSide(
+            poseResult,
+            left = listOf(PoseResult.LEFT_EAR, PoseResult.LEFT_WRIST),
+            right = listOf(PoseResult.RIGHT_EAR, PoseResult.RIGHT_WRIST)
+        ) ?: return null
+        val nose = poseResult.landmarks.getOrNull(PoseResult.NOSE)
+            ?.takeIf { it.visibility >= MIN_JOINT_VISIBILITY } ?: return null
 
-        val landmarks = poseResult.landmarks
-        val nose = landmarks.getOrNull(PoseResult.NOSE)
-        val minVis = 0.5f
-        if (nose == null || nose.visibility < minVis) return null
+        val facing = sign(nose.x - ear.x)
+        if (facing == 0f) return null
+        // Image-width units to image-height units, which pixelsToMeters takes.
+        val behindUnits = (nose.x - wrist.x) * facing * poseResult.aspectScaleX
+        val behind = positionCalculator.pixelsToMeters(behindUnits, poseResult, calibrationData)
 
-        val wristsXMeters = positionCalculator.pixelsToMeters(wristsX, poseResult, calibrationData)
-        val noseXMeters = positionCalculator.pixelsToMeters(nose.x, poseResult, calibrationData)
-
-        val behindDistance = abs(wristsXMeters - noseXMeters)
-
-        return if (behindDistance > ExerciseThresholds.Snatch.BAR_BEHIND_HEAD_MAX) {
+        return if (behind > ExerciseThresholds.Snatch.BAR_BEHIND_HEAD_MAX) {
             FormIssue(
                 kind = "bar_behind_head",
                 severity = Severity.WARNING,
-                message = "Bar too far behind head (%.0f cm)".format(behindDistance * 100),
+                message = "Bar too far behind head (%.0f cm)".format(behind * 100),
                 suggestion = "Keep the bar over your base of support — slightly behind the head is correct but not excessively"
             )
         } else null
     }
 
     /**
-     * Check for press-out: after the catch, elbows should be fully locked (arm angle ~180°).
-     * If elbow angle < 160°, the lifter is pressing out the lift (disqualified in competition).
+     * Check for press-out: overhead after the catch, the elbows should be locked
+     * (arm angle ~180°). Bent elbows mean the lifter is pressing the bar out
+     * (disqualified in competition).
      */
     private fun checkPressOut(poseResult: PoseResult): FormIssue? {
         val elbowAngle = calculateElbowAngle(poseResult) ?: return null
 
-        return if (elbowAngle < 160f) {
+        return if (elbowAngle < ExerciseThresholds.Snatch.PRESS_OUT_ELBOW_ANGLE) {
             FormIssue(
                 kind = "press_out",
                 severity = Severity.WARNING,
@@ -655,109 +652,58 @@ class SnatchStrategy @Inject constructor(
     // -------------------------------------------------------------------------
 
     /**
+     * The given joints on the body side facing the camera, or null if neither
+     * side has them all visible. Filmed side-on, the far side is hidden behind
+     * the body. The side whose least visible joint is seen better wins.
+     */
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
+        fun side(indices: List<Int>): List<PoseKeypoint>? =
+            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
+        val candidates = listOfNotNull(side(left), side(right))
+            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
+        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
+    }
+
+    /** Angle in degrees at the middle joint, on the side facing the camera. */
+    private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {
+        val (a, b, c) = nearSide(poseResult, left, right) ?: return null
+        val sx = poseResult.aspectScaleX
+        return coordinateCalculator.angleBetweenPoints(
+            ax = a.x * sx, ay = a.y,
+            bx = b.x * sx, by = b.y,
+            cx = c.x * sx, cy = c.y
+        )
+    }
+
+    /**
      * Calculate hip angle: angle at hip formed by shoulder-hip-knee.
      * 180° = fully extended (standing), smaller = more bent.
      */
-    private fun calculateHipAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-
-        val minVis = 0.5f
-        if (leftShoulder == null || rightShoulder == null ||
-            leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null) return null
-        if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
-            leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis) return null
-
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = shoulderX, ay = shoulderY,
-            bx = hipX, by = hipY,
-            cx = kneeX, cy = kneeY
-        )
-    }
+    private fun calculateHipAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE),
+        right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE)
+    )
 
     /**
      * Calculate knee angle: angle at knee formed by hip-knee-ankle.
      * 180° = fully extended, smaller = more bent.
      */
-    private fun calculateKneeAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftHip = landmarks.getOrNull(PoseResult.LEFT_HIP)
-        val rightHip = landmarks.getOrNull(PoseResult.RIGHT_HIP)
-        val leftKnee = landmarks.getOrNull(PoseResult.LEFT_KNEE)
-        val rightKnee = landmarks.getOrNull(PoseResult.RIGHT_KNEE)
-        val leftAnkle = landmarks.getOrNull(PoseResult.LEFT_ANKLE)
-        val rightAnkle = landmarks.getOrNull(PoseResult.RIGHT_ANKLE)
-
-        val minVis = 0.5f
-        if (leftHip == null || rightHip == null ||
-            leftKnee == null || rightKnee == null ||
-            leftAnkle == null || rightAnkle == null) return null
-        if (leftHip.visibility < minVis || rightHip.visibility < minVis ||
-            leftKnee.visibility < minVis || rightKnee.visibility < minVis ||
-            leftAnkle.visibility < minVis || rightAnkle.visibility < minVis) return null
-
-        val hipX = (leftHip.x + rightHip.x) / 2f * poseResult.aspectScaleX
-        val hipY = (leftHip.y + rightHip.y) / 2f
-        val kneeX = (leftKnee.x + rightKnee.x) / 2f * poseResult.aspectScaleX
-        val kneeY = (leftKnee.y + rightKnee.y) / 2f
-        val ankleX = (leftAnkle.x + rightAnkle.x) / 2f * poseResult.aspectScaleX
-        val ankleY = (leftAnkle.y + rightAnkle.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = hipX, ay = hipY,
-            bx = kneeX, by = kneeY,
-            cx = ankleX, cy = ankleY
-        )
-    }
+    private fun calculateKneeAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE, PoseResult.LEFT_ANKLE),
+        right = listOf(PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE, PoseResult.RIGHT_ANKLE)
+    )
 
     /**
      * Calculate elbow angle: angle at elbow formed by shoulder-elbow-wrist.
      * 180° = fully extended (locked out), smaller = more bent.
      */
-    private fun calculateElbowAngle(poseResult: PoseResult): Float? {
-        val landmarks = poseResult.landmarks
-        val leftShoulder = landmarks.getOrNull(PoseResult.LEFT_SHOULDER)
-        val rightShoulder = landmarks.getOrNull(PoseResult.RIGHT_SHOULDER)
-        val leftElbow = landmarks.getOrNull(PoseResult.LEFT_ELBOW)
-        val rightElbow = landmarks.getOrNull(PoseResult.RIGHT_ELBOW)
-        val leftWrist = landmarks.getOrNull(PoseResult.LEFT_WRIST)
-        val rightWrist = landmarks.getOrNull(PoseResult.RIGHT_WRIST)
-
-        val minVis = 0.5f
-        if (leftShoulder == null || rightShoulder == null ||
-            leftElbow == null || rightElbow == null ||
-            leftWrist == null || rightWrist == null) return null
-        if (leftShoulder.visibility < minVis || rightShoulder.visibility < minVis ||
-            leftElbow.visibility < minVis || rightElbow.visibility < minVis ||
-            leftWrist.visibility < minVis || rightWrist.visibility < minVis) return null
-
-        val shoulderX = (leftShoulder.x + rightShoulder.x) / 2f * poseResult.aspectScaleX
-        val shoulderY = (leftShoulder.y + rightShoulder.y) / 2f
-        val elbowX = (leftElbow.x + rightElbow.x) / 2f * poseResult.aspectScaleX
-        val elbowY = (leftElbow.y + rightElbow.y) / 2f
-        val wristX = (leftWrist.x + rightWrist.x) / 2f * poseResult.aspectScaleX
-        val wristY = (leftWrist.y + rightWrist.y) / 2f
-
-        return coordinateCalculator.angleBetweenPoints(
-            ax = shoulderX, ay = shoulderY,
-            bx = elbowX, by = elbowY,
-            cx = wristX, cy = wristY
-        )
-    }
+    private fun calculateElbowAngle(poseResult: PoseResult): Float? = nearSideAngle(
+        poseResult,
+        left = listOf(PoseResult.LEFT_SHOULDER, PoseResult.LEFT_ELBOW, PoseResult.LEFT_WRIST),
+        right = listOf(PoseResult.RIGHT_SHOULDER, PoseResult.RIGHT_ELBOW, PoseResult.RIGHT_WRIST)
+    )
 
     override fun getRequiredLandmarks(): List<Int> = criteriaRef.get().targetBodyParts
 
