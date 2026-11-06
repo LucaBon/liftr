@@ -12,4 +12,5 @@
     <string name="tts_tempo_faster">Più veloce</string>
     <string name="tts_jump_height">%1$d centimetri</string>
     <string name="tts_depth_insufficient">Profondità insufficiente</string>
+    <string name="video_speed_suspect">La velocità del video sembra sbagliata (slow motion?)</string>
 </resources>
