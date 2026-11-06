@@ -2,6 +2,7 @@ package com.liftr.ui.screens.workout
 
 import com.liftr.domain.exercise.JumpPathWindow
 import com.liftr.domain.model.JumpExcursion
+import com.liftr.domain.model.JumpQuality
 import com.liftr.domain.model.aggregateFormIssues
 import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.calculator.CameraView
@@ -196,6 +197,7 @@ class WorkoutViewModel @Inject constructor(
     private var setApexHeights = mutableListOf<Meters?>()
     private var setPeakPowers = mutableListOf<Watts?>()
     private var setCatchTypes = mutableListOf<CatchType?>()
+    private var setJumpQualities = mutableListOf<JumpQuality>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -426,7 +428,8 @@ class WorkoutViewModel @Inject constructor(
             completedReps = summary.completedReps,
             avgVelocity = summary.avgVelocity,
             peakVelocity = summary.peakVelocity,
-            jumpHeight = summary.bestJumpHeight,
+            // Suspect jumps never make a personal record.
+            jumpHeight = summary.recordJumpHeight,
             timestamp = now,
             reps = withCatchTypes(withJumpData(reps, summary), summary)
         )
@@ -950,6 +953,7 @@ class WorkoutViewModel @Inject constructor(
             setPeakPowers.add(calib?.let { c ->
                 JumpStrategy(_uiState.value.selectedExercise, logger).peakPower(it, c, _uiState.value.weight)
             })
+            setJumpQualities.add(JumpQuality.of(barPathData.excursion?.fitCheck))
         }
 
         // Build Rep domain object for persistence
@@ -1196,6 +1200,7 @@ class WorkoutViewModel @Inject constructor(
         setApexHeights.clear()
         setPeakPowers.clear()
         setCatchTypes.clear()
+        setJumpQualities.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1476,7 +1481,8 @@ class WorkoutViewModel @Inject constructor(
                 completedReps = RepCount(setRepScores.size),
                 avgVelocity = summary.avgVelocity,
                 peakVelocity = summary.peakVelocity,
-                jumpHeight = summary.bestJumpHeight,
+                // Suspect jumps never make a personal record.
+                jumpHeight = summary.recordJumpHeight,
                 timestamp = System.currentTimeMillis(),
                 reps = withCatchTypes(withJumpData(setReps.toList(), summary), summary)
             )
@@ -1644,7 +1650,8 @@ class WorkoutViewModel @Inject constructor(
             repJumpHeights = setJumpHeights.toList(),
             repApexHeights = setApexHeights.toList(),
             repPeakPowers = setPeakPowers.toList(),
-            repCatchTypes = setCatchTypes.toList()
+            repCatchTypes = setCatchTypes.toList(),
+            repJumpQualities = setJumpQualities.toList()
         )
     }
 

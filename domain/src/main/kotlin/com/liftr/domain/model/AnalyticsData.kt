@@ -49,4 +49,6 @@ data class JumpRepRecord(
     val setId: Long,
     val repNumber: Int,
     val jump: RepJumpData
-)
+) {
+    val quality: JumpQuality get() = jump.quality
+}

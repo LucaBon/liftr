@@ -21,4 +21,10 @@
     <string name="catch_squat">Squat</string>
     <string name="import_video">Importa video</string>
     <string name="high_speed_unavailable_hint">La registrazione nell\'app è limitata a 60 fps. Per salti, clean e snatch registra in slow-motion con la fotocamera del telefono e importa il video.</string>
+    <plurals name="jump_suspect_excluded">
+        <item quantity="one">%1$d salto escluso: il tracciamento non corrisponde alla caduta libera</item>
+        <item quantity="many">%1$d salti esclusi: il tracciamento non corrisponde alla caduta libera</item>
+        <item quantity="other">%1$d salti esclusi: il tracciamento non corrisponde alla caduta libera</item>
+    </plurals>
+    <string name="jump_all_suspect">Il tracciamento non corrisponde alla caduta libera in nessun salto: queste altezze potrebbero essere sbagliate</string>
 </resources>
