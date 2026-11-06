@@ -40,7 +40,9 @@ import kotlin.math.sign
  *   CONCENTRIC  → CATCH + OVERHEAD_STABILIZE (receive bar overhead in squat, stabilize)
  *   TOP         → LOCKOUT (standing with bar overhead)
  *
- * Rep is counted at CONCENTRIC → TOP transition (full lockout overhead).
+ * Rep is counted at the CONCENTRIC → TOP transition: standing (hip and knee
+ * angles at the deadlift lockout thresholds) after the catch, with the bar
+ * not dropped from overhead.
  */
 class SnatchStrategy @Inject constructor(
     private val positionCalculator: IPositionCalculator,
@@ -146,13 +148,13 @@ class SnatchStrategy @Inject constructor(
         //                     -> CONCENTRIC (CATCH/OVERHEAD_STABILIZE) -> TOP (LOCKOUT) -> IDLE
         return when (updatedState.currentPhase) {
             MovementPhase.IDLE -> detectIdleToFirstPull(
-                updatedState, currentWristsY, currentHipsY, poseResult.timestamp
+                updatedState, currentWristsY, currentHipsY, poseResult.timestampUs
             )
             MovementPhase.ECCENTRIC -> detectFirstPullToSecondPull(
-                updatedState, currentHipsY, currentWristsY, poseResult.timestamp
+                updatedState, currentHipsY, currentWristsY, poseResult.timestampUs
             )
             MovementPhase.BOTTOM -> detectSecondPullToCatch(
-                updatedState, currentWristsY, currentHeadY, currentHipsY, poseResult.timestamp
+                updatedState, currentWristsY, currentHeadY, currentHipsY, poseResult.timestampUs
             )
             MovementPhase.CONCENTRIC -> detectCatchToLockout(
                 updatedState, currentHipsY, currentWristsY, currentHeadY, poseResult
@@ -171,7 +173,7 @@ class SnatchStrategy @Inject constructor(
         state: ExercisePhaseState,
         wristsY: Float?,
         hipsY: Float?,
-        timestamp: Long
+        timestampUs: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -187,7 +189,7 @@ class SnatchStrategy @Inject constructor(
                 .withStartingPosition(state.currentHeadY, state.currentShouldersY, hipsY)
                 .withStartingWristsY(wristsY)
                 .withHighestHipsY(hipsY)
-                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestamp)
+                .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = timestampUs)
 
             logger.d(TAG, "Starting position set: wristsY=%.2f m, hipsY=%.2f m"
                 .format(wristsY, hipsY ?: Float.NaN))
@@ -202,7 +204,7 @@ class SnatchStrategy @Inject constructor(
         val newState = state.withPreviousPositions(
             wristsY = wristsY,
             hipsY = hipsY,
-            timestamp = timestamp
+            timestamp = timestampUs
         )
 
         // Wrists rise = Y decreases (smaller Y = higher position).
@@ -220,7 +222,7 @@ class SnatchStrategy @Inject constructor(
                     .withCurrentPhase(MovementPhase.ECCENTRIC)
                     // Hips tracked from here to their highest point, to see the drop under the bar.
                     .withHighestHipsY(hipsY)
-                    .withOlympicLiftData(peakPullVelocity = null, firstPullStartTime = timestamp),
+                    .withOlympicLiftData(firstPullStartTime = timestampUs / 1000),
                 repCompleted = false,
                 debugInfo = "First pull started: %.2f m wrist rise".format(wristRise)
             )
@@ -239,13 +241,12 @@ class SnatchStrategy @Inject constructor(
      * Detects the explosive hip extension that signals the transition from the
      * first pull (bar to knees) to the second pull (knee to hip contact + shrug).
      * Hip velocity > FIRST_TO_SECOND_PULL_HIP_VELOCITY triggers the transition.
-     * The peak pull velocity is the bar's, so it is tracked from the wrists.
      */
     private fun detectFirstPullToSecondPull(
         state: ExercisePhaseState,
         hipsY: Float?,
         wristsY: Float?,
-        now: Long
+        nowUs: Long
     ): PhaseTransitionResult {
         if (hipsY == null) {
             return PhaseTransitionResult(
@@ -255,13 +256,11 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        val hipVelocity = upwardVelocity(state.previousHipsY, hipsY, state.previousTimestamp, now)
-        val peak = peakPullVelocity(state, wristsY, now)
+        val hipVelocity = upwardVelocity(state.previousHipsY, hipsY, state.previousTimestamp, nowUs)
 
         val newState = state
-            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = now)
+            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
             .withHighestHipsY(minOf(state.highestHipsY ?: hipsY, hipsY))
-            .withOlympicLiftData(peakPullVelocity = peak)
 
         logger.d(TAG, "FIRST_PULL: hipVelocity=%.2f m/s".format(hipVelocity))
 
@@ -271,7 +270,7 @@ class SnatchStrategy @Inject constructor(
             return PhaseTransitionResult(
                 newState = newState
                     .withCurrentPhase(MovementPhase.BOTTOM)
-                    .withOlympicLiftData(secondPullStartTime = now),
+                    .withOlympicLiftData(secondPullStartTime = nowUs / 1000),
                 repCompleted = false,
                 debugInfo = "Second pull started: hipVel=%.2f m/s".format(hipVelocity)
             )
@@ -284,19 +283,15 @@ class SnatchStrategy @Inject constructor(
         )
     }
 
-    /** Upward speed (m/s) between the previous and this sample; 0 without a previous one. */
-    private fun upwardVelocity(previousY: Float?, y: Float, previousTimestamp: Long?, now: Long): Float {
-        if (previousY == null || previousTimestamp == null) return 0f
-        val deltaT = (now - previousTimestamp) / 1000f
+    /**
+     * Upward speed (m/s) between the previous and this sample; 0 without a
+     * previous one. Timestamps in microseconds so high-fps deltas stay exact.
+     */
+    private fun upwardVelocity(previousY: Float?, y: Float, previousTimestampUs: Long?, nowUs: Long): Float {
+        if (previousY == null || previousTimestampUs == null) return 0f
+        val deltaT = (nowUs - previousTimestampUs) / 1_000_000f
         // Smaller Y = higher, so rising is previousY - y.
         return if (deltaT > 0f) (previousY - y) / deltaT else 0f
-    }
-
-    /** The bar's (wrists') fastest rise so far in this pull. */
-    private fun peakPullVelocity(state: ExercisePhaseState, wristsY: Float?, now: Long): Float? {
-        if (wristsY == null) return state.peakPullVelocity
-        val velocity = upwardVelocity(state.previousWristsY, wristsY, state.previousTimestamp, now)
-        return maxOf(state.peakPullVelocity ?: 0f, velocity)
     }
 
     /**
@@ -314,7 +309,7 @@ class SnatchStrategy @Inject constructor(
         wristsY: Float?,
         headY: Float?,
         hipsY: Float?,
-        now: Long
+        nowUs: Long
     ): PhaseTransitionResult {
         if (wristsY == null) {
             return PhaseTransitionResult(
@@ -324,12 +319,10 @@ class SnatchStrategy @Inject constructor(
             )
         }
 
-        // Peak pull velocity: the bar (wrists) keeps rising through the second pull.
         val highestHipsY = listOfNotNull(state.highestHipsY, hipsY).minOrNull()
         val newState = state
-            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = now)
+            .withPreviousPositions(wristsY = wristsY, hipsY = hipsY, timestamp = nowUs)
             .withHighestHipsY(highestHipsY)
-            .withOlympicLiftData(peakPullVelocity = peakPullVelocity(state, wristsY, now))
 
         // Detect overhead catch: wrists are above (or at) head level
         // In our coordinate system: smaller Y = higher. Wrists above head means wristsY < headY.
@@ -361,7 +354,7 @@ class SnatchStrategy @Inject constructor(
                     .withCurrentPhase(MovementPhase.CONCENTRIC)
                     .withOlympicLiftData(
                         catchPosition = wristsY,
-                        catchTime = now
+                        catchTime = nowUs / 1000
                     ),
                 repCompleted = false,
                 debugInfo = "Catch detected: wristsY=%.2f m".format(wristsY)
@@ -379,8 +372,9 @@ class SnatchStrategy @Inject constructor(
      * CONCENTRIC (CATCH/OVERHEAD_STABILIZE) -> TOP (LOCKOUT)
      *
      * The lifter has received the bar overhead in a squat and must now stand up
-     * (recovery). Lockout is detected when the hip-knee-shoulder angle approaches
-     * full extension (>= 170°) and wrists remain overhead.
+     * (recovery). Lockout is detected when the hip and knee angles reach the
+     * lockout thresholds (170°, a missing angle passes); a bar dropped from
+     * overhead aborts to IDLE instead.
      */
     private fun detectCatchToLockout(
         state: ExercisePhaseState,
@@ -409,7 +403,6 @@ class SnatchStrategy @Inject constructor(
                 newState = state
                     .withCurrentPhase(MovementPhase.IDLE)
                     .withOlympicLiftData(
-                        peakPullVelocity = null,
                         catchPosition = null,
                         firstPullStartTime = null,
                         secondPullStartTime = null,
@@ -475,7 +468,6 @@ class SnatchStrategy @Inject constructor(
                 newState = state
                     .withCurrentPhase(MovementPhase.IDLE)
                     .withOlympicLiftData(
-                        peakPullVelocity = null,
                         catchPosition = null,
                         firstPullStartTime = null,
                         secondPullStartTime = null,
@@ -651,18 +643,8 @@ class SnatchStrategy @Inject constructor(
     // Angle helpers
     // -------------------------------------------------------------------------
 
-    /**
-     * The given joints on the body side facing the camera, or null if neither
-     * side has them all visible. Filmed side-on, the far side is hidden behind
-     * the body. The side whose least visible joint is seen better wins.
-     */
-    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? {
-        fun side(indices: List<Int>): List<PoseKeypoint>? =
-            indices.map { poseResult.landmarks.getOrNull(it) ?: return null }
-        val candidates = listOfNotNull(side(left), side(right))
-            .filter { joints -> joints.all { it.visibility >= MIN_JOINT_VISIBILITY } }
-        return candidates.maxByOrNull { joints -> joints.minOf { it.visibility } }
-    }
+    private fun nearSide(poseResult: PoseResult, left: List<Int>, right: List<Int>): List<PoseKeypoint>? =
+        nearSideLandmarks(poseResult, left, right, MIN_JOINT_VISIBILITY)
 
     /** Angle in degrees at the middle joint, on the side facing the camera. */
     private fun nearSideAngle(poseResult: PoseResult, left: List<Int>, right: List<Int>): Float? {

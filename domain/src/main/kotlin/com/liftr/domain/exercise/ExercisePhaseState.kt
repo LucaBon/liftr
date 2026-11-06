@@ -54,6 +54,7 @@ data class ExercisePhaseState(
     val catchTime: Long? = null,
     val previousWristsY: Float? = null,
     val previousHipsY: Float? = null,
+    /** Microseconds, so high-fps frame deltas stay exact. */
     val previousTimestamp: Long? = null,
     /**
      * True once the configured squat depth window has been satisfied at some

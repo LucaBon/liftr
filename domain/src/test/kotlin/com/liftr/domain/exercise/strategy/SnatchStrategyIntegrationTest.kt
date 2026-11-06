@@ -205,14 +205,6 @@ class SnatchStrategyIntegrationTest {
     }
 
     @Test
-    fun `peak pull velocity is the wrists' not the hips'`() {
-        val state = intoSecondPull()
-
-        // Wrists rose 0.40 m in 100 ms (4 m/s); the hips only 0.10 m (1 m/s).
-        assertEquals(4.0f, state.peakPullVelocity!!, 0.01f)
-    }
-
-    @Test
     fun `calculateMetrics should return correct values`() {
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
             headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 600f,
