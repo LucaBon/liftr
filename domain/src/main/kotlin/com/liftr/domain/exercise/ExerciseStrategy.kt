@@ -1,5 +1,6 @@
 package com.liftr.domain.exercise
 
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
@@ -78,6 +79,18 @@ interface ExerciseStrategy {
         currentState: ExercisePhaseState? = null,
         phase: MovementPhase? = null
     ): FormValidationResult
+
+    /**
+     * Form checks over the whole rep, called once per rep with its frames in
+     * order. Checks that need the rep's frames together (stalls, displacement
+     * from the start, dwell times) go here, not in [validateForm]. Strategies
+     * are shared singletons, so they must stay stateless: no per-rep fields.
+     */
+    fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState? = null
+    ): List<FormIssue> = emptyList()
 
     /**
      * Gets the list of required landmark indices for this exercise.

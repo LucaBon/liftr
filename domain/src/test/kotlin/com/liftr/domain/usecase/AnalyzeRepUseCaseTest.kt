@@ -54,6 +54,37 @@ class AnalyzeRepUseCaseTest {
     }
 
     @Test
+    fun `validateRep is called once with all frames in order and its issues join the result`() = runBlocking {
+        val seen = mutableListOf<List<AnalyzeRepUseCase.RepFrame>>()
+        val hitch = FormIssue(Severity.WARNING, "Bar stalled", "Keep pushing", kind = "hitch")
+        val strategy = mockk<ExerciseStrategy> {
+            every { validateForm(any(), any(), any(), any()) } returns
+                FormValidationResult(isValid = true, issues = emptyList())
+            every { validateRep(any(), any(), any()) } answers {
+                seen += firstArg<List<AnalyzeRepUseCase.RepFrame>>()
+                listOf(hitch)
+            }
+        }
+        val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
+        val frames = listOf(
+            MovementPhase.CONCENTRIC, MovementPhase.CONCENTRIC, MovementPhase.TOP
+        ).map { AnalyzeRepUseCase.RepFrame(mockk(relaxed = true), it) }
+
+        val result = AnalyzeRepUseCase(factory, mockk(relaxed = true))(
+            AnalyzeRepUseCase.Params(
+                exerciseType = ExerciseType.DEADLIFT,
+                calibrationData = mockk(relaxed = true),
+                weight = Kilograms(0f),
+                bufferedFrames = frames,
+                finalVelocityData = null
+            )
+        )
+
+        assertEquals(listOf(frames), seen)
+        assertEquals(listOf(hitch), result.formValidation.issues)
+    }
+
+    @Test
     fun `each frame reaches validateForm with the phase detected for it`() = runBlocking {
         val seen = mutableListOf<MovementPhase?>()
         val strategy = mockk<ExerciseStrategy> {

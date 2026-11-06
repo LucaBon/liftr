@@ -77,6 +77,11 @@ class AnalyzeRepUseCase @Inject constructor(
                 logger.w(TAG, "validateForm pass failed: ${e.message}")
             }
         }
+        try {
+            frameIssues += strategy.validateRep(params.bufferedFrames, params.calibrationData, params.phaseState)
+        } catch (e: Exception) {
+            logger.w(TAG, "validateRep pass failed: ${e.message}")
+        }
         // A fault held over many frames is one fault for the rep, scored once at its worst.
         val aggregatedIssues = frameIssues.worstPerKind()
 
