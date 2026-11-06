@@ -131,11 +131,12 @@ class CatchTypeTest {
     @Test fun `squat clean is labelled squat`() = check(clean(), cleanSquat, CatchType.SQUAT)
 
     @Test
-    fun `a muscle snatch gets no catch depth fault but a power snatch does`() {
-        for ((keys, depthFault) in listOf(snatchMuscle to false, snatchPower to true, snatchSquat to false)) {
+    fun `a muscle snatch gets no catch depth note, a power snatch an unscored one`() {
+        for ((keys, depthNote) in listOf(snatchMuscle to false, snatchPower to true, snatchSquat to false)) {
             val (_, frames) = replay(snatch(), keys, 30)
-            val faulted = snatch().validateRep(frames, calibration).any { it.kind == "catch_depth" }
-            assertEquals(depthFault, faulted)
+            val issue = snatch().validateRep(frames, calibration).firstOrNull { it.kind == "catch_depth" }
+            assertEquals(depthNote, issue != null)
+            issue?.let { assertEquals(false, it.scored) }
         }
     }
 

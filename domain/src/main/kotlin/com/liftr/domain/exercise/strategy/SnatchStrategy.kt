@@ -509,8 +509,13 @@ class SnatchStrategy @Inject constructor(
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState?
     ): List<FormIssue> = listOfNotNull(
-        // No catch depth to judge in a muscle snatch: the lifter does not go under the bar.
-        if (classifyCatch(frames, calibrationData) == CatchType.MUSCLE) null else checkCatchDepth(frames, calibrationData)
+        // A muscle snatch has no catch depth; a power catch above the knees is a
+        // chosen variant, so its depth is noted without costing points.
+        when (classifyCatch(frames, calibrationData)) {
+            CatchType.MUSCLE -> null
+            CatchType.POWER -> checkCatchDepth(frames, calibrationData)?.copy(scored = false)
+            else -> checkCatchDepth(frames, calibrationData)
+        }
     )
 
     override fun classifyCatch(frames: List<AnalyzeRepUseCase.RepFrame>, calibrationData: CalibrationData): CatchType? =
