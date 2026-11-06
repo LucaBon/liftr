@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.liftr.R
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.Set
 
@@ -30,6 +31,21 @@ fun ExerciseType.label(): String = stringResource(labelRes)
 val ExerciseType.depthPartLabelRes: Int
     get() = if (this == ExerciseType.DEADLIFT) R.string.score_part_lockout else R.string.set_summary_depth_header
 
+/** Localized name of how the bar was caught. */
+@Composable
+fun CatchType.label(): String = stringResource(
+    when (this) {
+        CatchType.MUSCLE -> R.string.catch_muscle
+        CatchType.POWER -> R.string.catch_power
+        CatchType.SQUAT -> R.string.catch_squat
+    }
+)
+
+/** "3 power, 1 muscle": reps per catch type. */
+@Composable
+fun Map<CatchType, Int>.catchCountsText(): String =
+    entries.map { (type, count) -> "$count ${type.label().lowercase()}" }.joinToString(", ")
+
 /** The set's custom name for manual entries, otherwise the localized exercise name. */
 @Composable
 fun Set.label(): String = exerciseName ?: exerciseType.label()
@@ -43,6 +59,9 @@ fun Set.trackedSummaryLine(setNumber: Int): String {
         val load = if (exerciseType == ExerciseType.LOADED_JUMP) " @ ${weight.value}kg" else ""
         prefix + "${completedReps.value} jumps$load \u00B7 best %.0f cm".format(height.value * 100)
     } else {
-        prefix + "${weight.value}kg x ${completedReps.value} reps @ " + "%.2f m/s avg".format(avgVelocity.value)
+        // Snatch and clean reps also say how the bar was caught.
+        val catches = reps.mapNotNull { it.catchType }.groupingBy { it }.eachCount().toSortedMap(compareBy { it.ordinal })
+        prefix + "${weight.value}kg x ${completedReps.value} reps @ " + "%.2f m/s avg".format(avgVelocity.value) +
+            if (catches.isEmpty()) "" else " \u00B7 ${catches.catchCountsText()}"
     }
 }

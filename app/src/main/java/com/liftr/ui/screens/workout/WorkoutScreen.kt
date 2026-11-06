@@ -87,7 +87,9 @@ import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.Watts
 import com.liftr.domain.model.ExerciseType
+import com.liftr.ui.common.catchCountsText
 import com.liftr.ui.common.label
+import com.liftr.domain.model.CatchType
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -750,8 +752,17 @@ fun SetSummarySheet(
                     exerciseType = summary.exerciseType,
                     velocities = summary.repVelocities,
                     bestIndex = summary.bestRepIndex,
-                    worstIndex = summary.worstRepIndex
+                    worstIndex = summary.worstRepIndex,
+                    catchTypes = summary.repCatchTypes
                 )
+                summary.catchCounts.takeIf { it.isNotEmpty() }?.let {
+                    Text(
+                        text = "${stringResource(R.string.set_summary_catch_header)}: ${it.catchCountsText()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Spacing.xs)
+                    )
+                }
             }
 
             // Bar path replay card
@@ -917,8 +928,10 @@ fun RepScoreTable(
     exerciseType: ExerciseType,
     velocities: List<com.liftr.domain.value.MetersPerSecond>,
     bestIndex: Int,
-    worstIndex: Int
+    worstIndex: Int,
+    catchTypes: List<CatchType?> = emptyList()
 ) {
+    val showCatch = catchTypes.any { it != null }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -937,6 +950,7 @@ fun RepScoreTable(
             TableCell(text = stringResource(R.string.set_summary_bar_path_header), weight = 1f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_tempo_header), weight = 1f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_form_header), weight = 0.8f, bold = true)
+            if (showCatch) TableCell(text = stringResource(R.string.set_summary_catch_header), weight = 1f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_score_header), weight = 1f, bold = true)
             TableCell(text = "", weight = 0.6f, bold = false) // marker column
         }
@@ -967,6 +981,7 @@ fun RepScoreTable(
                 TableCell(text = "${score.barPathScore}", weight = 1f)
                 TableCell(text = "${score.tempoScore}", weight = 1f)
                 TableCell(text = "${score.formScore}", weight = 0.8f)
+                if (showCatch) TableCell(text = catchTypes.getOrNull(index)?.label() ?: "-", weight = 1f)
                 TableCell(
                     text = "${score.totalScore}",
                     weight = 1f,

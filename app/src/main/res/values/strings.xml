@@ -255,6 +255,10 @@
     <string name="set_summary_title">Set Summary</string>
     <string name="set_summary_overall_score">Overall Score</string>
     <string name="set_summary_rep_header">Rep</string>
+    <string name="set_summary_catch_header">Catch</string>
+    <string name="catch_muscle">Muscle</string>
+    <string name="catch_power">Power</string>
+    <string name="catch_squat">Squat</string>
     <string name="set_summary_vel_header">Vel</string>
     <string name="set_summary_depth_header">Depth</string>
     <string name="set_summary_form_header">Form</string>
