@@ -26,6 +26,7 @@ import com.liftr.domain.value.Percentage
  * @property timestamp Timestamp when the rep was completed
  * @property qualityScore Quality score for this rep (0-100), 0 = not scored
  * @property jump What a jump measured (jump exercises only)
+ * @property catchType How the bar was caught (snatch and clean only); null for other lifts and reps saved before it was judged
  */
 data class Rep(
     val id: Long = 0,
@@ -45,7 +46,8 @@ data class Rep(
     val qualityScore: Int = 0,
     val jump: RepJumpData? = null,
     /** Points per scoring component; null for unscored reps and reps saved before parts were stored. */
-    val scoreParts: RepScoreParts? = null
+    val scoreParts: RepScoreParts? = null,
+    val catchType: CatchType? = null
 ) {
     /**
      * Returns the total duration of the rep in seconds.

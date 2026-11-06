@@ -1,5 +1,6 @@
 package com.liftr.data.mapper
 
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.Rep
 import com.liftr.domain.model.RepScoreParts
 import com.liftr.domain.value.Meters
@@ -39,5 +40,13 @@ class RepMapperScorePartsTest {
         val entity = mapper.toEntity(rep(RepScoreParts(30, 12, 13, 0))).copy(formScore = null)
 
         assertNull(mapper.scoreParts(entity))
+    }
+
+    @Test
+    fun `catch type survives a round trip and is null for older reps`() {
+        val caught = rep(null).copy(catchType = CatchType.POWER)
+
+        assertEquals(CatchType.POWER, mapper.toDomain(mapper.toEntity(caught)).catchType)
+        assertNull(mapper.toDomain(mapper.toEntity(rep(null))).catchType)
     }
 }

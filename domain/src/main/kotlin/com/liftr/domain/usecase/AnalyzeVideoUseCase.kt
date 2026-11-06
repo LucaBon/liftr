@@ -25,6 +25,7 @@ import com.liftr.domain.model.aggregateFormIssues
 import com.liftr.domain.model.BarPathData
 import com.liftr.domain.model.BarPathPoint
 import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.DepthValidationResult
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.FrameAnnotation
@@ -273,6 +274,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repApexHeights = mutableListOf<Meters?>()
         val repFittedGravities = mutableListOf<Float>()
         val repPeakPowers = mutableListOf<Watts?>()
+        val repCatchTypes = mutableListOf<CatchType?>()
+        var lastCatchType: CatchType? = null
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -426,6 +429,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                         )
                     }.getOrNull()
                     val formIssues: List<FormIssue> = analysis?.formValidation?.issues ?: emptyList()
+                    lastCatchType = analysis?.catchType
 
                     RepQualityScorer.scoreRep(
                         exerciseType = params.exerciseType,
@@ -440,6 +444,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 }
                 val repFrames = currentRepPoses.toList()
                 repScores.add(scoreRep(repFrames))
+                repCatchTypes.add(lastCatchType)
                 if (jumpPath != null && transition.jump != null) {
                     landing = PendingLanding(
                         repIndex = repScores.lastIndex,
@@ -512,6 +517,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(
                 cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers,
+                repCatchTypes = repCatchTypes,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
                         .format(repFittedGravities))

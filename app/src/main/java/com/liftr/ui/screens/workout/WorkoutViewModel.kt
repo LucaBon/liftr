@@ -40,6 +40,7 @@ import com.liftr.domain.exercise.strategy.JumpStrategy
 import com.liftr.domain.feedback.IFeedbackEmitter
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.AggregateFormIssue
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.BarPathData
 import com.liftr.domain.model.BarPathPoint
 import com.liftr.domain.model.TempoPrescription
@@ -194,6 +195,7 @@ class WorkoutViewModel @Inject constructor(
     private var setJumpHeights = mutableListOf<Meters>()
     private var setApexHeights = mutableListOf<Meters?>()
     private var setPeakPowers = mutableListOf<Watts?>()
+    private var setCatchTypes = mutableListOf<CatchType?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -426,7 +428,7 @@ class WorkoutViewModel @Inject constructor(
             peakVelocity = summary.peakVelocity,
             jumpHeight = summary.bestJumpHeight,
             timestamp = now,
-            reps = withJumpData(reps, summary)
+            reps = withCatchTypes(withJumpData(reps, summary), summary)
         )
         completedSets.add(completedSet)
         _uiState.update { it.copy(completedSetCount = completedSets.size) }
@@ -461,6 +463,10 @@ class WorkoutViewModel @Inject constructor(
             )
         }
     }
+
+    /** Attach each rep's catch (snatch, clean) so it is saved with the set. */
+    private fun withCatchTypes(reps: List<Rep>, summary: SetSummary): List<Rep> =
+        reps.mapIndexed { index, rep -> rep.copy(catchType = summary.repCatchTypes.getOrNull(index)) }
 
     /** Dismiss the post-analysis error banner. */
     fun clearAnalysisError() {
@@ -928,6 +934,7 @@ class WorkoutViewModel @Inject constructor(
 
         setRepScores.add(score)
         previousConcentricDurations.add(concentricDuration)
+        setCatchTypes.add(analysis?.catchType)
 
         // Track per-rep velocity
         val jump = result.phaseResult?.jump
@@ -1188,6 +1195,7 @@ class WorkoutViewModel @Inject constructor(
         setJumpHeights.clear()
         setApexHeights.clear()
         setPeakPowers.clear()
+        setCatchTypes.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1470,7 +1478,7 @@ class WorkoutViewModel @Inject constructor(
                 peakVelocity = summary.peakVelocity,
                 jumpHeight = summary.bestJumpHeight,
                 timestamp = System.currentTimeMillis(),
-                reps = withJumpData(setReps.toList(), summary)
+                reps = withCatchTypes(withJumpData(setReps.toList(), summary), summary)
             )
             completedSets.add(completedSet)
             logger.i(TAG, "Set accumulated for persistence (${completedSets.size} sets in session)")
@@ -1635,7 +1643,8 @@ class WorkoutViewModel @Inject constructor(
             repBarPaths = setBarPaths.toList(),
             repJumpHeights = setJumpHeights.toList(),
             repApexHeights = setApexHeights.toList(),
-            repPeakPowers = setPeakPowers.toList()
+            repPeakPowers = setPeakPowers.toList(),
+            repCatchTypes = setCatchTypes.toList()
         )
     }
 

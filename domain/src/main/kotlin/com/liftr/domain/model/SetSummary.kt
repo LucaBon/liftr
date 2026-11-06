@@ -31,6 +31,7 @@ import com.liftr.domain.model.BarPathData
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
  * @property repPeakPowers Per-jump peak power (Sayers), null where body mass is unknown; empty for lifts
+ * @property repCatchTypes Per-rep catch (snatch and clean), null where not judged; empty for other lifts
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -54,7 +55,8 @@ data class SetSummary(
     val cameraView: CameraView = CameraView.UNKNOWN,
     /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
     val videoSpeedSuspect: Boolean = false,
-    val repPeakPowers: List<Watts?> = emptyList()
+    val repPeakPowers: List<Watts?> = emptyList(),
+    val repCatchTypes: List<CatchType?> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
@@ -65,6 +67,11 @@ data class SetSummary(
     val avgApexHeight: Meters?
         get() = repApexHeights.filterNotNull().takeIf { it.isNotEmpty() }
             ?.let { heights -> Meters(heights.map { it.value }.average().toFloat()) }
+
+    /** Reps per catch type, in enum order, for the types that occurred. */
+    val catchCounts: Map<CatchType, Int>
+        get() = repCatchTypes.filterNotNull().groupingBy { it }.eachCount()
+            .toSortedMap(compareBy { it.ordinal })
 
     val avgJumpHeight: Meters?
         get() = if (repJumpHeights.isEmpty()) null

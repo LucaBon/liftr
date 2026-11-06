@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.liftr.domain.model.CatchType
 import com.liftr.domain.model.PositionProfile
 import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.VelocityProfile
@@ -42,5 +43,7 @@ data class RepEntity(
     val depthScore: Int? = null,
     val barPathScore: Int? = null,
     val tempoScore: Int? = null,
-    val formScore: Int? = null
+    val formScore: Int? = null,
+    // How the bar was caught (snatch, clean); null for other lifts and rows saved before version 6
+    val catchType: CatchType? = null
 )
