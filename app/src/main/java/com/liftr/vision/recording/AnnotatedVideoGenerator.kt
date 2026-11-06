@@ -66,7 +66,7 @@ class AnnotatedVideoGenerator @Inject constructor(
                 if (encoder == null) {
                     val w = (extractor.width.coerceAtLeast(2)) and 1.inv()
                     val h = (extractor.height.coerceAtLeast(2)) and 1.inv()
-                    val fps = OutputFramePacer.outputFps(extractor.fps)
+                    val fps = OutputFramePacer.outputFps(extractor.timeBase.captureFps)
                     compositor = FrameCompositor(w, h)
                     encoder = AnnotatedVideoEncoder(
                         outputFile = params.outputFile,
