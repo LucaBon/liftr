@@ -1336,6 +1336,8 @@ class WorkoutViewModel @Inject constructor(
             )
         }
 
+        // Read before the suspend: a camera release while the file finalizes clears it.
+        val captureFps = cameraManager.recordingFps
         viewModelScope.launch {
             val videoFile = try {
                 videoRecordingManager.stopRecording()
@@ -1363,7 +1365,7 @@ class WorkoutViewModel @Inject constructor(
                 targetReps = state.targetReps.value,
                 calibrationData = calibration,
                 tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null,
-                knownCaptureFps = cameraManager.recordingFps
+                knownCaptureFps = captureFps
             )
             ContextCompat.startForegroundService(context, intent)
             logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
