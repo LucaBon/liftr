@@ -237,7 +237,12 @@ class AnalyzeVideoUseCase @Inject constructor(
     private fun coarseIntervalMs(exerciseType: ExerciseType): Long =
         if (exerciseType.isFastMovement() && !exerciseType.isJumpExercise()) 15L else 30L
 
-    /** Time windows around each takeoff and landing found in the [coarse] poses. */
+    /**
+     * Time windows around each takeoff and landing found in the [coarse] poses.
+     * A rebound's ground contact is timed from the landing crossing to the next
+     * takeoff crossing, each inside its own window; the frames between, with
+     * the feet on the floor, time nothing and may stay coarse.
+     */
     private fun jumpWindows(params: Params, coarse: List<PoseResult>): List<LongRange> {
         val strategy = strategyFactory.getStrategy(params.exerciseType)
         var state = ExercisePhaseState.initial()
@@ -280,6 +285,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         var lastCatchType: CatchType? = null
         val repJumpQualities = mutableListOf<JumpQuality>()
         val repMechanics = mutableListOf<JumpMechanics?>()
+        val repContactTimesMs = mutableListOf<Float?>()
+        val repReactiveStrengthIndices = mutableListOf<Float?>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -491,6 +498,8 @@ class AnalyzeVideoUseCase @Inject constructor(
                             it, repBarPaths.last().excursion, params.calibrationData, params.weight
                         )
                     )
+                    repContactTimesMs.add(it.contactTimeMs)
+                    repReactiveStrengthIndices.add(it.reactiveStrengthIndex)
                 }
 
                 onProgress(
@@ -531,6 +540,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 repCatchTypes = repCatchTypes,
                 repJumpQualities = repJumpQualities,
                 repMechanics = repMechanics,
+                repContactTimesMs = repContactTimesMs, repReactiveStrengthIndices = repReactiveStrengthIndices,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
                         .format(repFittedGravities))

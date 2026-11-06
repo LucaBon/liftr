@@ -37,6 +37,10 @@ import com.liftr.domain.model.BarPathData
  *   [repJumpHeights]; empty (every jump counts) for lifts and summaries built without it
  * @property repMechanics Per-jump mean push-off force, velocity and power (Samozino), null where
  *   body mass or the push-off distance is unknown; empty for lifts
+ * @property repContactTimesMs Per-jump ground contact before the takeoff, in ms, for rebound jumps
+ *   (see [JumpData.contactTimeMs]); null for the first jump, after a rest and for approach jumps
+ * @property repReactiveStrengthIndices Per-jump RSI (flight time / contact time), null where there
+ *   is no contact time; both index-aligned with [repJumpHeights]
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -63,7 +67,9 @@ data class SetSummary(
     val repPeakPowers: List<Watts?> = emptyList(),
     val repCatchTypes: List<CatchType?> = emptyList(),
     val repJumpQualities: List<JumpQuality> = emptyList(),
-    val repMechanics: List<JumpMechanics?> = emptyList()
+    val repMechanics: List<JumpMechanics?> = emptyList(),
+    val repContactTimesMs: List<Float?> = emptyList(),
+    val repReactiveStrengthIndices: List<Float?> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
@@ -108,6 +114,27 @@ data class SetSummary(
 
     private fun countedApexHeights(): List<Meters> =
         countedJumpIndices.mapNotNull { repApexHeights.getOrNull(it) }
+
+    /** Highest RSI of the set's rebound jumps; null without any. */
+    val bestRsi: Float? get() = repReactiveStrengthIndices.filterNotNull().maxOrNull()
+
+    /**
+     * Mean of the [RSI_BEST_OF] best RSIs, in the manner of the RSI 10/5 test
+     * (ten rebounds, the best five averaged): one lucky bounce weighs less
+     * than in [bestRsi]. Null with fewer rebound jumps than that.
+     */
+    val bestFiveMeanRsi: Float?
+        get() = repReactiveStrengthIndices.filterNotNull()
+            .takeIf { it.size >= RSI_BEST_OF }
+            ?.sortedDescending()?.take(RSI_BEST_OF)?.average()?.toFloat()
+
+    /** The set's RSI: [bestFiveMeanRsi] with enough rebound jumps, else [bestRsi]; null without any. */
+    val setRsi: Float? get() = bestFiveMeanRsi ?: bestRsi
+
+    companion object {
+        /** Rebound jumps whose RSI the set's [bestFiveMeanRsi] averages. */
+        const val RSI_BEST_OF = 5
+    }
 }
 
 /**

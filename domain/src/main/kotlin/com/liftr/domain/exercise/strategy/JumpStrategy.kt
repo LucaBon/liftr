@@ -248,7 +248,9 @@ class JumpStrategy(
             } else {
                 tracking.copy(
                     lowestHipsY = null, takeoffCandidateMs = null, takeoffMs = null, flightSamples = emptyList(),
-                    previousFootY = frame.footY, previousTimestamp = timestamp
+                    previousFootY = frame.footY, previousTimestamp = timestamp,
+                    // Set again below if this flight counts as a jump.
+                    contactStartMs = null
                 )
             }
         )
@@ -288,7 +290,15 @@ class JumpStrategy(
                 heightFromTakeoffToApex(firstOff, toes.getOrNull(onFloor)?.first, apexMs, spanPerMeter)
             }
         val fittedGravity = fitGravity(airborneSamples(tracking.flightSamples, landingLevel), spanPerMeter)
-        val jump = fromFlight.copy(apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs)
+        // Ground contact (see JumpData): both crossings moved down to the
+        // floor by the time the toes take between it and the timing level.
+        val clipMs = JumpData.timingLevelClipMs(crossingFlightMs, timingLevelMeters)
+        val contactTimeMs = tracking.contactStartMs?.takeUnless { approach }
+            ?.let { (takeoffMs - clipMs - it).toFloat() }
+            ?.takeIf { it in Jump.MIN_CONTACT_MS..Jump.MAX_CONTACT_MS }
+        val jump = fromFlight.copy(
+            apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs, contactTimeMs = contactTimeMs
+        )
         val flightMs = jump.flightTimeMs
         if (flightMs < minFlightMs) {
             logger.d(TAG, "Flight of %.0f ms is too short for a jump".format(flightMs))
@@ -307,12 +317,14 @@ class JumpStrategy(
                 grounded, repCompleted = false, debugInfo = "Head did not rise", flightGravity = fittedGravity
             )
         }
-        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f".format(
+        logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f, contact %s".format(
             flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a",
-            takeoffGround, landingGround
+            takeoffGround, landingGround, contactTimeMs?.let { "%.0f ms".format(it) } ?: "n/a"
         ))
+        // A run-up's strides are no rebound contacts: approach jumps time none.
+        val landed = if (approach) grounded else grounded.copy(jump = grounded.jump?.copy(contactStartMs = landingMs + clipMs))
         return PhaseTransitionResult(
-            newState = grounded,
+            newState = landed,
             repCompleted = true,
             debugInfo = "Landed: %.1f cm".format(jump.height.value * 100),
             jump = jump,
@@ -402,6 +414,14 @@ class JumpStrategy(
             )
         }
         next = settled
+
+        // Resting for STILL_MS since the landing ends the rebound: the next
+        // takeoff starts a fresh jump, with no contact time.
+        val contactStart = next.contactStartMs
+        val stillSince = next.stillSinceMs
+        if (contactStart != null && stillSince != null && timestamp - maxOf(stillSince, contactStart) >= Jump.STILL_MS) {
+            next = next.copy(contactStartMs = null)
+        }
 
         val hipDrop = frame.hipsY - tracking.baselineHipsY
         val phase = state.currentPhase

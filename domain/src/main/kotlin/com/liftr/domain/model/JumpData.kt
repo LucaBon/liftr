@@ -22,6 +22,28 @@ import com.liftr.domain.value.MetersPerSecond
  * @property apexHeight Rise from the time between toe-off and the top of the flight: h = g·t² / 2
  * @property takeoffAtMs When the toes left the floor, on the pose clock
  * @property landingAtMs When the toes touched down again, on the pose clock
+ * @property contactTimeMs Ground contact before this jump: from the previous
+ *   jump's touchdown to this takeoff, when the athlete rebounded straight into
+ *   it (see below); null for the first jump, after resting, and for approach jumps
+ *
+ * ## Contact time and reactive strength
+ *
+ * In rebound (repeated, pogo) jumps the athlete takes off again without
+ * settling. The ground contact is the time from one landing to the next
+ * takeoff, timed by the same toe crossings as the flights, so both share their
+ * timing level and its errors largely cancel in the ratio.
+ *
+ * Those crossings sit a timing level L above the floor, which clips both ends
+ * of each flight by [timingLevelClipMs] and adds the same time to the contacts
+ * either side: the toes are on their way down to the floor, or up from it, at
+ * the crossing. The contact is shortened by the previous flight's clip at its
+ * landing and this flight's clip at its takeoff, the time from takeoff to
+ * takeoff stays as measured: contact plus flight add up to the jump's cycle.
+ *
+ * [reactiveStrengthIndex] (flight time over contact time) is the classic
+ * rebound-jump RSI; [rsiHeight] (height over contact time) its m/s variant.
+ * Jumps dropped from a box would time their contact the same way, from the
+ * landing off the box; telling the box height is not done yet.
  */
 data class JumpData(
     val flightTimeMs: Float,
@@ -29,10 +51,31 @@ data class JumpData(
     val takeoffVelocity: MetersPerSecond,
     val apexHeight: Meters? = null,
     val takeoffAtMs: Double? = null,
-    val landingAtMs: Double? = null
+    val landingAtMs: Double? = null,
+    val contactTimeMs: Float? = null
 ) {
+    /** Reactive strength index: flight time over the contact time before it; null without a contact. */
+    val reactiveStrengthIndex: Float?
+        get() = contactTimeMs?.takeIf { it > 0f }?.let { flightTimeMs / it }
+
+    /** Jump height over the contact time before it, in m/s ("RSI (height)"); null without a contact. */
+    val rsiHeight: MetersPerSecond?
+        get() = contactTimeMs?.takeIf { it > 0f }?.let { MetersPerSecond(height.value * 1000f / it) }
+
     companion object {
         private const val GRAVITY = 9.81f
+
+        /**
+         * Time (ms) a toe crossing at [timingLevel] (m) above the floor lags the
+         * real takeoff, and leads the real touchdown, for a flight whose
+         * crossings are [crossingFlightMs] apart: half of what
+         * [fromFlightTime] adds back, (T − T') / 2 with T² = T'² + 8L/g.
+         */
+        fun timingLevelClipMs(crossingFlightMs: Float, timingLevel: Float): Float {
+            val measured = crossingFlightMs / 1000f
+            val t = kotlin.math.sqrt(measured * measured + 8f * timingLevel / GRAVITY)
+            return (t - measured) * 1000f / 2f
+        }
 
         /**
          * @param flightTimeMs Time between the takeoff and landing crossings

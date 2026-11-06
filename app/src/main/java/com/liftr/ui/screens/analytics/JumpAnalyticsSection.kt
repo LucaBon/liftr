@@ -53,12 +53,14 @@ private val PeakColor = Color(0xFFE91E63)
 private val VelocityColor = Color(0xFF9C27B0)
 private val MeanPowerColor = Color(0xFF009688)
 private val FvLineColor = Color(0xFF607D8B)
+private val ContactColor = Color(0xFF795548)
+private val RsiColor = Color(0xFF3F51B5)
 
 /**
  * Jump analytics: averages, the force-velocity profile for loaded jumps, jump
- * height and center-of-mass trends per jump, and the latest set's
- * center-of-mass paths. Jumps that failed the free-fall check are left out of
- * the averages and trends (see [jumpsThatCount]).
+ * height and center-of-mass trends per jump, contact time and RSI trends for
+ * rebound jumps, and the latest set's center-of-mass paths. Jumps that failed
+ * the free-fall check are left out of the averages and trends (see [jumpsThatCount]).
  *
  * @param forceVelocityProfile The profile over the same range; null when the
  *   exercise has none (anything but loaded jumps)
@@ -144,6 +146,29 @@ fun JumpAnalyticsSection(
                 ),
                 xLabels = xLabels,
                 unit = "N"
+            )
+        }
+
+        // Rebound jumps only: the others have no contact time.
+        if (counted.any { it.jump.contactTimeMs != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.jump_contact_time))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_contact_time), ContactColor, counted.map { it.jump.contactTimeMs })
+                ),
+                xLabels = xLabels,
+                unit = "ms"
+            )
+        }
+        if (counted.any { it.jump.reactiveStrengthIndex != null }) {
+            AnalyticsSectionTitle(stringResource(R.string.jump_rsi))
+            MultiLineTrendChart(
+                series = listOf(
+                    ChartSeries(stringResource(R.string.jump_rsi), RsiColor, counted.map { it.jump.reactiveStrengthIndex })
+                ),
+                xLabels = xLabels,
+                unit = "",
+                decimals = 2
             )
         }
 
@@ -241,6 +266,18 @@ private fun JumpAveragesCard(jumps: List<JumpRepRecord>) {
                     StatItem(label = stringResource(R.string.jump_mean_power), value = avgOf("%.0f W") { it.meanPowerW })
                     StatItem(label = stringResource(R.string.jump_relative_force), value = avgOf("%.1f N/kg") { it.relativeForce })
                     StatItem(label = stringResource(R.string.jump_relative_power), value = avgOf("%.1f W/kg") { it.relativePower })
+                }
+            }
+            val contacts = jumps.mapNotNull { it.jump.contactTimeMs }
+            val rsis = jumps.mapNotNull { it.jump.reactiveStrengthIndex }
+            if (contacts.isNotEmpty() && rsis.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    StatItem(label = stringResource(R.string.jump_contact_time), value = "%.0f ms".format(contacts.average()))
+                    StatItem(label = stringResource(R.string.jump_rsi), value = "%.2f".format(rsis.average()))
+                    StatItem(label = stringResource(R.string.set_summary_best_rsi), value = "%.2f".format(rsis.max()))
                 }
             }
         }

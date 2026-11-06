@@ -31,6 +31,10 @@ import kotlinx.serialization.Serializable
  * The push-off fields are all null together: without a body mass, without a
  * measured dip and takeoff height, when the push-off was implausible, and in
  * rows saved before they were measured.
+ *
+ * @property contactTimeMs Ground contact before this jump, for a rebound jump
+ *   (see [JumpData.contactTimeMs]); null otherwise and in rows saved before it
+ * @property reactiveStrengthIndex Flight time over [contactTimeMs]; null with no contact time
  */
 @Serializable
 data class RepJumpData(
@@ -49,7 +53,9 @@ data class RepJumpData(
     val meanForceN: Float? = null,
     val meanVelocity: Float? = null,
     val meanPowerW: Float? = null,
-    val systemMassKg: Float? = null
+    val systemMassKg: Float? = null,
+    val contactTimeMs: Float? = null,
+    val reactiveStrengthIndex: Float? = null
 ) {
     /** Whether this jump's numbers can be trusted; see [JumpQuality]. */
     val quality: JumpQuality get() = JumpQuality.of(fitCheck)
@@ -62,6 +68,10 @@ data class RepJumpData(
 
     /** Mean push-off power per kilogram of system mass, in W/kg. */
     val relativePower: Float? get() = systemMassKg?.let { m -> meanPowerW?.div(m) }
+
+    /** Jump height over contact time ("RSI (height)"), in m/s; null with no contact time. */
+    val rsiHeightMps: Float?
+        get() = contactTimeMs?.takeIf { it > 0f }?.let { flightHeightCm * 10f / it }
 
     /** The path as [BarPathData], for the replay card. */
     fun toBarPathData(repNumber: Int): BarPathData {
@@ -82,7 +92,9 @@ data class RepJumpData(
             apexHeightCm: Float?,
             barPath: BarPathData?,
             peakPowerW: Float? = null,
-            mechanics: JumpMechanics? = null
+            mechanics: JumpMechanics? = null,
+            contactTimeMs: Float? = null,
+            reactiveStrengthIndex: Float? = null
         ): RepJumpData {
             val excursion = barPath?.excursion
             return RepJumpData(
@@ -103,7 +115,9 @@ data class RepJumpData(
                 meanForceN = mechanics?.meanForceN,
                 meanVelocity = mechanics?.meanVelocity,
                 meanPowerW = mechanics?.meanPowerW,
-                systemMassKg = mechanics?.systemMassKg
+                systemMassKg = mechanics?.systemMassKg,
+                contactTimeMs = contactTimeMs,
+                reactiveStrengthIndex = reactiveStrengthIndex
             )
         }
     }

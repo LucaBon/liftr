@@ -200,6 +200,8 @@ class WorkoutViewModel @Inject constructor(
     private var setCatchTypes = mutableListOf<CatchType?>()
     private var setJumpQualities = mutableListOf<JumpQuality>()
     private var setMechanics = mutableListOf<JumpMechanics?>()
+    private var setContactTimesMs = mutableListOf<Float?>()
+    private var setReactiveStrengthIndices = mutableListOf<Float?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -464,7 +466,9 @@ class WorkoutViewModel @Inject constructor(
                     apexHeightCm = summary.repApexHeights.getOrNull(index)?.let { it.value * 100f },
                     barPath = summary.repBarPaths.getOrNull(index),
                     peakPowerW = summary.repPeakPowers.getOrNull(index)?.value,
-                    mechanics = summary.repMechanics.getOrNull(index)
+                    mechanics = summary.repMechanics.getOrNull(index),
+                    contactTimeMs = summary.repContactTimesMs.getOrNull(index),
+                    reactiveStrengthIndex = summary.repReactiveStrengthIndices.getOrNull(index)
                 )
             )
         }
@@ -959,6 +963,8 @@ class WorkoutViewModel @Inject constructor(
                 strategy.pushOffMechanics(it, barPathData.excursion, c, _uiState.value.weight)
             })
             setJumpQualities.add(JumpQuality.of(barPathData.excursion?.fitCheck))
+            setContactTimesMs.add(it.contactTimeMs)
+            setReactiveStrengthIndices.add(it.reactiveStrengthIndex)
         }
 
         // Build Rep domain object for persistence
@@ -1207,6 +1213,8 @@ class WorkoutViewModel @Inject constructor(
         setCatchTypes.clear()
         setJumpQualities.clear()
         setMechanics.clear()
+        setContactTimesMs.clear()
+        setReactiveStrengthIndices.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1658,7 +1666,9 @@ class WorkoutViewModel @Inject constructor(
             repPeakPowers = setPeakPowers.toList(),
             repCatchTypes = setCatchTypes.toList(),
             repJumpQualities = setJumpQualities.toList(),
-            repMechanics = setMechanics.toList()
+            repMechanics = setMechanics.toList(),
+            repContactTimesMs = setContactTimesMs.toList(),
+            repReactiveStrengthIndices = setReactiveStrengthIndices.toList()
         )
     }
 
