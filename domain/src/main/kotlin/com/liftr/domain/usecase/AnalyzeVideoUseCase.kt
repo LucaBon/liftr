@@ -342,7 +342,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 currentRepPoses.add(pose)
             }
 
-            if (velocity != null && (newPhase == MovementPhase.ECCENTRIC || newPhase == MovementPhase.CONCENTRIC)) {
+            if (velocity != null && params.exerciseType.isConcentricPhase(newPhase)) {
                 repVelocitySum += velocity.instantaneous.value
                 repVelocityCount++
             }

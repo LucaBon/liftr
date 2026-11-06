@@ -29,6 +29,19 @@ enum class ExerciseType {
     fun startsWithConcentric(): Boolean = this == DEADLIFT
 
     /**
+     * Whether [phase] is part of the lifting (concentric) movement whose mean
+     * velocity is the rep's velocity. Squats and the bench lift in CONCENTRIC;
+     * a deadlift starts with it; a clean or snatch lifts through the first pull
+     * (ECCENTRIC) and second pull (BOTTOM) up to the catch (CONCENTRIC), which
+     * is the lifter dropping under the bar.
+     */
+    fun isConcentricPhase(phase: MovementPhase): Boolean = when (this) {
+        FRONT_SQUAT, BACK_SQUAT, BENCH_PRESS, DEADLIFT,
+        VERTICAL_JUMP, LOADED_JUMP, APPROACH_JUMP -> phase == MovementPhase.CONCENTRIC
+        CLEAN, SNATCH -> phase == MovementPhase.ECCENTRIC || phase == MovementPhase.BOTTOM
+    }
+
+    /**
      * Whether a side-on camera can be told from a front one by the athlete's
      * standing shoulder width. Every exercise is filmed from the side, but a
      * lifter lying on a bench never stands, so its view can't be judged.
