@@ -3,6 +3,7 @@ package com.liftr.domain.usecase
 import com.liftr.domain.calculator.ForceVelocityProfileResult
 import com.liftr.domain.calculator.ForceVelocityRejection
 import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.model.JumpFitCheck
 import com.liftr.domain.model.JumpRepRecord
 import com.liftr.domain.model.RepJumpData
 import com.liftr.domain.model.TimeRange
@@ -45,6 +46,23 @@ class GetAnalyticsSummaryUseCaseTest {
 
         coVerify { repository.getJumpReps(ExerciseType.LOADED_JUMP, TimeRange.ONE_MONTH) }
         val profile = summary.forceVelocityProfile!!.profileOrNull!!
+        assertEquals(30f, profile.f0, 1e-3f)
+        assertEquals(3, profile.points.size)
+    }
+
+    @Test
+    fun `suspect jumps stay out of the profile`() = runTest {
+        val badFit = JumpFitCheck(
+            gravityEstimate = 4f, gravityTStat = 9f, gravityOk = false, durbinWatson = 2f,
+            lag1Autocorrelation = 0f, residualStep = false, residualsOk = true, rmsCm = 1f, samples = 20
+        )
+        val suspect = jump(60f, 2.5f).let { it.copy(jump = it.jump.copy(fitCheck = badFit)) }
+        coEvery { repository.getJumpReps(ExerciseType.LOADED_JUMP, any()) } returns
+            listOf(jump(40f, 1.0f), jump(20f, 1.2f), jump(0f, 1.4f), suspect)
+
+        val profile = useCase(GetAnalyticsSummaryUseCase.Params(ExerciseType.LOADED_JUMP, TimeRange.ALL))
+            .forceVelocityProfile!!.profileOrNull!!
+
         assertEquals(30f, profile.f0, 1e-3f)
         assertEquals(3, profile.points.size)
     }
