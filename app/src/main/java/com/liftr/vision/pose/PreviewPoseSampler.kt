@@ -9,6 +9,7 @@ import com.liftr.util.Constants
 import com.liftr.vision.camera.LensDistortionCorrector
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -26,8 +27,14 @@ class PreviewPoseSampler @Inject constructor(
 
     /** Samples [previewView] until cancelled, passing every detected pose to [onPose]. */
     suspend fun sample(previewView: PreviewView, onPose: (PoseResult) -> Unit) {
-        val detector = withContext(Dispatchers.Default) {
-            VideoFramePoseDetector(context, logger, lensDistortionCorrector, Constants.POSE_MODEL_WORKOUT)
+        // The camera rebinds as the screen opens, which cancels and restarts
+        // sampling within moments: create no detector for a session that short.
+        delay(INTERVAL_MS)
+        // CPU: two snapshots a second need no GPU, and a GPU landmarker closed
+        // while its GL thread is still starting crashes the app natively.
+        // Non-cancellable so a detector created as sampling stops is still closed below.
+        val detector = withContext(NonCancellable + Dispatchers.Default) {
+            VideoFramePoseDetector(context, logger, lensDistortionCorrector, Constants.POSE_MODEL_WORKOUT, useGpu = false)
         }
         logger.d(TAG, "Preview sampling started")
         try {
@@ -40,7 +47,7 @@ class PreviewPoseSampler @Inject constructor(
                 pose?.let(onPose)
             }
         } finally {
-            detector.close()
+            withContext(NonCancellable + Dispatchers.Default) { detector.close() }
             logger.d(TAG, "Preview sampling stopped")
         }
     }

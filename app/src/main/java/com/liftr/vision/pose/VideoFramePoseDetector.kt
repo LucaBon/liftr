@@ -36,13 +36,17 @@ import java.io.Closeable
  *   parabola by a couple of centimeters, the same way in every jump, which
  *   biases the takeoff velocity and the free-fall checks. Per-frame detection
  *   is noisier and misses a few more frames, but its errors are random.
+ * @param useGpu Try the GPU delegate first. Off for short-lived, low-rate
+ *   detectors: closing a GPU landmarker while its GL thread is still starting
+ *   crashes natively (SIGBUS in mediapipe_gl_runner).
  */
 class VideoFramePoseDetector(
     private val context: Context,
     private val logger: Logger,
     private val lensDistortionCorrector: LensDistortionCorrector,
     modelPath: String = Constants.POSE_MODEL_HEAVY,
-    private val perFrame: Boolean = false
+    private val perFrame: Boolean = false,
+    useGpu: Boolean = true
 ) : Closeable {
 
     private var poseLandmarker: PoseLandmarker? = null
@@ -51,7 +55,7 @@ class VideoFramePoseDetector(
 
     init {
         logger.i(TAG, "Initializing with model: $modelPath (${runningMode()})")
-        poseLandmarker = createLandmarker(modelPath, Delegate.GPU)
+        poseLandmarker = (if (useGpu) createLandmarker(modelPath, Delegate.GPU) else null)
             ?: createLandmarker(modelPath, Delegate.CPU)
         if (poseLandmarker == null) {
             logger.e(TAG, "Failed to create PoseLandmarker (GPU and CPU)")
