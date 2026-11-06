@@ -5,9 +5,11 @@ import com.liftr.domain.exercise.ExerciseMetrics
 import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.ExerciseStrategy
 import com.liftr.domain.exercise.ExerciseThresholds.Jump
+import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.exercise.FormValidationResult
 import com.liftr.domain.exercise.JumpTrackingState
 import com.liftr.domain.exercise.PhaseTransitionResult
+import com.liftr.domain.exercise.Severity
 import com.liftr.domain.exercise.ToePoint
 import com.liftr.domain.exercise.ToeTrack
 import com.liftr.domain.logging.Logger
@@ -18,6 +20,7 @@ import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.VelocityData
+import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.value.Joules
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
@@ -755,12 +758,84 @@ class JumpStrategy(
         )
     }
 
+    /**
+     * Peak power of [jump], by the Sayers equation (Sayers et al. 1999):
+     * P[W] = 60.7·h[cm] + 45.3·m[kg] − 2055, with h the height from flight
+     * time and m the system mass: body mass from the calibration, plus [load]
+     * for a loaded jump (a bodyweight jump ignores whatever load was entered).
+     *
+     * Sayers rather than impulse-momentum: peak power from takeoff velocity
+     * needs the force over the propulsive phase, and from video that means
+     * timing the start of the push-off and assuming a force profile — far
+     * noisier than flight time, our most robust measure, which is all Sayers
+     * needs. It was fitted to bodyweight squat and countermovement jumps; for
+     * loaded jumps the system mass is an extrapolation, fine for tracking
+     * change over time, not for comparing against force-plate numbers.
+     *
+     * Null without a body mass, or when the formula leaves its range (≤ 0 W),
+     * rather than a wrong number. [calculateMetrics] reports the mechanical
+     * load × velocity product for every lift and has neither body mass nor
+     * flight time, so jump power comes from here.
+     */
+    fun peakPower(jump: JumpData, calibrationData: CalibrationData, load: Kilograms): Watts? {
+        val bodyMass = calibrationData.anthropometricData?.userWeight?.takeIf { it > 0f } ?: return null
+        val systemMass = bodyMass + if (exerciseType == ExerciseType.LOADED_JUMP) load.value else 0f
+        val power = 60.7f * jump.height.value * 100f + 45.3f * systemMass - 2055f
+        return if (power > 0f) Watts(power) else null
+    }
+
     override fun validateForm(
         poseResult: PoseResult,
         calibrationData: CalibrationData,
         currentState: ExercisePhaseState?,
         phase: MovementPhase?
     ): FormValidationResult = FormValidationResult(isValid = true, issues = emptyList())
+
+    override fun validateRep(
+        frames: List<AnalyzeRepUseCase.RepFrame>,
+        calibrationData: CalibrationData,
+        currentState: ExercisePhaseState?
+    ): List<FormIssue> = listOfNotNull(checkLanding(frames))
+
+    /**
+     * Stiff landing: the knees bend less than [Jump.STIFF_LANDING_KNEE_FLEXION_DEG]
+     * within [Jump.LANDING_WINDOW_MS] of touchdown. Touchdown is the first frame
+     * after the flight (the phase leaves TOP when the feet are back down);
+     * knee flexion is read on the near side. Time-based, so it holds at any fps.
+     * No flight, or no knee seen after it, is no finding.
+     */
+    private fun checkLanding(frames: List<AnalyzeRepUseCase.RepFrame>): FormIssue? {
+        val lastAirborne = frames.indexOfLast { it.phase == MovementPhase.TOP }
+        val touchdown = frames.getOrNull(lastAirborne + 1)?.takeIf { lastAirborne >= 0 } ?: return null
+        val startUs = touchdown.pose.timestampUs
+        val peakFlexion = frames.drop(lastAirborne + 1)
+            .takeWhile { it.pose.timestampUs - startUs <= Jump.LANDING_WINDOW_MS * 1000 }
+            .mapNotNull { kneeFlexion(it.pose) }
+            .maxOrNull() ?: return null
+        if (peakFlexion >= Jump.STIFF_LANDING_KNEE_FLEXION_DEG) return null
+        return FormIssue(
+            severity = Severity.WARNING,
+            message = "Stiff landing: knees bent only %.0f°".format(peakFlexion),
+            suggestion = "Land softly: let the hips and knees bend to absorb the landing",
+            kind = "stiff_landing"
+        )
+    }
+
+    /** Near-side knee flexion in degrees (0 = straight), or null if the leg isn't visible. */
+    private fun kneeFlexion(pose: PoseResult): Float? {
+        val (hip, knee, ankle) = nearSideLandmarks(
+            pose,
+            left = listOf(PoseResult.LEFT_HIP, PoseResult.LEFT_KNEE, PoseResult.LEFT_ANKLE),
+            right = listOf(PoseResult.RIGHT_HIP, PoseResult.RIGHT_KNEE, PoseResult.RIGHT_ANKLE),
+            minVisibility = Jump.MIN_VISIBILITY
+        ) ?: return null
+        val sx = pose.aspectScaleX
+        val thigh = kotlin.math.atan2((hip.y - knee.y).toDouble(), ((hip.x - knee.x) * sx).toDouble())
+        val shin = kotlin.math.atan2((ankle.y - knee.y).toDouble(), ((ankle.x - knee.x) * sx).toDouble())
+        var angle = Math.toDegrees(kotlin.math.abs(thigh - shin))
+        if (angle > 180) angle = 360 - angle
+        return (180 - angle).toFloat()
+    }
 
     override fun getRequiredLandmarks(): List<Int> = criteria.targetBodyParts
 

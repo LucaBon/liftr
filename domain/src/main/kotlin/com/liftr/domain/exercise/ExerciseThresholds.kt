@@ -407,6 +407,18 @@ object ExerciseThresholds {
 
         /** Approach jumps: a toe planted this long is in stance, and its height is the floor (3 frames at 40 fps, 4 at 30) */
         const val APPROACH_STANCE_MS = 80L
+
+        /**
+         * Time after touchdown within which the knees reach their deepest bend on landing.
+         * Peak knee flexion of a drop or jump landing comes 60-150 ms after contact.
+         */
+        const val LANDING_WINDOW_MS = 300L
+
+        /**
+         * Peak knee flexion on landing (0° = straight) below which the landing is stiff.
+         * The LESS screen scores sagittal knee displacement under 45° as a stiff landing.
+         */
+        const val STIFF_LANDING_KNEE_FLEXION_DEG = 45f
     }
 
     /**
