@@ -30,7 +30,8 @@ import kotlin.math.roundToInt
  *
  * Frame times are real time: slow-motion files, whose timestamps are
  * stretched to play back slowly, are mapped back through [VideoTimeBase].
- * Variable-speed files are rejected with a [LiftrError.ValidationError].
+ * Slow-motion files that change speed are rejected with a
+ * [LiftrError.ValidationError]; a real-time file with a varying frame rate is fine.
  *
  * Each emitted [VideoFrame.bitmap] MUST be recycled by the collector after use.
  */
@@ -119,8 +120,8 @@ class VideoFrameExtractor(
         if (durationMs <= 0L) {
             throw IllegalStateException("Video has zero duration: ${videoFile.name}")
         }
-        logger.i(TAG, "Time base: capture ${timeBase.captureFps}fps, scale ${timeBase.timeScale}, variable=${timeBase.isVariableSpeed}")
-        if (timeBase.isVariableSpeed) {
+        logger.i(TAG, "Time base: capture ${timeBase.captureFps}fps, scale ${timeBase.timeScale}, variable=${timeBase.isVariableSpeed}, slowMo=${timeBase.isSlowMotion}")
+        if (timeBase.rejectsSpeedChange) {
             throw LiftrError.ValidationError(
                 field = "video",
                 message = "Slow-motion videos that change speed can't be analyzed yet. " +

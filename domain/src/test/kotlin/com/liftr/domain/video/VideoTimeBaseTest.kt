@@ -82,4 +82,30 @@ class VideoTimeBaseTest {
         val r = VideoTimeBase.resolve(60f, null, null, deltas(60.0))
         assertEquals(16_667L, r.realTimeUs(16_667L))
     }
+
+    @Test
+    fun `real time file with an fps drop is accepted`() {
+        // 30 fps that drops to 15 fps in dim light: container time is real time.
+        val d = deltas(30.0, 30) + deltas(15.0, 30)
+        val r = VideoTimeBase.resolve(30f, null, null, d)
+        assertTrue(r.isVariableSpeed)
+        assertFalse(r.rejectsSpeedChange)
+    }
+
+    @Test
+    fun `slow motion with mixed speeds is rejected`() {
+        val d = deltas(30.0, 30) + deltas(240.0, 30)
+        assertTrue(VideoTimeBase.resolve(30f, null, 240f, d).rejectsSpeedChange)
+    }
+
+    @Test
+    fun `slow motion metadata rejects mixed speeds even when the known fps says real time`() {
+        val d = deltas(30.0, 30) + deltas(240.0, 30)
+        assertTrue(VideoTimeBase.resolve(30f, 30, 240f, d).rejectsSpeedChange)
+    }
+
+    @Test
+    fun `constant slow motion is accepted`() {
+        assertFalse(VideoTimeBase.resolve(30f, null, 240f, deltas(30.0)).rejectsSpeedChange)
+    }
 }

@@ -9,8 +9,17 @@ object VideoTimeBase {
     data class Result(
         val timeScale: Float,
         val captureFps: Float,
-        val isVariableSpeed: Boolean
+        val isVariableSpeed: Boolean,
+        /** The file is (or declares itself) slow motion: its timestamps are stretched. */
+        val isSlowMotion: Boolean = timeScale > 1f
     ) {
+        /**
+         * A slow-motion file whose speed changes can't be mapped to real time
+         * with one scale. A real-time file whose frame rate varies (auto
+         * exposure, an encoder hiccup) is fine: its timestamps are real time.
+         */
+        val rejectsSpeedChange: Boolean get() = isVariableSpeed && isSlowMotion
+
         /** Real time of a container time (both in microseconds from the first frame). */
         fun realTimeUs(containerUs: Long): Long =
             if (timeScale == 1f) containerUs else Math.round(containerUs / timeScale.toDouble())
@@ -31,7 +40,9 @@ object VideoTimeBase {
             ?: containerFps
         val ratio = if (containerFps > 0f) captureFps / containerFps else 1f
         val scale = if (ratio >= MIN_SLOWMO_SCALE) ratio else 1f
-        return Result(scale, captureFps, isVariableSpeed(ptsDeltasUs))
+        val metadataSlowMo = containerFps > 0f && metadataCaptureFps != null &&
+            metadataCaptureFps / containerFps >= MIN_SLOWMO_SCALE
+        return Result(scale, captureFps, isVariableSpeed(ptsDeltasUs), scale > 1f || metadataSlowMo)
     }
 
     /** Median over sliding windows: a lone dropped frame or jitter never moves a window median. */
