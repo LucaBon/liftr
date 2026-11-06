@@ -10,6 +10,9 @@ import androidx.camera.video.Recorder
 import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import androidx.lifecycle.LifecycleOwner
 import android.util.Log
 import com.liftr.di.CameraExecutor
@@ -54,9 +57,13 @@ class CameraManager @Inject constructor(
      * high-speed session's rate. Null for normal recording, where CameraX
      * only gets a requested target rate and the actual one is not reported.
      */
-    @Volatile
-    var recordingFps: Int? = null
-        private set
+    private val _recordingFps = MutableStateFlow<Int?>(null)
+    var recordingFps: Int?
+        get() = _recordingFps.value
+        private set(value) { _recordingFps.value = value }
+
+    /** Same value as [recordingFps], observable: the UI warns when fast movements can't get high speed. */
+    val recordingFpsFlow: StateFlow<Int?> = _recordingFps.asStateFlow()
     private var currentMode: CameraMode = CameraMode.ANALYSIS_ONLY
 
     @Volatile
