@@ -55,6 +55,8 @@ data class SetSummary(
     val cameraView: CameraView = CameraView.UNKNOWN,
     /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
     val videoSpeedSuspect: Boolean = false,
+    /** A jump flight took the head out of the top of the frame: the camera is too close or too low. */
+    val headOutOfFrame: Boolean = false,
     val repPeakPowers: List<Watts?> = emptyList(),
     val repCatchTypes: List<CatchType?> = emptyList()
 ) {

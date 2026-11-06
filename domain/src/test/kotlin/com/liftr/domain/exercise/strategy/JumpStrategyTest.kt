@@ -367,6 +367,51 @@ class JumpStrategyTest {
             p.copy(landmarks = edit(i, p.landmarks))
         }
 
+    /**
+     * [frames] filmed with the frame's top edge cutting through the head at
+     * the top of the flight: landmarks above it are clamped onto the edge
+     * ([visible]) or, as the detector also reports them, not visible.
+     */
+    private fun headCutByTopEdge(frames: List<PoseResult>, visible: Boolean) = frames.map { p ->
+        p.copy(landmarks = p.landmarks.map { lm ->
+            if (lm.y >= 0f) lm else if (visible) lm.copy(y = 0f) else lm.copy(y = 0f, visibility = 0.1f)
+        })
+    }
+
+    @Test
+    fun `head leaving the top of the frame mid-flight still counts the jump`() {
+        for (visible in listOf(true, false)) {
+            // Nose at 0.10 of the frame, a 44 cm flight would lift it 0.23: out
+            // the top, the edge showing it under half the rise.
+            val run = run(headCutByTopEdge(jumpFrames(1000, flightS = 0.6f), visible))
+
+            assertEquals("nose clamped visible=$visible", 1, run.reps)
+            assertEquals(expectedHeight(0.6f), run.jumps.single().height.value, 0.01f)
+        }
+    }
+
+    @Test
+    fun `head leaving the top of the frame mid-flight is reported`() {
+        var state = ExercisePhaseState.initial()
+        var reported = false
+        for (frame in headCutByTopEdge(jumpFrames(1000, flightS = 0.5f), visible = false)) {
+            val result = strategy.detectPhase(frame, calibration, state)
+            state = result.newState
+            reported = reported || result.headLeftFrameInFlight
+        }
+        assertTrue(reported)
+    }
+
+    @Test
+    fun `a jump with the head in frame is not reported as cut`() {
+        var state = ExercisePhaseState.initial()
+        for (frame in jumpFrames(1000, flightS = 0.3f)) {
+            val result = strategy.detectPhase(frame, calibration, state)
+            state = result.newState
+            assertTrue(!result.headLeftFrameInFlight)
+        }
+    }
+
     @Test
     fun `toes rising on their own while standing is not a jump`() {
         // Seen on a real recording: the foot rocks onto the heel (or the toe

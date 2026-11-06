@@ -454,5 +454,6 @@
     <string name="jump_filmed_from_front">Filmed from the front: heights may be off if you moved toward or away from the camera. Film jumps from the side.</string>
     <string name="import_video">Import video</string>
     <string name="import_video_as">Import video as %1$s</string>
+    <string name="jump_head_out_of_frame">Your head left the top of the frame during the jump: move the phone farther away or raise it, leaving room above your head.</string>
     <string name="high_speed_unavailable_hint">In-app recording is limited to 60 fps. For jumps, cleans and snatches, record in slow motion with your phone\'s camera and import the video.</string>
 </resources>

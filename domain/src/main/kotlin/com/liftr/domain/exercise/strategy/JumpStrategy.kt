@@ -101,13 +101,17 @@ class JumpStrategy(
         private const val TOE_OFF_LEAD_MS = 60L
     }
 
-    /** Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet. */
+    /**
+     * Head, hip and toe heights, oriented so that larger = lower; [upsideDown] when the pose had the head below the feet.
+     * [headOutTop]: the head is at or past the top edge of the frame, so [headY] is the edge, not the head.
+     */
     private data class Frame(
         val headY: Float,
         val hipsY: Float,
         val footY: Float,
         val upsideDown: Boolean = false,
-        val toes: List<ToePoint> = emptyList()
+        val toes: List<ToePoint> = emptyList(),
+        val headOutTop: Boolean = false
     )
 
     override fun detectPhase(
@@ -118,7 +122,9 @@ class JumpStrategy(
         // Milliseconds with the microseconds kept: at 240 fps a whole
         // millisecond is a quarter of a frame.
         val now = poseResult.timestampUs / 1000.0
-        val frame = readFrame(poseResult)
+        // The first frame sets the body span, which needs the whole head.
+        val frame = readFrame(poseResult, currentState.jump)
+            ?.takeUnless { it.headOutTop && currentState.jump == null }
             ?: return PhaseTransitionResult(
                 // Drop the previous sample so timing never interpolates across a
                 // gap, and end any run of upside-down frames: a turned camera
@@ -160,7 +166,7 @@ class JumpStrategy(
             return PhaseTransitionResult(
                 newState = currentState.copy(
                     currentPhase = MovementPhase.IDLE,
-                    jump = baselineFrom(frame, now)
+                    jump = baselineFrom(frame, now, stored)
                 ),
                 repCompleted = false,
                 debugInfo = "Camera turned, standing baseline set"
@@ -191,7 +197,7 @@ class JumpStrategy(
             logger.d(TAG, "Flight exceeded ${Jump.MAX_FLIGHT_MS} ms, discarding")
             val spanPerMeter = tracking.bodySpan / (Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight)
             return PhaseTransitionResult(
-                newState = state.copy(currentPhase = MovementPhase.IDLE, jump = baselineFrom(frame, timestamp)),
+                newState = state.copy(currentPhase = MovementPhase.IDLE, jump = baselineFrom(frame, timestamp, tracking)),
                 repCompleted = false,
                 debugInfo = "Tracking lost in flight",
                 flightGravity = fitGravity(tracking.flightSamples, spanPerMeter)
@@ -219,7 +225,8 @@ class JumpStrategy(
                 previousTimestamp = timestamp,
                 flightSamples = tracking.flightSamples + (timestamp to rise),
                 flightHipSamples = tracking.flightHipSamples + (timestamp to tracking.baselineHipsY - frame.hipsY),
-                peakHeadRise = maxOf(tracking.peakHeadRise, headRise(tracking, frame))
+                peakHeadRise = maxOf(tracking.peakHeadRise, headRise(tracking, frame)),
+                headLeftFrame = tracking.headLeftFrame || frame.headOutTop
             )
             return PhaseTransitionResult(
                 newState = state.copy(jump = sampled),
@@ -242,7 +249,7 @@ class JumpStrategy(
         val grounded = state.copy(
             currentPhase = MovementPhase.IDLE,
             jump = if (landingRise != 0f || approach) {
-                baselineFrom(frame, timestamp)
+                baselineFrom(frame, timestamp, tracking)
             } else {
                 tracking.copy(
                     lowestHipsY = null, takeoffCandidateMs = null, takeoffMs = null, flightSamples = emptyList(),
@@ -254,6 +261,7 @@ class JumpStrategy(
         if (crossingFlightMs < minFlightMs) {
             return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
         }
+        val headLeftFrame = tracking.headLeftFrame || frame.headOutTop
 
         // The timing level in meters: a fraction of the nose-to-toe span.
         val timingLevelMeters = Jump.TIMING_LEVEL * Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight
@@ -290,15 +298,19 @@ class JumpStrategy(
         val flightMs = jump.flightTimeMs
         if (flightMs < minFlightMs) {
             logger.d(TAG, "Flight of %.0f ms is too short for a jump".format(flightMs))
-            return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Flight too short")
+            return PhaseTransitionResult(
+                grounded, repCompleted = false, debugInfo = "Flight too short", headLeftFrameInFlight = headLeftFrame
+            )
         }
 
         // A real flight lifts the whole body: toes "rising" on their own (the
         // foot rocking onto the heel, a far foot flickering in and out of view)
-        // leave the head where it was.
+        // leave the head where it was. A head that left the top of the frame
+        // rose at least that far, and the toes alone don't take it there.
         val expectedHeadRise = jump.height.value * spanPerMeter
         val headRise = maxOf(tracking.peakHeadRise, headRise(tracking, frame))
-        if (headRise < Jump.MIN_HEAD_RISE_FRACTION * expectedHeadRise) {
+        if (headLeftFrame) logger.d(TAG, "Head left the top of the frame in flight: camera too close or too low")
+        if (!headLeftFrame && headRise < Jump.MIN_HEAD_RISE_FRACTION * expectedHeadRise) {
             logger.d(TAG, "Feet-only flight of %.0f ms, head rose %.0f%% of a jump: not a jump"
                 .format(flightMs, 100 * headRise / expectedHeadRise))
             return PhaseTransitionResult(
@@ -314,7 +326,8 @@ class JumpStrategy(
             repCompleted = true,
             debugInfo = "Landed: %.1f cm".format(jump.height.value * 100),
             jump = jump,
-            flightGravity = fittedGravity
+            flightGravity = fittedGravity,
+            headLeftFrameInFlight = headLeftFrame
         )
     }
 
@@ -381,7 +394,8 @@ class JumpStrategy(
                         takeoffMs = takeoffCandidate,
                         flightSamples = listOf(timestamp to rise),
                         flightHipSamples = listOf(timestamp to tracking.baselineHipsY - frame.hipsY),
-                        peakHeadRise = headRise(tracking, frame)
+                        peakHeadRise = headRise(tracking, frame),
+                        headLeftFrame = frame.headOutTop
                     )
                 ),
                 repCompleted = false,
@@ -455,7 +469,7 @@ class JumpStrategy(
         if (timestamp - since!! < Jump.STILL_MS) return tracking
         val atBaseline = kotlin.math.abs(frame.footY - tracking.baselineFootY) < tolerance &&
             kotlin.math.abs(frame.hipsY - tracking.baselineHipsY) < tolerance
-        return if (atBaseline) tracking else baselineFrom(frame, timestamp)
+        return if (atBaseline) tracking else baselineFrom(frame, timestamp, tracking)
     }
 
     /**
@@ -476,7 +490,7 @@ class JumpStrategy(
         return tracking.copy(
             baselineFootY = tracking.baselineFootY + a * (frame.footY - tracking.baselineFootY),
             baselineHipsY = tracking.baselineHipsY + a * (frame.hipsY - tracking.baselineHipsY),
-            bodySpan = span + a * ((frame.footY - frame.headY) - span)
+            bodySpan = if (frame.headOutTop) span else span + a * ((frame.footY - frame.headY) - span)
         )
     }
 
@@ -557,7 +571,7 @@ class JumpStrategy(
                 next = next.copy(
                     baselineFootY = floor,
                     groundSamples = tracking.groundSamples.map { it.first to it.second + shift },
-                    bodySpan = span + smoothing(Jump.APPROACH_SPAN_SMOOTHING, tracking.previousTimestamp, timestamp) * ((planted.y - frame.headY) - span)
+                    bodySpan = if (frame.headOutTop) span else span + smoothing(Jump.APPROACH_SPAN_SMOOTHING, tracking.previousTimestamp, timestamp) * ((planted.y - frame.headY) - span)
                 )
             }
         }
@@ -568,10 +582,11 @@ class JumpStrategy(
 
     private fun dist(x0: Float, y0: Float, x1: Float, y1: Float) = kotlin.math.hypot(x1 - x0, y1 - y0)
 
-    private fun baselineFrom(frame: Frame, timestamp: Double) = JumpTrackingState(
+    /** A standing baseline on [frame]; with the head out of the frame the span stays [previous]'s. */
+    private fun baselineFrom(frame: Frame, timestamp: Double, previous: JumpTrackingState? = null) = JumpTrackingState(
         baselineFootY = frame.footY,
         baselineHipsY = frame.hipsY,
-        bodySpan = frame.footY - frame.headY,
+        bodySpan = if (frame.headOutTop && previous != null) previous.bodySpan else frame.footY - frame.headY,
         previousFootY = frame.footY,
         previousHipsY = frame.hipsY,
         previousTimestamp = timestamp,
@@ -736,7 +751,13 @@ class JumpStrategy(
     private fun headRise(tracking: JumpTrackingState, frame: Frame): Float =
         (tracking.baselineFootY - tracking.bodySpan) - frame.headY
 
-    private fun readFrame(poseResult: PoseResult): Frame? {
+    /**
+     * The frame's head, hips and feet. A head past the top edge of the frame
+     * (clamped onto it, or not seen while the hips, given the standing
+     * hip-to-head distance in [tracking], put it there) reads as the edge with
+     * [Frame.headOutTop]; an athlete filmed close lifts it out mid-flight.
+     */
+    private fun readFrame(poseResult: PoseResult, tracking: JumpTrackingState?): Frame? {
         val landmarks = poseResult.landmarks
         // Lower than the usual threshold: in mid-air the feet and knees drop to
         // 0.4-0.5 visibility while their positions stay accurate, and losing
@@ -745,7 +766,7 @@ class JumpStrategy(
             landmarks.getOrNull(index)?.takeIf { it.visibility >= Jump.MIN_VISIBILITY }
         fun bothVisible(left: Int, right: Int) = listOfNotNull(visible(left), visible(right))
 
-        val head = visible(PoseResult.NOSE)?.y ?: return null
+        val head = visible(PoseResult.NOSE)?.y
         val feetPoints = bothVisible(PoseResult.LEFT_FOOT_INDEX, PoseResult.RIGHT_FOOT_INDEX)
             .ifEmpty { bothVisible(PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE) }
             .ifEmpty { return null }
@@ -757,14 +778,29 @@ class JumpStrategy(
         // also the last to leave the ground and the first to touch it.
         // Camera upside down: "lowest" is the smallest y, then flip so that
         // larger y is always lower.
-        val upsideDown = head > feetPoints.map { it.y }.average()
+        val feetMeanY = feetPoints.map { it.y }.average()
+        val upsideDown = (head ?: hipPoints.map { it.y }.average().toFloat()) > feetMeanY
+        fun oriented(y: Float) = if (upsideDown) 1f - y else y
         fun lowest(points: List<PoseKeypoint>) =
             if (upsideDown) 1f - points.minOf { it.y } else points.maxOf { it.y }
         val feet = lowest(feetPoints)
         val hips = lowest(hipPoints)
+
+        val headY: Float
+        val headOutTop: Boolean
+        if (head != null) {
+            headY = oriented(head)
+            headOutTop = headY <= Jump.HEAD_AT_EDGE
+        } else {
+            val standing = tracking ?: return null
+            val hipsToHead = standing.baselineHipsY - (standing.baselineFootY - standing.bodySpan)
+            if (hips - hipsToHead > Jump.HEAD_OUT_TOP_MARGIN) return null
+            headY = 0f
+            headOutTop = true
+        }
         val aspect = if (poseResult.imageHeight > 0) poseResult.imageWidth.toFloat() / poseResult.imageHeight else 1f
-        val toes = feetPoints.map { ToePoint(it.x * aspect, if (upsideDown) 1f - it.y else it.y) }
-        return Frame(if (upsideDown) 1f - head else head, hips, feet, upsideDown, toes)
+        val toes = feetPoints.map { ToePoint(it.x * aspect, oriented(it.y)) }
+        return Frame(headY, hips, feet, upsideDown, toes, headOutTop)
     }
 
     override fun calculateMetrics(

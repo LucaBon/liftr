@@ -19,6 +19,8 @@ package com.liftr.domain.exercise
  * @property flightHipSamples (timestamp ms, hip rise) of the airborne frames,
  *   for finding the top of the flight
  * @property peakHeadRise Highest head rise above standing during the flight
+ * @property headLeftFrame The head went out of the top of the frame during
+ *   the flight, so [peakHeadRise] only reaches the edge
  * @property previousFootY Toe height on the previous frame, for interpolation
  * @property toeTracks Approach jumps: each visible toe with its position, since
  *   when it has been planted and its heights while planted; matched from frame
@@ -47,6 +49,7 @@ data class JumpTrackingState(
     val groundSamples: List<Pair<Double, Float>> = emptyList(),
     val flightHipSamples: List<Pair<Double, Float>> = emptyList(),
     val peakHeadRise: Float = 0f,
+    val headLeftFrame: Boolean = false,
     val previousFootY: Float? = null,
     val toeTracks: List<ToeTrack> = emptyList(),
     val followedToe: ToePoint? = null,

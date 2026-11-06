@@ -127,6 +127,8 @@ interface ExerciseStrategy {
  * @property jump The measured jump when [repCompleted] (jumps only)
  * @property flightGravity Gravity (m/s²) fitted to a flight that just ended, rep or not; null unless the fit is good
  *   enough to judge. Far from 9.81 means the timestamps are off (e.g. slow motion read as real time).
+ * @property headLeftFrameInFlight A flight that just ended took the head out of the top of the frame:
+ *   the camera is too close or too low (jumps only)
  */
 data class PhaseTransitionResult(
     val newState: ExercisePhaseState,
@@ -134,7 +136,8 @@ data class PhaseTransitionResult(
     val debugInfo: String = "",
     val depthValidation: DepthValidationResult? = null,
     val jump: JumpData? = null,
-    val flightGravity: Float? = null
+    val flightGravity: Float? = null,
+    val headLeftFrameInFlight: Boolean = false
 )
 
 /**

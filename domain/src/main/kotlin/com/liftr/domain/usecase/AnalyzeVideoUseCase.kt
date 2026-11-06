@@ -289,6 +289,7 @@ class AnalyzeVideoUseCase @Inject constructor(
 
         var tempoState: TempoState? = params.tempoPrescription?.let { TempoTracker.reset(it) }
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
+        var headOutOfFrame = false
         // Shoulder width while standing tells whether the set was filmed side-on.
         val standingShoulderRatios = mutableListOf<Float>()
         // A jump counts on landing, before the knees bend: its form is checked
@@ -309,6 +310,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             val newPhase = transition.newState.currentPhase
             // Only accepted jumps: a discarded flight's fit says nothing about the video speed.
             if (transition.repCompleted) transition.flightGravity?.let(repFittedGravities::add)
+            if (transition.headLeftFrameInFlight) headOutOfFrame = true
             phaseState = transition.newState
             landing?.let {
                 if (pose.timestampUs <= it.untilUs && newPhase != MovementPhase.TOP) it.frames += AnalyzeRepUseCase.RepFrame(pose, newPhase) else finishLanding()
@@ -517,6 +519,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(
                 cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers,
+                headOutOfFrame = headOutOfFrame,
                 repCatchTypes = repCatchTypes,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"

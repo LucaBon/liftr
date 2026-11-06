@@ -718,6 +718,18 @@ fun SetSummarySheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
+            if (summary.headOutOfFrame) {
+                Text(
+                    text = stringResource(R.string.jump_head_out_of_frame),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.sm)
+                        .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
             if (summary.videoSpeedSuspect) {
                 Text(
                     text = stringResource(R.string.video_speed_suspect),

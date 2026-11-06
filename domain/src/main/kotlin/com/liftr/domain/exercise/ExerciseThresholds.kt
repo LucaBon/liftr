@@ -405,6 +405,12 @@ object ExerciseThresholds {
         /** Nose height as a fraction of stature, to express the span in meters */
         const val NOSE_HEIGHT_RATIO = 0.92f
 
+        /** A nose this close to the top edge (normalized) is clamped onto it: the head is out of the frame */
+        const val HEAD_AT_EDGE = 0.01f
+
+        /** An unseen nose that the hips put this close to the top edge, or past it, is out of the frame */
+        const val HEAD_OUT_TOP_MARGIN = 0.05f
+
         /** Past the peak, feet below this fraction of it may have landed */
         const val SETTLED_FRACTION_OF_PEAK = 0.5f
 
