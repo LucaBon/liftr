@@ -425,6 +425,16 @@ object ExerciseThresholds {
          * The LESS screen scores sagittal knee displacement under 45° as a stiff landing.
          */
         const val STIFF_LANDING_KNEE_FLEXION_DEG = 45f
+
+        /**
+         * Plausible push-off distance (m), from the lowest point of the dip to
+         * takeoff. Squat and countermovement jumps push off over roughly
+         * 0.25-0.50 m; outside this range the dip or the takeoff height was
+         * mistracked, and Samozino's force (inversely proportional to it)
+         * would be far off.
+         */
+        const val MIN_PUSH_OFF_M = 0.10f
+        const val MAX_PUSH_OFF_M = 0.70f
     }
 
     /**

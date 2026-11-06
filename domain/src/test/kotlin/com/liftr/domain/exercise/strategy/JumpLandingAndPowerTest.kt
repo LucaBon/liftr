@@ -7,18 +7,21 @@ import com.liftr.domain.model.AnthropometricData
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.JumpData
+import com.liftr.domain.model.JumpExcursion
 import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.PoseResultTestFixtures
 import com.liftr.domain.usecase.AnalyzeRepUseCase
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.value.Meters
+import com.liftr.domain.value.MetersPerSecond
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Jump peak power (Sayers, system mass) and the stiff-landing check. */
+/** Jump peak power (Sayers, system mass), push-off mechanics (Samozino) and the stiff-landing check. */
 class JumpLandingAndPowerTest {
 
     private val userHeight = 1.75f
@@ -67,6 +70,67 @@ class JumpLandingAndPowerTest {
         assertNull(strategy().peakPower(jump, calibration(null), Kilograms(0f)))
         assertNull(strategy().peakPower(jump, CalibrationData(500f, userHeight, 0.45f), Kilograms(0f)))
         assertNull(strategy(ExerciseType.LOADED_JUMP).peakPower(jump, calibration(null), Kilograms(20f)))
+    }
+
+    // --- Push-off mechanics ---
+
+    /** A 40 cm jump, by flight time. */
+    private val jump40 = JumpData(flightTimeMs = 571f, height = Meters(0.40f), takeoffVelocity = MetersPerSecond(2.8f))
+
+    /** Dip 30 cm, takeoff 10 cm above standing: a 40 cm push-off. */
+    private val excursion40 = JumpExcursion(countermovementCm = 30f, peakRiseCm = 50f, standingYCm = 100f, flightRiseCm = 40f)
+
+    @Test
+    fun `push-off mechanics use the measured push-off and body mass`() {
+        val m = strategy().pushOffMechanics(jump40, excursion40, calibration(75f), Kilograms(0f))!!
+
+        assertEquals(0.40f, m.pushOffM, 0.0001f)
+        assertEquals(1471.5f, m.meanForceN, 0.01f)
+        assertEquals(1.4007f, m.meanVelocity, 0.0001f)
+        assertEquals(2061.1f, m.meanPowerW, 0.2f)
+    }
+
+    @Test
+    fun `loaded jump push-off mechanics add the load to the system mass`() {
+        val m = strategy(ExerciseType.LOADED_JUMP).pushOffMechanics(jump40, excursion40, calibration(75f), Kilograms(20f))!!
+
+        assertEquals(95f, m.systemMassKg, 0f)
+        assertEquals(95f * 9.81f * 2f, m.meanForceN, 0.01f)
+    }
+
+    @Test
+    fun `bodyweight jump push-off mechanics ignore a leftover load`() {
+        val m = strategy().pushOffMechanics(jump40, excursion40, calibration(75f), Kilograms(20f))!!
+
+        assertEquals(75f, m.systemMassKg, 0f)
+    }
+
+    @Test
+    fun `no push-off mechanics without body mass`() {
+        assertNull(strategy().pushOffMechanics(jump40, excursion40, calibration(null), Kilograms(0f)))
+        assertNull(strategy().pushOffMechanics(jump40, excursion40, CalibrationData(500f, userHeight, 0.45f), Kilograms(0f)))
+    }
+
+    @Test
+    fun `no push-off mechanics without an excursion or the rise from takeoff`() {
+        assertNull(strategy().pushOffMechanics(jump40, null, calibration(75f), Kilograms(0f)))
+        assertNull(strategy().pushOffMechanics(jump40, excursion40.copy(flightRiseCm = null), calibration(75f), Kilograms(0f)))
+    }
+
+    @Test
+    fun `no push-off mechanics for an approach jump`() {
+        assertNull(strategy(ExerciseType.APPROACH_JUMP).pushOffMechanics(jump40, excursion40, calibration(75f), Kilograms(0f)))
+    }
+
+    @Test
+    fun `no push-off mechanics when the measured push-off is implausible`() {
+        // Dip 3 cm, takeoff 5 cm above standing: 8 cm, a mistracked dip.
+        val shallow = excursion40.copy(countermovementCm = 3f, peakRiseCm = 45f, flightRiseCm = 40f)
+        // Dip 60 cm, takeoff 15 cm above standing: 75 cm.
+        val deep = excursion40.copy(countermovementCm = 60f, peakRiseCm = 55f, flightRiseCm = 40f)
+
+        assertNull(strategy().pushOffMechanics(jump40, shallow, calibration(75f), Kilograms(0f)))
+        assertNull(strategy().pushOffMechanics(jump40, deep, calibration(75f), Kilograms(0f)))
     }
 
     // --- Landing ---
