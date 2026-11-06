@@ -13,9 +13,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.liftr.R
 import com.liftr.domain.model.JumpRepRecord
+import com.liftr.domain.model.allJumpsSuspect
+import com.liftr.domain.model.jumpsThatCount
 import com.liftr.ui.components.BarPathReplayCard
 import com.liftr.ui.components.charts.ChartSeries
 import com.liftr.ui.components.charts.MultiLineTrendChart
@@ -34,7 +37,8 @@ private val VelocityColor = Color(0xFF9C27B0)
 
 /**
  * Jump analytics: averages, jump height and center-of-mass trends per jump,
- * and the latest set's center-of-mass paths.
+ * and the latest set's center-of-mass paths. Jumps that failed the free-fall
+ * check are left out of the averages and trends (see [jumpsThatCount]).
  */
 @Composable
 fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifier) {
@@ -44,28 +48,37 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
             return@Column
         }
 
-        JumpAveragesCard(jumps)
+        // Jumps whose flight failed the free-fall check were tracked badly: keep
+        // them out of the averages and trends, and say how many were left out.
+        val counted = jumps.jumpsThatCount { it.quality }
+        val excluded = jumps.size - counted.size
+        when {
+            jumps.allJumpsSuspect { it.quality } -> InfoCard(stringResource(R.string.jump_all_suspect))
+            excluded > 0 -> InfoCard(pluralStringResource(R.plurals.jump_suspect_excluded, excluded, excluded))
+        }
+
+        JumpAveragesCard(counted)
 
         val dateFormat = remember { SimpleDateFormat("dd/MM", Locale.getDefault()) }
-        val xLabels = jumps.map { dateFormat.format(Date(it.timestamp)) }
+        val xLabels = counted.map { dateFormat.format(Date(it.timestamp)) }
 
         AnalyticsSectionTitle(stringResource(R.string.analytics_jump_height))
         MultiLineTrendChart(
             series = listOf(
-                ChartSeries(stringResource(R.string.analytics_jump_flight_time), ChartPrimary, jumps.map { it.jump.flightHeightCm }),
-                ChartSeries(stringResource(R.string.analytics_jump_takeoff_to_apex), ApexColor, jumps.map { it.jump.apexHeightCm }),
-                ChartSeries(stringResource(R.string.analytics_jump_com_displacement), ComColor, jumps.map { it.jump.comFlightRiseCm }),
-                ChartSeries(stringResource(R.string.analytics_jump_takeoff_velocity), VelocityColor, jumps.map { it.jump.velocityHeightCm })
+                ChartSeries(stringResource(R.string.analytics_jump_flight_time), ChartPrimary, counted.map { it.jump.flightHeightCm }),
+                ChartSeries(stringResource(R.string.analytics_jump_takeoff_to_apex), ApexColor, counted.map { it.jump.apexHeightCm }),
+                ChartSeries(stringResource(R.string.analytics_jump_com_displacement), ComColor, counted.map { it.jump.comFlightRiseCm }),
+                ChartSeries(stringResource(R.string.analytics_jump_takeoff_velocity), VelocityColor, counted.map { it.jump.velocityHeightCm })
             ),
             xLabels = xLabels,
             unit = "cm"
         )
 
-        if (jumps.any { it.jump.takeoffVelocity != null }) {
+        if (counted.any { it.jump.takeoffVelocity != null }) {
             AnalyticsSectionTitle(stringResource(R.string.jump_takeoff_velocity))
             MultiLineTrendChart(
                 series = listOf(
-                    ChartSeries(stringResource(R.string.jump_takeoff_velocity), VelocityColor, jumps.map { it.jump.takeoffVelocity })
+                    ChartSeries(stringResource(R.string.jump_takeoff_velocity), VelocityColor, counted.map { it.jump.takeoffVelocity })
                 ),
                 xLabels = xLabels,
                 unit = "m/s",
@@ -73,12 +86,12 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
             )
         }
 
-        if (jumps.any { it.jump.countermovementCm != null }) {
+        if (counted.any { it.jump.countermovementCm != null }) {
             AnalyticsSectionTitle(stringResource(R.string.jump_from_standing))
             MultiLineTrendChart(
                 series = listOf(
-                    ChartSeries(stringResource(R.string.jump_countermovement), DipColor, jumps.map { it.jump.countermovementCm }),
-                    ChartSeries(stringResource(R.string.jump_peak_rise), PeakColor, jumps.map { it.jump.peakRiseCm })
+                    ChartSeries(stringResource(R.string.jump_countermovement), DipColor, counted.map { it.jump.countermovementCm }),
+                    ChartSeries(stringResource(R.string.jump_peak_rise), PeakColor, counted.map { it.jump.peakRiseCm })
                 ),
                 xLabels = xLabels,
                 unit = "cm"
@@ -87,6 +100,7 @@ fun JumpAnalyticsSection(jumps: List<JumpRepRecord>, modifier: Modifier = Modifi
             InfoCard(stringResource(R.string.analytics_jump_com_hint))
         }
 
+        // The paths are where a badly tracked jump shows, so suspect ones stay in.
         val latestSet = jumps.last().setId
         val paths = jumps.filter { it.setId == latestSet && it.jump.path.size >= 3 }
             .map { it.jump.toBarPathData(it.repNumber) }
