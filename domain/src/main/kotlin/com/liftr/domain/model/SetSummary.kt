@@ -31,6 +31,10 @@ import com.liftr.domain.model.BarPathData
  * @property repApexHeights Per-jump height from takeoff to the top of the flight
  *   (null where it couldn't be measured), alongside [repJumpHeights] from flight time
  * @property repPeakPowers Per-jump peak power (Sayers), null where body mass is unknown; empty for lifts
+ * @property repContactTimesMs Per-jump ground contact before the takeoff, in ms, for rebound jumps
+ *   (see [JumpData.contactTimeMs]); null for the first jump, after a rest and for approach jumps
+ * @property repReactiveStrengthIndices Per-jump RSI (flight time / contact time), null where there
+ *   is no contact time; both index-aligned with [repJumpHeights]
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -54,7 +58,9 @@ data class SetSummary(
     val cameraView: CameraView = CameraView.UNKNOWN,
     /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
     val videoSpeedSuspect: Boolean = false,
-    val repPeakPowers: List<Watts?> = emptyList()
+    val repPeakPowers: List<Watts?> = emptyList(),
+    val repContactTimesMs: List<Float?> = emptyList(),
+    val repReactiveStrengthIndices: List<Float?> = emptyList()
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
@@ -66,9 +72,27 @@ data class SetSummary(
         get() = repApexHeights.filterNotNull().takeIf { it.isNotEmpty() }
             ?.let { heights -> Meters(heights.map { it.value }.average().toFloat()) }
 
+    /** Highest RSI of the set's rebound jumps; null without any. */
+    val bestRsi: Float? get() = repReactiveStrengthIndices.filterNotNull().maxOrNull()
+
+    /**
+     * Mean of the [RSI_BEST_OF] best RSIs, in the manner of the RSI 10/5 test
+     * (ten rebounds, the best five averaged): one lucky bounce weighs less
+     * than in [bestRsi]. Null with fewer rebound jumps than that.
+     */
+    val bestFiveMeanRsi: Float?
+        get() = repReactiveStrengthIndices.filterNotNull()
+            .takeIf { it.size >= RSI_BEST_OF }
+            ?.sortedDescending()?.take(RSI_BEST_OF)?.average()?.toFloat()
+
     val avgJumpHeight: Meters?
         get() = if (repJumpHeights.isEmpty()) null
         else Meters(repJumpHeights.map { it.value }.average().toFloat())
+
+    companion object {
+        /** Rebound jumps whose RSI the set's [bestFiveMeanRsi] averages. */
+        const val RSI_BEST_OF = 5
+    }
 }
 
 /**
