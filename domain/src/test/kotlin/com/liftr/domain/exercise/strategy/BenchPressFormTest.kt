@@ -2,6 +2,7 @@ package com.liftr.domain.exercise.strategy
 
 import com.liftr.domain.exercise.ExercisePhaseState
 import com.liftr.domain.exercise.ExerciseStrategyFactory
+import com.liftr.domain.exercise.RepQualityScorer
 import com.liftr.domain.exercise.Severity
 import com.liftr.domain.model.AnthropometricData
 import com.liftr.domain.model.BodyPartPositions
@@ -188,6 +189,16 @@ class BenchPressFormTest {
 
             assertEquals("at $fps fps", 1, flagged.size)
             assertEquals(Severity.INFO, flagged.single().severity)
+        }
+    }
+
+    @Test
+    fun `measuring the chest pause costs no form points`() {
+        for (pauseMs in listOf(1000L, 0L)) {
+            val issues = repIssues(simulateRep(pauseMs = pauseMs, fps = 30))
+
+            assertTrue(issues.isNotEmpty())
+            assertEquals("pause $pauseMs ms", 30, RepQualityScorer.scoreForm(issues))
         }
     }
 

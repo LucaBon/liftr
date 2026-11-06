@@ -218,6 +218,12 @@ class RepQualityScorerTest {
     }
 
     @Test
+    fun `scoreForm should not charge an unscored issue`() {
+        val issues = listOf(FormIssue(Severity.INFO, "Chest pause", "", scored = false))
+        assertEquals(30, RepQualityScorer.scoreForm(issues))
+    }
+
+    @Test
     fun `scoreForm should floor at 0 for multiple critical issues`() {
         val issues = listOf(
             FormIssue(Severity.CRITICAL, "Issue 1", "Fix 1"),

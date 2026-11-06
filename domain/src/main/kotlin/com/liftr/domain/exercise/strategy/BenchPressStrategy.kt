@@ -477,14 +477,16 @@ class BenchPressStrategy @Inject constructor(
                 kind = "touch_and_go",
                 severity = Severity.INFO,
                 message = "Touch-and-go: no pause on the chest ($pauseMs ms)",
-                suggestion = "Pause the bar briefly on your chest before pressing"
+                suggestion = "Pause the bar briefly on your chest before pressing",
+                scored = false
             )
         } else {
             FormIssue(
                 kind = "chest_pause",
                 severity = Severity.INFO,
                 message = "Chest pause: $pauseMs ms",
-                suggestion = ""
+                suggestion = "",
+                scored = false
             )
         }
     }

@@ -166,7 +166,9 @@ data class FormIssue(
     val severity: Severity,
     val message: String,
     val suggestion: String,
-    val kind: String = message
+    val kind: String = message,
+    /** False for informational readings (e.g. bench chest pause) that must not cost form points. */
+    val scored: Boolean = true
 )
 
 /**

@@ -163,7 +163,7 @@ object RepQualityScorer {
      */
     internal fun scoreForm(issues: List<FormIssue>): Int {
         var score = 30
-        issues.forEach { issue ->
+        issues.filter { it.scored }.forEach { issue ->
             score -= when (issue.severity) {
                 Severity.CRITICAL -> 15
                 Severity.WARNING -> 8
