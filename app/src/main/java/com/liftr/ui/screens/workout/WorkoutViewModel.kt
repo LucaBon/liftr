@@ -1391,12 +1391,15 @@ class WorkoutViewModel @Inject constructor(
         logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
     }
 
+    private var importInProgress = false
+
     /**
      * Analyze a video picked from the gallery (e.g. a slow-motion clip from the
      * phone's camera app). The capture rate comes from the file's metadata.
      */
     fun importVideo(uri: Uri) {
         val state = _uiState.value
+        if (importInProgress) return  // a double tap on the picker result would queue two analyses
         if (state.isRecording || state.isVideoRecording) {
             logger.d(TAG, "importVideo ignored - recording in progress")
             return
@@ -1407,30 +1410,35 @@ class WorkoutViewModel @Inject constructor(
             return
         }
         val exercise = state.selectedExercise
+        importInProgress = true
         viewModelScope.launch {
-            // The picked file may be removed or unreadable; never leave a partial copy behind.
-            val target = videoStorageRepository.getRecordingFile(exercise, System.currentTimeMillis())
-            val copied = withContext(Dispatchers.IO) {
-                runCatching {
-                    val input = context.contentResolver.openInputStream(uri)
-                        ?: error("Cannot open $uri")
-                    input.use { src -> target.outputStream().use { src.copyTo(it) } }
-                    target.length() > 0
-                }.onFailure { logger.e(TAG, "Video import copy failed", it) }
-                    .getOrDefault(false)
-                    .also { ok -> if (!ok) videoStorageRepository.deleteRecording(target) }
+            try {
+                // The picked file may be removed or unreadable; never leave a partial copy behind.
+                val target = videoStorageRepository.getRecordingFile(exercise, System.currentTimeMillis())
+                val copied = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: error("Cannot open $uri")
+                        input.use { src -> target.outputStream().use { src.copyTo(it) } }
+                        target.length() > 0
+                    }.onFailure { logger.e(TAG, "Video import copy failed", it) }
+                        .getOrDefault(false)
+                        .also { ok -> if (!ok) videoStorageRepository.deleteRecording(target) }
+                }
+                if (!copied) {
+                    _uiState.update { it.copy(analysisError = "Could not import the video.") }
+                    return@launch
+                }
+                _uiState.update {
+                    it.copy(
+                        analysisProgress = it.analysisProgress ?: AnalysisProgress(0, 1, 0f, 0),
+                        analysisProgressDismissed = false
+                    )
+                }
+                startAnalysis(target, calibration, captureFps = null)
+            } finally {
+                importInProgress = false
             }
-            if (!copied) {
-                _uiState.update { it.copy(analysisError = "Could not import the video.") }
-                return@launch
-            }
-            _uiState.update {
-                it.copy(
-                    analysisProgress = it.analysisProgress ?: AnalysisProgress(0, 1, 0f, 0),
-                    analysisProgressDismissed = false
-                )
-            }
-            startAnalysis(target, calibration, captureFps = null)
         }
     }
 
