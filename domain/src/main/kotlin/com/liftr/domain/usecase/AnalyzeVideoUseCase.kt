@@ -41,6 +41,7 @@ import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.video.VideoSpeedCheck
 import com.liftr.domain.vision.VideoPoseSource
 import com.liftr.domain.model.MovementPhase
 import kotlinx.coroutines.Dispatchers
@@ -149,6 +150,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 poseSource.close()
             }
 
+            val timeScale = poseSource.timeScale
             logger.i(TAG, "Pose detection complete: ${poseResults.size} poses")
             if (poseResults.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("No poses detected in video"))
@@ -174,7 +176,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             val velocities = BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
-            val summary = buildSummary(params, poseResults, velocities, onProgress, onFrameAnnotation)
+            val summary = buildSummary(params, poseResults, velocities, onProgress, onFrameAnnotation, timeScale)
 
             logger.i(TAG, "Analysis complete: ${summary.completedReps.value} reps, score=${summary.overallScore}")
             Result.success(summary)
@@ -253,7 +255,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         poseResults: List<PoseResult>,
         velocities: List<VelocityData>,
         onProgress: (Progress) -> Unit,
-        onFrameAnnotation: ((FrameAnnotation) -> Unit)? = null
+        onFrameAnnotation: ((FrameAnnotation) -> Unit)? = null,
+        timeScale: Float = 1f
     ): SetSummary {
         val strategy = strategyFactory.getStrategy(params.exerciseType)
         var phaseState = ExercisePhaseState.initial()
@@ -265,6 +268,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repBarPaths = mutableListOf<BarPathData>()
         val repJumpHeights = mutableListOf<Meters>()
         val repApexHeights = mutableListOf<Meters?>()
+        val repFittedGravities = mutableListOf<Float>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -288,6 +292,7 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             val transition = strategy.detectPhase(pose, params.calibrationData, phaseState)
             val newPhase = transition.newState.currentPhase
+            transition.flightGravity?.let(repFittedGravities::add)
             phaseState = transition.newState
             if (params.exerciseType.canJudgeCameraView() && params.exerciseType.isStandingPhase(newPhase)) {
                 CameraViewClassifier.shoulderWidthRatio(pose)?.let { standingShoulderRatios += it }
@@ -469,7 +474,13 @@ class AnalyzeVideoUseCase @Inject constructor(
             CameraViewClassifier.classify(standingShoulderRatios)
         } else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
-            .copy(cameraView = cameraView, repApexHeights = repApexHeights)
+            .copy(
+                cameraView = cameraView, repApexHeights = repApexHeights,
+                videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
+                    if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
+                        .format(repFittedGravities))
+                }
+            )
     }
 
     private fun assembleSummary(

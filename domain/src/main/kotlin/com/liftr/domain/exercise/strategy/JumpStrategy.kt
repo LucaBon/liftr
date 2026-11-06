@@ -189,10 +189,12 @@ class JumpStrategy(
 
         if (timestamp - takeoffMs > Jump.MAX_FLIGHT_MS) {
             logger.d(TAG, "Flight exceeded ${Jump.MAX_FLIGHT_MS} ms, discarding")
+            val spanPerMeter = tracking.bodySpan / (Jump.NOSE_HEIGHT_RATIO * calibrationData.userHeight)
             return PhaseTransitionResult(
                 newState = state.copy(currentPhase = MovementPhase.IDLE, jump = baselineFrom(frame, timestamp)),
                 repCompleted = false,
-                debugInfo = "Tracking lost in flight"
+                debugInfo = "Tracking lost in flight",
+                flightGravity = fitGravity(tracking.flightSamples, spanPerMeter)
             )
         }
 
@@ -283,6 +285,7 @@ class JumpStrategy(
                 val firstOff = toes.getOrNull(onFloor + 1) ?: tracking.flightSamples.first()
                 heightFromTakeoffToApex(firstOff, toes.getOrNull(onFloor)?.first, apexMs, spanPerMeter)
             }
+        val fittedGravity = fitGravity(airborneSamples(tracking.flightSamples, landingLevel), spanPerMeter)
         val jump = fromFlight.copy(apexHeight = apexHeight, takeoffAtMs = takeoffMs, landingAtMs = landingMs)
         val flightMs = jump.flightTimeMs
         if (flightMs < minFlightMs) {
@@ -298,7 +301,9 @@ class JumpStrategy(
         if (headRise < Jump.MIN_HEAD_RISE_FRACTION * expectedHeadRise) {
             logger.d(TAG, "Feet-only flight of %.0f ms, head rose %.0f%% of a jump: not a jump"
                 .format(flightMs, 100 * headRise / expectedHeadRise))
-            return PhaseTransitionResult(grounded, repCompleted = false, debugInfo = "Head did not rise")
+            return PhaseTransitionResult(
+                grounded, repCompleted = false, debugInfo = "Head did not rise", flightGravity = fittedGravity
+            )
         }
         logger.d(TAG, "Jump: flight=%.0f ms height=%.1f cm, takeoff to apex %s, floor %.3f -> %.3f".format(
             flightMs, jump.height.value * 100, jump.apexHeight?.let { "%.1f cm".format(it.value * 100) } ?: "n/a",
@@ -308,7 +313,8 @@ class JumpStrategy(
             newState = grounded,
             repCompleted = true,
             debugInfo = "Landed: %.1f cm".format(jump.height.value * 100),
-            jump = jump
+            jump = jump,
+            flightGravity = fittedGravity
         )
     }
 
@@ -649,6 +655,25 @@ class JumpStrategy(
     private fun restingToeRise(groundSamples: List<Pair<Double, Float>>, takeoffMs: Double): Float {
         val resting = groundSamples.filter { it.first <= takeoffMs - TOE_OFF_LEAD_MS }.map { it.second }.sorted()
         return if (resting.isEmpty()) 0f else resting[resting.size / 2]
+    }
+
+    /**
+     * Gravity (m/s²) of the flight parabola: -2c in toe-rise units per s²,
+     * over [spanPerMeter]. Null unless there are enough samples and the
+     * parabola explains them (RMS residual small against the flight's rise).
+     */
+    private fun fitGravity(samples: List<Pair<Double, Float>>, spanPerMeter: Float): Float? {
+        if (samples.size < Jump.MIN_GRAVITY_FIT_SAMPLES || spanPerMeter <= 0f) return null
+        val (a, b, c) = fitParabola(samples) ?: return null
+        val t0 = samples.first().first
+        val rms = kotlin.math.sqrt(samples.sumOf { (timestamp, rise) ->
+            val t = (timestamp - t0) / 1000.0
+            val e = rise - (a + b * t + c * t * t)
+            e * e
+        } / samples.size)
+        val range = samples.maxOf { it.second } - samples.minOf { it.second }
+        if (range <= 0f || rms > Jump.MAX_GRAVITY_FIT_RESIDUAL * range) return null
+        return (-2 * c / spanPerMeter).toFloat()
     }
 
     private fun fitFlightMs(samples: List<Pair<Double, Float>>, takeoffRise: Float, landingRise: Float): Float? {

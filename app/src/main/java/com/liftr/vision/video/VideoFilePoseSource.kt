@@ -27,6 +27,8 @@ class VideoFilePoseSource(
 
     override val totalFrames: Int get() = extractor.totalFrames
 
+    override val timeScale: Float get() = extractor.timeBase.timeScale
+
     override fun poses(include: (timestampMs: Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
         createPoseDetector().use { detector ->
             extractor.extractFrames().collect { frame ->

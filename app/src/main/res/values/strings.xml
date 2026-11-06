@@ -441,6 +441,7 @@
     <string name="jump_takeoff_velocity">Takeoff speed</string>
     <string name="jump_side_view_hint">Film jumps from the side: stand side-on to the camera, whole body in frame.</string>
     <string name="jump_approach_side_view_hint">Film from the side, camera perpendicular to the run. Frame the last two steps, the jump and the landing, with the whole body in view.</string>
+    <string name="video_speed_suspect">Video speed looks wrong (slow motion?)</string>
     <string name="jump_front_view_warning">The camera sees you from the front. Turn side-on for accurate jump heights.</string>
     <string name="lift_side_view_hint">Film from the side: camera at hip height, side-on to you, with your whole body and the bar in frame.</string>
     <string name="bench_side_view_hint">Film from the side: camera level with the bench, with the bar, your arms and your torso in frame.</string>

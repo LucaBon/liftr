@@ -12,6 +12,9 @@ interface VideoPoseSource {
     /** Number of frames in the video; populated once [poses] starts emitting. */
     val totalFrames: Int
 
+    /** Slow-motion factor the timestamps were corrected by; 1 when none was found. Valid once [poses] has run. */
+    val timeScale: Float get() = 1f
+
     /** One decoded frame: its time, and its pose if it was analyzed and one was found. */
     data class Frame(val timestampMs: Long, val pose: PoseResult?)
 

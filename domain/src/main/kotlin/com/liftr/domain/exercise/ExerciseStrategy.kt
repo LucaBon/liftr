@@ -115,13 +115,16 @@ interface ExerciseStrategy {
  * @property debugInfo Debug information about the phase detection
  * @property depthValidation Depth validation result when transitioning through BOTTOM phase (squats only)
  * @property jump The measured jump when [repCompleted] (jumps only)
+ * @property flightGravity Gravity (m/s²) fitted to a flight that just ended, rep or not; null unless the fit is good
+ *   enough to judge. Far from 9.81 means the timestamps are off (e.g. slow motion read as real time).
  */
 data class PhaseTransitionResult(
     val newState: ExercisePhaseState,
     val repCompleted: Boolean,
     val debugInfo: String = "",
     val depthValidation: DepthValidationResult? = null,
-    val jump: JumpData? = null
+    val jump: JumpData? = null,
+    val flightGravity: Float? = null
 )
 
 /**

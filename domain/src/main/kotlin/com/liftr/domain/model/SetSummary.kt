@@ -49,7 +49,9 @@ data class SetSummary(
     val repJumpHeights: List<Meters> = emptyList(),
     val repApexHeights: List<Meters?> = emptyList(),
     val repPeakVelocities: List<MetersPerSecond> = emptyList(),
-    val cameraView: CameraView = CameraView.UNKNOWN
+    val cameraView: CameraView = CameraView.UNKNOWN,
+    /** Jump flights imply stretched time (slow motion read as real time): heights are untrustworthy. */
+    val videoSpeedSuspect: Boolean = false
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 

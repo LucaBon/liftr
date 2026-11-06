@@ -338,6 +338,12 @@ object ExerciseThresholds {
         /** Fewest airborne samples a parabola fit takes whatever the frame rate (3 unknowns, one spare) */
         const val MIN_FIT_SAMPLES = 4
 
+        /** Airborne samples needed to trust the fitted gravity as a time-base check. */
+        const val MIN_GRAVITY_FIT_SAMPLES = 8
+
+        /** Largest RMS residual of that fit, as a fraction of the flight's rise. */
+        const val MAX_GRAVITY_FIT_RESIDUAL = 0.05
+
         /** Fewest airborne samples a free-fall check takes whatever the frame rate */
         const val MIN_CHECK_SAMPLES = 6
 
