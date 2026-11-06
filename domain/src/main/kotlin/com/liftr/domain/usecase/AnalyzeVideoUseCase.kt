@@ -17,6 +17,8 @@ import com.liftr.domain.exercise.TempoState
 import com.liftr.domain.exercise.TempoTracker
 import com.liftr.domain.exercise.strategy.BackSquatStrategy
 import com.liftr.domain.exercise.strategy.FrontSquatStrategy
+import com.liftr.domain.exercise.strategy.JumpStrategy
+import com.liftr.domain.exercise.ExerciseThresholds
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.AggregateFormIssue
 import com.liftr.domain.model.aggregateFormIssues
@@ -40,6 +42,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
+import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.video.VideoSpeedCheck
 import com.liftr.domain.vision.VideoPoseSource
@@ -269,6 +272,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val repJumpHeights = mutableListOf<Meters>()
         val repApexHeights = mutableListOf<Meters?>()
         val repFittedGravities = mutableListOf<Float>()
+        val repPeakPowers = mutableListOf<Watts?>()
         val previousConcentricDurations = mutableListOf<Float>()
 
         var currentRepBarPoints = mutableListOf<BarPathPoint>()
@@ -284,6 +288,13 @@ class AnalyzeVideoUseCase @Inject constructor(
         val jumpPath = if (params.exerciseType.isJumpExercise()) JumpPathWindow() else null
         // Shoulder width while standing tells whether the set was filmed side-on.
         val standingShoulderRatios = mutableListOf<Float>()
+        // A jump counts on landing, before the knees bend: its form is checked
+        // again once the landing window has passed, with those frames added.
+        var landing: PendingLanding? = null
+        suspend fun finishLanding() {
+            landing?.let { repScores[it.repIndex] = it.rescore(it.frames) }
+            landing = null
+        }
 
         for (i in poseResults.indices) {
             val pose = poseResults[i]
@@ -294,6 +305,9 @@ class AnalyzeVideoUseCase @Inject constructor(
             val newPhase = transition.newState.currentPhase
             transition.flightGravity?.let(repFittedGravities::add)
             phaseState = transition.newState
+            landing?.let {
+                if (pose.timestampUs <= it.untilUs) it.frames += AnalyzeRepUseCase.RepFrame(pose, newPhase) else finishLanding()
+            }
             if (params.exerciseType.canJudgeCameraView() && params.exerciseType.isStandingPhase(newPhase)) {
                 CameraViewClassifier.shoulderWidthRatio(pose)?.let { standingShoulderRatios += it }
             }
@@ -348,8 +362,9 @@ class AnalyzeVideoUseCase @Inject constructor(
                 JumpPathWindow.cmPerUnitY(pose, params.calibrationData.userHeight),
                 nowUs = pose.timestampUs
             )
-            if (newPhase in ACTIVE_PHASES) {
-                pathPoint?.let { currentRepBarPoints.add(it) }
+            if (newPhase in ACTIVE_PHASES) pathPoint?.let { currentRepBarPoints.add(it) }
+            // A jump's form check also needs its flight, to find the touchdown.
+            if (newPhase in ACTIVE_PHASES || (jumpPath != null && newPhase == MovementPhase.TOP)) {
                 currentRepPoses.add(AnalyzeRepUseCase.RepFrame(pose, newPhase))
             }
 
@@ -360,6 +375,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
 
             if (transition.repCompleted) {
+                finishLanding()
                 // A rep complete at lockout (deadlift) reports its lockout here, scored as its depth part.
                 transition.depthValidation?.let { currentRepDepthValidation = it }
                 // A jump's path runs through its flight, which ACTIVE_PHASES leaves out.
@@ -392,30 +408,46 @@ class AnalyzeVideoUseCase @Inject constructor(
                     TempoTracker.calculateAdherence(finalized)
                 }
 
-                val analysis = runCatching {
-                    analyzeRepUseCase(
-                        AnalyzeRepUseCase.Params(
-                            exerciseType = params.exerciseType,
-                            calibrationData = params.calibrationData,
-                            weight = params.weight,
-                            bufferedFrames = currentRepPoses.toList(),
-                            finalVelocityData = velocity
+                val depthValidation = currentRepDepthValidation
+                val barXPositions = currentRepBarPoints.map { it.normalizedX }
+                val earlierConcentricDurations = previousConcentricDurations.toList()
+                val scoreRep: suspend (List<AnalyzeRepUseCase.RepFrame>) -> RepQualityScore = { frames ->
+                    val analysis = runCatching {
+                        analyzeRepUseCase(
+                            AnalyzeRepUseCase.Params(
+                                exerciseType = params.exerciseType,
+                                calibrationData = params.calibrationData,
+                                weight = params.weight,
+                                bufferedFrames = frames,
+                                finalVelocityData = velocity
+                            )
                         )
-                    )
-                }.getOrNull()
-                val formIssues: List<FormIssue> = analysis?.formValidation?.issues ?: emptyList()
+                    }.getOrNull()
+                    val formIssues: List<FormIssue> = analysis?.formValidation?.issues ?: emptyList()
 
-                val score = RepQualityScorer.scoreRep(
-                    exerciseType = params.exerciseType,
-                    depthValidation = currentRepDepthValidation,
-                    barXPositions = currentRepBarPoints.map { it.normalizedX },
-                    eccentricDuration = eccentricDuration,
-                    concentricDuration = concentricDuration,
-                    previousConcentricDurations = previousConcentricDurations.toList(),
-                    formIssues = formIssues,
-                    tempoAdherence = tempoAdherence
-                )
-                repScores.add(score)
+                    RepQualityScorer.scoreRep(
+                        exerciseType = params.exerciseType,
+                        depthValidation = depthValidation,
+                        barXPositions = barXPositions,
+                        eccentricDuration = eccentricDuration,
+                        concentricDuration = concentricDuration,
+                        previousConcentricDurations = earlierConcentricDurations,
+                        formIssues = formIssues,
+                        tempoAdherence = tempoAdherence
+                    )
+                }
+                val repFrames = currentRepPoses.toList()
+                repScores.add(scoreRep(repFrames))
+                if (jumpPath != null && transition.jump != null) {
+                    landing = PendingLanding(
+                        repIndex = repScores.lastIndex,
+                        untilUs = pose.timestampUs + ExerciseThresholds.Jump.LANDING_WINDOW_MS * 1000,
+                        frames = (repFrames + AnalyzeRepUseCase.RepFrame(pose, newPhase)).toMutableList(),
+                        rescore = scoreRep
+                    )
+                    // Without a dip to reset it, the next jump would inherit this flight.
+                    currentRepPoses = mutableListOf()
+                }
                 previousConcentricDurations.add(concentricDuration)
 
                 repBarPaths.add(
@@ -440,6 +472,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 jump?.let {
                     repJumpHeights.add(it.height)
                     repApexHeights.add(it.apexHeight)
+                    repPeakPowers.add((strategy as? JumpStrategy)?.peakPower(it, params.calibrationData, params.weight))
                 }
 
                 onProgress(
@@ -469,13 +502,14 @@ class AnalyzeVideoUseCase @Inject constructor(
 
             previousPhase = newPhase
         }
+        finishLanding()
 
         val cameraView = if (params.exerciseType.canJudgeCameraView()) {
             CameraViewClassifier.classify(standingShoulderRatios)
         } else CameraView.UNKNOWN
         return assembleSummary(params, repScores, repVelocities, repPeakVelocities, repBarPaths, repJumpHeights)
             .copy(
-                cameraView = cameraView, repApexHeights = repApexHeights,
+                cameraView = cameraView, repApexHeights = repApexHeights, repPeakPowers = repPeakPowers,
                 videoSpeedSuspect = VideoSpeedCheck.looksSlowMotion(repFittedGravities, timeScale).also {
                     if (it) logger.w(TAG, "Jump gravity fits %s m/s² with time scale 1: video speed looks wrong (slow motion?)"
                         .format(repFittedGravities))
@@ -590,6 +624,14 @@ class AnalyzeVideoUseCase @Inject constructor(
             else -> Unit
         }
     }
+
+    /** A jump's rep, scored again with the frames up to [untilUs] after its landing. */
+    private class PendingLanding(
+        val repIndex: Int,
+        val untilUs: Long,
+        val frames: MutableList<AnalyzeRepUseCase.RepFrame>,
+        val rescore: suspend (List<AnalyzeRepUseCase.RepFrame>) -> RepQualityScore
+    )
 
     companion object {
         private const val TAG = "AnalyzeVideoUseCase"
