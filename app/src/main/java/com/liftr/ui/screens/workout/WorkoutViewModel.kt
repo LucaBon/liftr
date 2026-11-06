@@ -188,6 +188,8 @@ class WorkoutViewModel @Inject constructor(
     private var setJumpHeights = mutableListOf<Meters>()
     private var setApexHeights = mutableListOf<Meters?>()
     private var setPeakPowers = mutableListOf<Watts?>()
+    private var setContactTimesMs = mutableListOf<Float?>()
+    private var setReactiveStrengthIndices = mutableListOf<Float?>()
     private var previousConcentricDurations = mutableListOf<Float>()
 
     // --- Bar Path: per-set analyzed paths ---
@@ -450,7 +452,9 @@ class WorkoutViewModel @Inject constructor(
                     flightHeightCm = height.value * 100f,
                     apexHeightCm = summary.repApexHeights.getOrNull(index)?.let { it.value * 100f },
                     barPath = summary.repBarPaths.getOrNull(index),
-                    peakPowerW = summary.repPeakPowers.getOrNull(index)?.value
+                    peakPowerW = summary.repPeakPowers.getOrNull(index)?.value,
+                    contactTimeMs = summary.repContactTimesMs.getOrNull(index),
+                    reactiveStrengthIndex = summary.repReactiveStrengthIndices.getOrNull(index)
                 )
             )
         }
@@ -937,6 +941,8 @@ class WorkoutViewModel @Inject constructor(
             setPeakPowers.add(calib?.let { c ->
                 JumpStrategy(_uiState.value.selectedExercise, logger).peakPower(it, c, _uiState.value.weight)
             })
+            setContactTimesMs.add(it.contactTimeMs)
+            setReactiveStrengthIndices.add(it.reactiveStrengthIndex)
         }
 
         // Build Rep domain object for persistence
@@ -1182,6 +1188,8 @@ class WorkoutViewModel @Inject constructor(
         setJumpHeights.clear()
         setApexHeights.clear()
         setPeakPowers.clear()
+        setContactTimesMs.clear()
+        setReactiveStrengthIndices.clear()
         previousConcentricDurations.clear()
         setBarPaths.clear()
         setReps.clear()
@@ -1574,7 +1582,9 @@ class WorkoutViewModel @Inject constructor(
             repBarPaths = setBarPaths.toList(),
             repJumpHeights = setJumpHeights.toList(),
             repApexHeights = setApexHeights.toList(),
-            repPeakPowers = setPeakPowers.toList()
+            repPeakPowers = setPeakPowers.toList(),
+            repContactTimesMs = setContactTimesMs.toList(),
+            repReactiveStrengthIndices = setReactiveStrengthIndices.toList()
         )
     }
 

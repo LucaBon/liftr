@@ -20,6 +20,9 @@ import kotlinx.serialization.Serializable
  * @property path Center-of-mass path from the dip to the landing
  * @property peakPowerW Peak power in watts (Sayers, from jump height and system
  *   mass); null without a body mass, and in rows saved before it was measured
+ * @property contactTimeMs Ground contact before this jump, for a rebound jump
+ *   (see [JumpData.contactTimeMs]); null otherwise and in rows saved before it
+ * @property reactiveStrengthIndex Flight time over [contactTimeMs]; null with no contact time
  */
 @Serializable
 data class RepJumpData(
@@ -33,8 +36,14 @@ data class RepJumpData(
     val standingYCm: Float? = null,
     val fitCheck: JumpFitCheck? = null,
     val path: List<JumpPathSample> = emptyList(),
-    val peakPowerW: Float? = null
+    val peakPowerW: Float? = null,
+    val contactTimeMs: Float? = null,
+    val reactiveStrengthIndex: Float? = null
 ) {
+    /** Jump height over contact time ("RSI (height)"), in m/s; null with no contact time. */
+    val rsiHeightMps: Float?
+        get() = contactTimeMs?.takeIf { it > 0f }?.let { flightHeightCm * 10f / it }
+
     /** The path as [BarPathData], for the replay card. */
     fun toBarPathData(repNumber: Int): BarPathData {
         val excursion = if (countermovementCm != null && peakRiseCm != null && standingYCm != null) {
@@ -53,7 +62,9 @@ data class RepJumpData(
             flightHeightCm: Float,
             apexHeightCm: Float?,
             barPath: BarPathData?,
-            peakPowerW: Float? = null
+            peakPowerW: Float? = null,
+            contactTimeMs: Float? = null,
+            reactiveStrengthIndex: Float? = null
         ): RepJumpData {
             val excursion = barPath?.excursion
             return RepJumpData(
@@ -69,7 +80,9 @@ data class RepJumpData(
                 path = barPath?.points.orEmpty().map {
                     JumpPathSample(it.timestamp, it.normalizedX, it.normalizedY, it.realWorldXCm, it.realWorldYCm, it.velocity.value)
                 },
-                peakPowerW = peakPowerW
+                peakPowerW = peakPowerW,
+                contactTimeMs = contactTimeMs,
+                reactiveStrengthIndex = reactiveStrengthIndex
             )
         }
     }
