@@ -16,6 +16,7 @@ import com.liftr.domain.exercise.FormIssue
 import com.liftr.domain.exercise.PhaseTransitionResult
 import com.liftr.domain.exercise.RepQualityScorer
 import com.liftr.domain.exercise.RepSegmenter
+import com.liftr.domain.exercise.SquatDepthValidator
 import com.liftr.domain.exercise.TempoAdherence
 import com.liftr.domain.exercise.TempoState
 import com.liftr.domain.exercise.TempoTracker
@@ -63,6 +64,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 /**
  * Analyzes a recorded workout video offline using the heavy pose model
@@ -190,20 +192,29 @@ class AnalyzeVideoUseCase @Inject constructor(
             // bar position, which reads as a ~40 m/s spike and wrecks peak
             // velocity, velocity loss and the VBT zones. The list stays 1:1 with
             // poseResults, which buildSummary relies on.
-            val isSquat = params.exerciseType == ExerciseType.FRONT_SQUAT || params.exerciseType == ExerciseType.BACK_SQUAT
+            val isSquat = params.exerciseType.isSquat()
+            if (isSquat) calculator.lockScaleToStanding(poseResults, params.calibrationData)
             // Most of a set is spent standing: the median torso of the upright
             // frames is the standing one a folded skeleton is measured against.
             val standingTorso = if (isSquat) {
                 poseResults.filter { PoseSanity.isPlausible(it) }.mapNotNull { PoseSanity.torsoHeight(it) }
                     .sorted().let { it.getOrNull(it.size / 2) }
             } else null
-            val measured = poseResults.map { pose ->
-                trackingPositionMeters(pose, params, calculator)?.takeUnless { isSquat && !PoseSanity.isPlausible(pose, standingTorso) }
+            val lostBecause = arrayOfNulls<String>(poseResults.size)
+            val measured = poseResults.mapIndexed { i, pose ->
+                val position = trackingPositionMeters(pose, params, calculator)
+                when {
+                    position == null -> null.also { lostBecause[i] = "tracking point not visible" }
+                    isSquat && !PoseSanity.isPlausible(pose, standingTorso) -> null.also { lostBecause[i] = "sanity" }
+                    else -> position
+                }
             }
             val timesUs = poseResults.map { it.timestampUs }
             val kept = if (isSquat) dropTrackJumps(timesUs, measured, PoseSanity.MAX_SQUAT_SPEED_MPS) else measured
+            kept.forEachIndexed { i, p -> if (p == null && measured[i] != null) lostBecause[i] = "track jump" }
             val track = fillTrackGaps(timesUs, kept, MAX_INTERPOLATED_GAP_US)
             logger.i(TAG, "Tracking: ${track.missing} of ${measured.size} frames without a usable position")
+            logTrackingGaps(timesUs, lostBecause.toList())
             val positionSamples = poseResults.mapIndexed { i, pose ->
                 BidirectionalVelocityCalculator.PositionSample(
                     positionMeters = track.positions[i],
@@ -213,7 +224,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
             // A plate-tracked lift's kinematics come from its bar track: the plate
             // when it was followed, else the landmark track above.
-            val barTrack = if (params.exerciseType.tracksBarPlate()) barTrack(params, poseResults, plateTrack, kept) else null
+            val barTrack = if (isSquat || params.exerciseType.tracksBarPlate()) barTrack(params, poseResults, plateTrack, kept) else null
             val velocities = barTrack?.velocities() ?: BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
@@ -225,7 +236,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             if (!isSquat) positionCalculator.resetScale()
             val summary = buildSummary(
                 params, poseResults, velocities, onProgress, onFrameAnnotation, timeScale,
-                barTrack, SquatContext(calculator, standingTorso)
+                barTrack, SquatContext(calculator, standingTorso, if (isSquat) metersPerUnit(poseResults, params) else emptyList())
             )
 
             logger.i(TAG, "Analysis complete: ${summary.completedReps.value} reps, score=${summary.overallScore}")
@@ -723,7 +734,96 @@ class AnalyzeVideoUseCase @Inject constructor(
     }
 
     /** What a squat's depth checks need from the tracking pass. */
-    private class SquatContext(val calculator: IPositionCalculator, val standingTorso: Float?)
+    private class SquatContext(
+        val calculator: IPositionCalculator,
+        val standingTorso: Float?,
+        /** Diagnostics: meters per normalized-y/image-height unit at each pose, from a calculator session of its own. */
+        val metersPerUnit: List<Float>
+    )
+
+    /**
+     * Meters per unit of a pose's normalized y (and image-height X) as the
+     * scale stood at that frame, from a session of its own so that asking
+     * never moves the one the analysis judges with. Log output only.
+     */
+    private fun metersPerUnit(poses: List<PoseResult>, params: Params): List<Float> {
+        val session = positionCalculator.newSession()
+        session.lockScaleToStanding(poses, params.calibrationData)
+        return poses.map { session.pixelsToMeters(1f, it, params.calibrationData) }
+    }
+
+    /** Logs the frames lost from the tracking pass as time ranges per reason, and the gaps with no pose at all. */
+    private fun logTrackingGaps(timesUs: List<Long>, reasons: List<String?>) {
+        val gaps = gapRanges(timesUs, reasons) + noPoseGaps(timesUs)
+        gaps.take(MAX_GAP_LINES).forEach { logger.i(TAG, "Tracking gap: $it") }
+        if (gaps.size > MAX_GAP_LINES) logger.i(TAG, "Tracking gap: and ${gaps.size - MAX_GAP_LINES} more")
+    }
+
+    /**
+     * Logs, per rep, every frame around its bottom before any plausibility
+     * filtering: hip below the knee (cm, negative = above), femur angle, the
+     * torso as a share of the standing one and whether [PoseSanity] drops it,
+     * then the deepest frame and the projected thigh length there (a short
+     * thigh in a side view means an oblique camera or collapsed landmarks).
+     */
+    private fun logDepthWindow(
+        rep: RepSegmenter.Rep,
+        poses: List<PoseResult>,
+        context: SquatContext,
+        fromUs: Long,
+        toUs: Long
+    ) {
+        class Frame(val index: Int, val hipBelowKneeCm: Float, val thighCm: Float, val femur: Float, val share: Float?, val rejected: Boolean)
+
+        fun frameAt(i: Int): Frame? {
+            val pose = poses[i]
+            val factor = context.metersPerUnit.getOrNull(i) ?: return null
+            val parts = context.calculator.getBodyPartPositions(pose) ?: return null
+            val hipsY = parts.hipsY ?: return null
+            val kneesY = parts.kneesY ?: return null
+            val hipsX = parts.hipsX ?: return null
+            val kneesX = parts.kneesX ?: return null
+            val dy = (hipsY - kneesY) * factor
+            val dx = (hipsX - kneesX) * factor
+            return Frame(
+                i, dy * 100f, sqrt(dx * dx + dy * dy) * 100f,
+                SquatDepthValidator.femurAngleDegrees(hipsX, hipsY, kneesX, kneesY),
+                context.standingTorso?.let { st -> PoseSanity.torsoHeight(pose)?.let { it / st } },
+                !PoseSanity.isPlausible(pose, context.standingTorso)
+            )
+        }
+
+        fun s(us: Long) = "%.2f".format(us / 1e6)
+        val frames = poses.indices.filter { poses[it].timestampUs in fromUs..toUs }.mapNotNull(::frameAt)
+        if (frames.isEmpty()) {
+            logger.i(TAG, "Depth window ${s(fromUs)}-${s(toUs)} s: no frame shows hips and knees")
+            return
+        }
+        logger.i(
+            TAG, "Depth window ${s(fromUs)}-${s(toUs)} s, ${frames.size} frames " +
+                "(time hip-below-knee cm, femur deg, torso % of standing, ! = dropped by PoseSanity): " +
+                frames.joinToString(" | ") {
+                    "%s %.1f %.0f %s%s".format(
+                        s(poses[it.index].timestampUs), it.hipBelowKneeCm, it.femur,
+                        it.share?.let { share -> "%.0f%%".format(share * 100) } ?: "n/a", if (it.rejected) " !" else ""
+                    )
+                }
+        )
+        val deepest = frames.maxBy { it.hipBelowKneeCm }
+        logger.i(
+            TAG, "Depth window deepest frame before filtering: ${s(poses[deepest.index].timestampUs)} s, hip %.1f cm %s the knee, thigh %.1f cm, torso %s, %s"
+                .format(
+                    abs(deepest.hipBelowKneeCm), if (deepest.hipBelowKneeCm >= 0) "below" else "above", deepest.thighCm,
+                    deepest.share?.let { "%.0f%% of standing".format(it * 100) } ?: "n/a",
+                    if (deepest.rejected) "dropped by PoseSanity" else "kept"
+                )
+        )
+        frameAt(rep.bottom)?.let {
+            logger.i(TAG, "Bar-track bottom ${s(poses[rep.bottom].timestampUs)} s: hip %.1f cm %s the knee, thigh %.1f cm".format(
+                abs(it.hipBelowKneeCm), if (it.hipBelowKneeCm >= 0) "below" else "above", it.thighCm
+            ))
+        }
+    }
 
     /**
      * A plate-tracked lift's bar track: heights (m, up positive) and signed
@@ -802,7 +902,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         // Plates are keyed by frame time in ms.
         val observed = poses.map { plates[it.timestampUs / 1_000] }
         val seen = observed.filterNotNull()
-        if (seen.isNotEmpty()) {
+        if (seen.isNotEmpty() && params.exerciseType.tracksBarPlate()) {
             val diameter = settingsRepository.getFloatSetting(
                 SettingsKeys.PLATE_DIAMETER_M, SettingsKeys.DEFAULT_PLATE_DIAMETER_M
             ).first()
@@ -814,6 +914,13 @@ class AnalyzeVideoUseCase @Inject constructor(
                 observed[i]?.let { -it.cy * pose.imageHeight * diameter / (2f * radius * pose.imageWidth) }
             }
             val plateTrack = barTrack(BarTrackSource.PLATE, timesUs, heights, PLATE_MEASUREMENT_NOISE, minDescent, direction)
+            val sortedHeights = heights.filterNotNull().sorted()
+            val travel = sortedHeights[(sortedHeights.size * 0.95f).toInt().coerceAtMost(sortedHeights.size - 1)] -
+                sortedHeights[(sortedHeights.size * 0.05f).toInt()]
+            if (travel < minDescent * MIN_PLATE_TRAVEL_FRACTION) {
+                logger.i(TAG, "Plate ignored: it moved %.3f m, too little to be the bar (a static circle)".format(travel))
+                return landmarkTrack(timesUs, landmarks, minDescent, direction)
+            }
             val repFrames = plateTrack.reps.flatMap { it.eccentricStart..it.concentricEnd }
             val coverage = if (repFrames.isEmpty()) 0f else repFrames.count { observed[it] != null }.toFloat() / repFrames.size
             logger.i(
@@ -823,11 +930,18 @@ class AnalyzeVideoUseCase @Inject constructor(
             if (coverage >= MIN_PLATE_COVERAGE) return plateTrack.also(::logReps)
         }
         logger.i(TAG, "Bar track from the landmarks (no usable plate track)")
-        return barTrack(
-            BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE,
-            minDescent, direction
-        ).also(::logReps)
+        return landmarkTrack(timesUs, landmarks, minDescent, direction)
     }
+
+    private fun landmarkTrack(
+        timesUs: List<Long>,
+        landmarks: List<Float?>,
+        minDescent: Float,
+        direction: RepSegmenter.Direction
+    ): BarTrack = barTrack(
+        BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE,
+        minDescent, direction
+    ).also(::logReps)
 
     /**
      * Heights (null where unseen) to a [BarTrack]. Every gap is bridged by a
@@ -843,6 +957,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         direction: RepSegmenter.Direction
     ): BarTrack {
         val held = fillTrackGaps(timesUs, heights, MAX_INTERPOLATED_GAP_US).held
+        gapRanges(timesUs, held.map { if (it) "held" else null }).take(MAX_GAP_LINES)
+            .forEach { logger.i(TAG, "Bar track ${source.name.lowercase()} gap: $it") }
         val bridged = fillTrackGaps(timesUs, heights, Long.MAX_VALUE).positions
         val velocities = BidirectionalVelocityCalculator.signedVelocities(
             timesUs.mapIndexed { i, t -> BidirectionalVelocityCalculator.PositionSample(bridged[i], t / 1_000, t) },
@@ -852,7 +968,18 @@ class AnalyzeVideoUseCase @Inject constructor(
         val samples = timesUs.indices.map {
             RepSegmenter.Sample(timesUs[it], bridged[it], velocities[it], measured = !held[it])
         }
-        return BarTrack(source, samples, RepSegmenter.segment(samples, minDescent, direction), direction)
+        val segmentation = RepSegmenter.segmentDetailed(samples, minDescent, direction)
+        segmentation.rejections.forEach { logger.i(TAG, "Rep candidate rejected: ${describe(it, minDescent)}") }
+        return BarTrack(source, samples, segmentation.reps, direction)
+    }
+
+    private fun describe(r: RepSegmenter.Rejection, minDescent: Float): String {
+        val span = "%.1f-%.1f s".format(r.startUs / 1e6, r.endUs / 1e6)
+        return when (r.reason) {
+            RepSegmenter.RejectionReason.CROSSED_GAP -> "$span, crossed a %.1f s tracking gap (travel %.2f m)".format(r.gapUs / 1e6, r.depth)
+            RepSegmenter.RejectionReason.NEVER_RETURNED -> "$span, did not return to the top before the end (travel %.2f m)".format(r.depth)
+            RepSegmenter.RejectionReason.TOO_SHALLOW -> "$span, descended only %.2f m, under the %.2f m a rep needs".format(r.depth, minDescent)
+        }
     }
 
     private fun logReps(track: BarTrack) {
@@ -884,9 +1011,10 @@ class AnalyzeVideoUseCase @Inject constructor(
         context ?: return null
         val fromUs = poses[rep.pauseStart].timestampUs - DEPTH_WINDOW_US
         val toUs = poses[rep.concentricStart].timestampUs + DEPTH_WINDOW_US
+        logDepthWindow(rep, poses, context, fromUs, toUs)
         val results = poses.filter { it.timestampUs in fromUs..toUs && PoseSanity.isPlausible(it, context.standingTorso) }
             .mapNotNull { squatStrategy.validateDepthAt(it, params.calibrationData, context.calculator) }
-        return results.firstOrNull { it.isValid } ?: results.maxByOrNull { it.confidence }
+        return bestDepthResult(results)
     }
 
     private fun extractBarPathPoint(
@@ -930,7 +1058,9 @@ class AnalyzeVideoUseCase @Inject constructor(
         when (val strategy = runCatching { strategyFactory.getStrategy(exerciseType) }.getOrNull()) {
             is BackSquatStrategy -> {
                 val name = settingsRepository.getStringSetting(
-                    SettingsKeys.SQUAT_DEPTH_BACK_SQUAT, SquatDepthType.DEFAULT.name
+                    if (exerciseType == ExerciseType.AIR_SQUAT) SettingsKeys.SQUAT_DEPTH_AIR_SQUAT
+                    else SettingsKeys.SQUAT_DEPTH_BACK_SQUAT,
+                    SquatDepthType.DEFAULT.name
                 ).first()
                 strategy.updateSquatDepthType(SquatDepthType.fromString(name))
             }
@@ -1016,10 +1146,52 @@ class AnalyzeVideoUseCase @Inject constructor(
             return FilledTrack(filled.toList(), positions.count { it == null }, held.toList())
         }
 
+        /** Most gap ranges logged per analysis. */
+        private const val MAX_GAP_LINES = 60
+
+        /**
+         * Consecutive frames lost for the same reason, as `5.20-5.65 s (sanity, 14 frames)`;
+         * [reasons] is 1:1 with [timesUs], null where the frame was kept.
+         */
+        internal fun gapRanges(timesUs: List<Long>, reasons: List<String?>): List<String> {
+            val ranges = mutableListOf<String>()
+            var i = 0
+            while (i < reasons.size) {
+                val reason = reasons[i]
+                if (reason == null) { i++; continue }
+                val start = i
+                while (i < reasons.size && reasons[i] == reason) i++
+                ranges += "%.2f-%.2f s (%s, %d frames)".format(
+                    timesUs[start] / 1e6, timesUs[i - 1] / 1e6, reason, i - start
+                )
+            }
+            return ranges
+        }
+
+        /** Spans between consecutive poses 2.5 times the usual spacing or more: frames the pose model found no one in. */
+        internal fun noPoseGaps(timesUs: List<Long>): List<String> {
+            if (timesUs.size < 3) return emptyList()
+            val steps = timesUs.zipWithNext { a, b -> b - a }
+            val usual = steps.sorted()[steps.size / 2]
+            if (usual <= 0) return emptyList()
+            return steps.indices.filter { steps[it] * 2 > usual * 5 }.map {
+                "%.2f-%.2f s (no pose, ~%d frames)".format(
+                    timesUs[it] / 1e6, timesUs[it + 1] / 1e6, (steps[it] / usual - 1).coerceAtLeast(1)
+                )
+            }
+        }
+
         /** Share of a squat's rep frames the plate must be seen on for its track to be used. */
         private const val MIN_PLATE_COVERAGE = 0.8f
 
         /** Plate center measurement variance (m²): about 1 cm. */
+        /**
+         * A plate whose height (95th minus 5th percentile) varies by less than
+         * this fraction of the exercise's minimum descent is not the bar: a
+         * round object that stays put, such as a plate on a rack or a wall clock.
+         */
+        private const val MIN_PLATE_TRAVEL_FRACTION = 0.5f
+
         private const val PLATE_MEASUREMENT_NOISE = 1e-4f
 
         /** Landmark measurement variance (m²): about 2 cm. */
@@ -1044,3 +1216,9 @@ class AnalyzeVideoUseCase @Inject constructor(
         )
     }
 }
+
+/** The rep's verdict from its bottom frames: the first that reaches depth, else the closest miss. */
+internal fun bestDepthResult(results: List<DepthValidationResult>): DepthValidationResult? =
+    results.firstOrNull { it.isValid }
+        ?: results.filter { it.shortfallCm != null }.minByOrNull { it.shortfallCm!! }
+        ?: results.maxByOrNull { it.confidence }

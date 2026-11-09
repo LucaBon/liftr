@@ -1,6 +1,8 @@
 package com.liftr.domain.vision
 
+import com.liftr.domain.calculator.CoordinateCalculator
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.model.AnthropometricData
 import com.liftr.domain.model.BodyPartPositions
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.CalibrationQuality
@@ -47,10 +49,30 @@ open class BodyPositionCalculator(
     /** Median measurements (time in µs, px/m) of the last [STANDING_MEMORY_US], for the tallest span. */
     private val recentPeaks = ArrayDeque<Pair<Long, Float>>()
 
+    /** The whole set's scale, when it was measured up front; beats [lockedScale]. */
+    private var standingScale: Float? = null
+
     override fun newSession(): IPositionCalculator = BodyPositionCalculator(logger)
 
     @Synchronized
+    override fun lockScaleToStanding(poses: List<PoseResult>, calibrationData: CalibrationData?) {
+        val samples = poses.filter { PoseSanity.isPlausible(it) }.mapNotNull { pose ->
+            calculatePixelsPerMeter(pose, calibrationData)
+                .takeIf { it.quality == CalibrationQuality.OPTIMAL }
+                ?.let { StandingScale.Sample(pose.timestampUs, it.pixelsPerMeter) }
+        }
+        val estimate = StandingScale.estimate(samples)
+        standingScale = estimate?.pixelsPerMeter
+        if (estimate != null) {
+            logger.i(TAG, "Scale held for the set: ${estimate.pixelsPerMeter} px/m, from ${estimate.frames} standing frames")
+        } else {
+            logger.w(TAG, "No still standing frames, the scale follows the frames")
+        }
+    }
+
+    @Synchronized
     override fun resetScale() {
+        standingScale = null
         lockedScale = null
         recentScales.clear()
         recentPeaks.clear()
@@ -117,6 +139,7 @@ open class BodyPositionCalculator(
      */
     @Synchronized
     fun lockedPixelsPerMeter(poseResult: PoseResult, calibrationData: CalibrationData?): Float {
+        standingScale?.let { return it }
         val measured = calculatePixelsPerMeter(poseResult, calibrationData)
         val measures = measured.quality == CalibrationQuality.OPTIMAL || measured.quality == CalibrationQuality.ESTIMATED
         // The upright stacking check would reject a lying lifter (arched back,
@@ -192,16 +215,18 @@ open class BodyPositionCalculator(
             (bottom.map { it.y }.average() - top.map { it.y }.average()).toFloat() * poseResult.imageHeight
 
         if (head.isNotEmpty() && ankles.isNotEmpty()) {
-            return CalibrationResult(span(head, ankles) / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
+            return CalibrationResult(
+                span(head, ankles) / HEAD_TO_ANKLE_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.OPTIMAL
+            )
         }
         if (head.isNotEmpty() && hips.isNotEmpty()) {
             return CalibrationResult(
-                span(head, hips) / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED
+                span(head, hips) / headToHipShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED
             )
         }
         if (hips.isNotEmpty() && ankles.isNotEmpty()) {
             return CalibrationResult(
-                span(hips, ankles) / LEGS_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED
+                span(hips, ankles) / hipToAnkleShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED
             )
         }
         return CalibrationResult(calibrationData.pixelsPerMeter, CalibrationQuality.FALLBACK)
@@ -225,9 +250,9 @@ open class BodyPositionCalculator(
         val torso = distancePx(head, hips, poseResult)
         return if (knees != null && ankles != null) {
             val body = torso + distancePx(hips, knees, poseResult) + distancePx(knees, ankles, poseResult)
-            CalibrationResult(body / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
+            CalibrationResult(body / HEAD_TO_ANKLE_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
         } else {
-            CalibrationResult(torso / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
+            CalibrationResult(torso / headToHipShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
         }
     }
 
@@ -251,6 +276,26 @@ open class BodyPositionCalculator(
     private fun distancePx(a: Pair<Float, Float>, b: Pair<Float, Float>, poseResult: PoseResult): Float =
         hypot((a.first - b.first) * poseResult.imageWidth, (a.second - b.second) * poseResult.imageHeight)
 
+    /** The body capture, unless it failed and holds the average ratios. */
+    private fun capture(calibrationData: CalibrationData): AnthropometricData? =
+        calibrationData.anthropometricData?.takeIf {
+            it.captureQuality == CalibrationQuality.OPTIMAL || it.captureQuality == CalibrationQuality.ESTIMATED
+        }
+
+    /** Head landmarks to hips as a share of stature: the person's, when captured and believable. */
+    private fun headToHipShare(calibrationData: CalibrationData): Float =
+        capture(calibrationData)
+            ?.let { it.headHeightRatio + it.neckHeightRatio + it.torsoHeightRatio - CoordinateCalculator.FACE_TO_HEAD_TOP_RATIO }
+            ?.takeIf { it in HEAD_TO_HIP_RANGE }
+            ?: AVERAGE_HEAD_TO_HIP_SHARE
+
+    /** Hips to ankles as a share of stature: the person's, when captured and believable. */
+    private fun hipToAnkleShare(calibrationData: CalibrationData): Float =
+        capture(calibrationData)
+            ?.let { it.upperLegHeightRatio + it.lowerLegHeightRatio }
+            ?.takeIf { it in HIP_TO_ANKLE_RANGE }
+            ?: AVERAGE_HIP_TO_ANKLE_SHARE
+
     private fun visible(landmarks: List<PoseKeypoint>, vararg ids: Int): List<PoseKeypoint> =
         ids.map { landmarks.getOrNull(it) }.filterNotNull().filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
 
@@ -272,14 +317,29 @@ open class BodyPositionCalculator(
         /** How long the tallest standing span is remembered: longer than any squat rep. */
         const val STANDING_MEMORY_US = 8_000_000L
 
-        /** Head to hip is about 52% of standing height. */
-        private const val TORSO_SHARE_OF_HEIGHT = 0.52f
+        /**
+         * The head landmarks (nose, eyes, ears) to the ankle joint, as a share
+         * of stature: below the crown and above the sole. The same for
+         * everyone, because a body capture estimates the crown and the sole
+         * from these very proportions.
+         */
+        private const val HEAD_TO_ANKLE_SHARE_OF_HEIGHT =
+            1f - CoordinateCalculator.FACE_TO_HEAD_TOP_RATIO - CoordinateCalculator.ANKLE_HEIGHT_RATIO
+
+        /** Average head landmarks to hips, as a share of stature, without a body capture. */
+        private const val AVERAGE_HEAD_TO_HIP_SHARE = 0.415f
+
+        /** Captured head-to-hip shares outside this are a bad capture. */
+        private val HEAD_TO_HIP_RANGE = 0.30f..0.52f
+
+        /** Captured hip-to-ankle shares outside this are a bad capture. */
+        private val HIP_TO_ANKLE_RANGE = 0.40f..0.58f
 
         /** tan(30°): torso tilt below which the lifter counts as lying down. */
         private const val LYING_MAX_TILT_TAN = 0.577f
 
-        /** Hip to ankle is about 48% of standing height. */
-        private const val LEGS_SHARE_OF_HEIGHT = 0.48f
+        /** Average hips to ankles, as a share of stature, without a body capture. */
+        private const val AVERAGE_HIP_TO_ANKLE_SHARE = 0.48f
 
         private val HEAD = intArrayOf(
             PoseResult.NOSE, PoseResult.LEFT_EYE, PoseResult.RIGHT_EYE, PoseResult.LEFT_EAR, PoseResult.RIGHT_EAR

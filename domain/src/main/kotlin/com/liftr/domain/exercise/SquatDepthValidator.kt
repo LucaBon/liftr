@@ -5,6 +5,7 @@ import com.liftr.domain.model.SquatDepthType
 import com.liftr.domain.value.Meters
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.hypot
 
 /**
  * Utility class for robust squat depth validation using multiple methods.
@@ -14,7 +15,10 @@ import kotlin.math.atan2
  * 2. Femur angle calculation (good for all depth types)
  * 3. Hip joint vs knee (fallback, simple check)
  *
- * Uses a weighted voting system to provide confidence scoring.
+ * Uses a weighted voting system to provide confidence scoring. A knee closed
+ * beyond the depth standard's angle settles it on its own: at full depth the
+ * thigh presses on the calf and the hip landmark stays high, so the height
+ * checks read a rep at the limit of the movement as short of parallel.
  */
 object SquatDepthValidator {
 
@@ -23,6 +27,18 @@ object SquatDepthValidator {
     private const val SIMPLE_CHECK_WEIGHT = 0.2f // 20% weight - fallback method
 
     private const val CONFIDENCE_THRESHOLD = 0.6f // Need 60% confidence to pass
+
+    /** Knee angle at or under which a parallel squat is deep enough, degrees. */
+    private const val KNEE_ANGLE_PARALLEL = 60f
+
+    /** Knee angle at or under which a full squat is deep enough, degrees. */
+    private const val KNEE_ANGLE_FULL = 55f
+
+    /** Confidence of a depth settled by the knee angle: enough for full depth points. */
+    private const val KNEE_ANGLE_CONFIDENCE = 0.85f
+
+    /** Thigh or shin shorter than this is a collapsed skeleton, not a closed knee, meters. */
+    private const val MIN_LEG_SEGMENT_M = 0.15f
 
     /**
      * Performs robust depth validation using multiple methods with confidence scoring.
@@ -57,6 +73,12 @@ object SquatDepthValidator {
             methods.add(simpleCheckResult)
         }
 
+        // Reported but outside the vote, which keeps its meaning without ankles.
+        val kneeAngleResult = checkKneeAngle(state, depthType)
+        if (kneeAngleResult != null) {
+            methods.add(kneeAngleResult)
+        }
+
         // No methods available - fail safe to avoid counting unverifiable reps (BUG-C fix)
         if (methods.isEmpty()) {
             return DepthValidationResult.simple(
@@ -70,7 +92,8 @@ object SquatDepthValidator {
         val passedWeight = methods.filter { it.passed }.sumOf { it.weight.toDouble() }.toFloat()
         val confidence = passedWeight / totalWeight
 
-        val isValid = confidence >= CONFIDENCE_THRESHOLD
+        val kneeSettled = kneeAngleResult?.passed == true
+        val isValid = confidence >= CONFIDENCE_THRESHOLD || kneeSettled
 
         val debugInfo = buildString {
             append("Depth validation: ")
@@ -85,9 +108,40 @@ object SquatDepthValidator {
 
         return DepthValidationResult(
             isValid = isValid,
-            confidence = confidence,
+            confidence = if (kneeSettled) maxOf(confidence, KNEE_ANGLE_CONFIDENCE) else confidence,
             methods = methods,
-            debugInfo = debugInfo
+            debugInfo = debugInfo,
+            shortfallCm = methods.firstNotNullOfOrNull { it.shortfallCm }
+        )
+    }
+
+    /**
+     * The hip-knee-ankle angle, which only applies to standards that set a
+     * minimum depth. Null without ankles, or with a leg too short to be real.
+     */
+    private fun checkKneeAngle(
+        state: ExercisePhaseState,
+        depthType: SquatDepthType
+    ): DepthValidationResult.ValidationMethod? {
+        val limit = when (depthType) {
+            SquatDepthType.POWERLIFTING -> KNEE_ANGLE_PARALLEL
+            SquatDepthType.FULL -> KNEE_ANGLE_FULL
+            SquatDepthType.QUARTER, SquatDepthType.HALF -> return null
+        }
+        val thighX = (state.currentHipsX ?: return null) - (state.currentKneesX ?: return null)
+        val thighY = (state.currentHipsY ?: return null) - (state.currentKneesY ?: return null)
+        val shinX = (state.currentAnklesX ?: return null) - state.currentKneesX
+        val shinY = (state.currentAnklesY ?: return null) - state.currentKneesY
+        // The ankle is below the knee in any real squat.
+        if (shinY <= 0f || hypot(thighX, thighY) < MIN_LEG_SEGMENT_M || hypot(shinX, shinY) < MIN_LEG_SEGMENT_M) return null
+
+        val between = abs(Math.toDegrees((atan2(thighY, thighX) - atan2(shinY, shinX)).toDouble())).toFloat()
+        val angle = if (between > 180f) 360f - between else between
+        return DepthValidationResult.ValidationMethod(
+            name = "Knee Angle",
+            passed = angle <= limit,
+            weight = 0f,
+            value = "${angle.toInt()}° (need ${limit.toInt()}° or less)"
         )
     }
 
@@ -120,11 +174,20 @@ object SquatDepthValidator {
             SquatDepthType.FULL -> creaseToKneeDistance >= 0.05f - tolerance.value
         }
 
+        // The standard itself, without the measurement tolerance.
+        val shortfall = when (depthType) {
+            SquatDepthType.QUARTER -> creaseToKneeDistance - -0.15f
+            SquatDepthType.HALF -> creaseToKneeDistance - -0.08f
+            SquatDepthType.POWERLIFTING -> 0f - creaseToKneeDistance
+            SquatDepthType.FULL -> 0.05f - creaseToKneeDistance
+        }
+
         return DepthValidationResult.ValidationMethod(
             name = "Hip Crease",
             passed = passed,
             weight = HIP_CREASE_WEIGHT,
-            value = "${(abs(creaseToKneeDistance) * 100).toInt()}cm ${if (creaseToKneeDistance >= 0) "below" else "above"}"
+            value = "${(abs(creaseToKneeDistance) * 100).toInt()}cm ${if (creaseToKneeDistance >= 0) "below" else "above"}",
+            shortfallCm = (shortfall * 100f).coerceAtLeast(0f)
         )
     }
 
@@ -174,7 +237,10 @@ object SquatDepthValidator {
 
     /**
      * Calculates the femur angle from vertical using hip and knee positions.
-     * Returns angle in degrees (0° = standing, 90° = horizontal/parallel).
+     * Returns angle in degrees (0° = standing, 90° = horizontal/parallel,
+     * above 90° = hips below the knees). Signed past parallel: the hip-knee
+     * height difference keeps its sign, so a deep squat is not folded back
+     * under 90°.
      */
     private fun calculateFemurAngle(state: ExercisePhaseState): Float? {
         val hipsY = state.currentHipsY ?: return null
@@ -182,10 +248,15 @@ object SquatDepthValidator {
         val hipsX = state.currentHipsX ?: return null
         val kneesX = state.currentKneesX ?: return null
 
-        val dx = abs(hipsX - kneesX)
-        val dy = abs(hipsY - kneesY)
+        return femurAngleDegrees(hipsX, hipsY, kneesX, kneesY)
+    }
 
-        // Angle from vertical (atan2 gives angle from horizontal, so we adjust)
+    /** The femur angle (see [calculateFemurAngle]) from raw hip and knee coordinates, y growing downward. */
+    fun femurAngleDegrees(hipsX: Float, hipsY: Float, kneesX: Float, kneesY: Float): Float {
+        val dx = abs(hipsX - kneesX)
+        // Positive while the hips are above the knees (y grows downward).
+        val dy = kneesY - hipsY
+
         val angleRad = atan2(dx, dy)
         return Math.toDegrees(angleRad.toDouble()).toFloat()
     }

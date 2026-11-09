@@ -28,9 +28,10 @@ fun ScoreBreakdownRow(
     exerciseType: ExerciseType,
     modifier: Modifier = Modifier
 ) {
-    val parts = listOf(
+    val parts = listOfNotNull(
         Triple(exerciseType.depthPartLabelRes, breakdown.depth, RepQualityScorer.MAX_DEPTH),
-        Triple(R.string.set_summary_bar_path_header, breakdown.barPath, RepQualityScorer.MAX_BAR_PATH),
+        Triple(R.string.set_summary_bar_path_header, breakdown.barPath, RepQualityScorer.MAX_BAR_PATH)
+            .takeIf { exerciseType.scoresBarPath() },
         Triple(R.string.set_summary_tempo_header, breakdown.tempo, RepQualityScorer.MAX_TEMPO),
         Triple(R.string.set_summary_form_header, breakdown.form, RepQualityScorer.MAX_FORM)
     )

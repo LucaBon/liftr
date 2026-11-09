@@ -831,7 +831,7 @@ fun SetSummarySheet(
             }
 
             // Bar path replay card
-            if (summary.repBarPaths.isNotEmpty()) {
+            if (summary.repBarPaths.isNotEmpty() && summary.exerciseType.scoresBarPath()) {
                 Spacer(modifier = Modifier.height(Spacing.md))
                 BarPathReplayCard(
                     repBarPaths = summary.repBarPaths,
@@ -1070,7 +1070,9 @@ fun RepScoreTable(
             TableCell(text = stringResource(R.string.set_summary_rep_header), weight = 0.8f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_vel_header), weight = 1f, bold = true)
             TableCell(text = stringResource(exerciseType.depthPartLabelRes), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_bar_path_header), weight = 1f, bold = true)
+            if (exerciseType.scoresBarPath()) {
+                TableCell(text = stringResource(R.string.set_summary_bar_path_header), weight = 1f, bold = true)
+            }
             TableCell(text = stringResource(R.string.set_summary_tempo_header), weight = 1f, bold = true)
             TableCell(text = stringResource(R.string.set_summary_form_header), weight = 0.8f, bold = true)
             if (showCatch) TableCell(text = stringResource(R.string.set_summary_catch_header), weight = 1f, bold = true)
@@ -1101,7 +1103,7 @@ fun RepScoreTable(
                 TableCell(text = "${index + 1}", weight = 0.8f)
                 TableCell(text = velocity?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
                 TableCell(text = "${score.depthScore}" + if (score.depthAchieved) " \u2713" else "", weight = 1f)
-                TableCell(text = "${score.barPathScore}", weight = 1f)
+                if (exerciseType.scoresBarPath()) TableCell(text = "${score.barPathScore}", weight = 1f)
                 TableCell(text = "${score.tempoScore}", weight = 1f)
                 TableCell(text = "${score.formScore}", weight = 0.8f)
                 if (showCatch) TableCell(text = catchTypes.getOrNull(index)?.label() ?: "-", weight = 1f)

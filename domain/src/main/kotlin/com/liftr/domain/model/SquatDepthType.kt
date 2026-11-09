@@ -65,8 +65,8 @@ enum class SquatDepthType(
      * Note: -0.05 allows 5cm above with default 2cm tolerance
      */
     POWERLIFTING(
-        displayName = "Powerlifting (Parallel)",
-        description = "Competition standard - hip crease below knee",
+        displayName = "Parallel (estimated)",
+        description = "Estimated from body landmarks, not a judge's call",
         minHipKneeDistance = -0.05f, // Hips within 5cm of knee level
         minBarDescent = Meters(0.30f)
     ),
@@ -168,12 +168,17 @@ enum class SquatDepthType(
  * @property confidence Confidence score (0.0 to 1.0) based on multiple validation methods
  * @property methods List of validation methods used and their individual results
  * @property debugInfo Human-readable debug information
+ * @property shortfallCm How far the hip crease missed the depth standard, in cm
+ *   (0 when it met it): for a minimum depth (parallel, full) how far it stayed
+ *   above the target, for a maximum depth (quarter, half) how far it went past
+ *   it. Null when the hip crease could not be measured.
  */
 data class DepthValidationResult(
     val isValid: Boolean,
     val confidence: Float,
     val methods: List<ValidationMethod>,
-    val debugInfo: String = ""
+    val debugInfo: String = "",
+    val shortfallCm: Float? = null
 ) {
     /**
      * Individual validation method result
@@ -182,7 +187,8 @@ data class DepthValidationResult(
         val name: String,
         val passed: Boolean,
         val weight: Float,
-        val value: String = "" // e.g., "85.2°" for angle, "2.5cm" for distance
+        val value: String = "", // e.g., "85.2°" for angle, "2.5cm" for distance
+        val shortfallCm: Float? = null
     )
 
     companion object {

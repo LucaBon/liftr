@@ -54,6 +54,7 @@ class AnalyzeVideoUseCaseTest {
     private fun calculator(): IPositionCalculator {
         val calculator = mockk<IPositionCalculator> {
             justRun { resetScale() }
+            justRun { lockScaleToStanding(any(), any()) }
             every { pixelsToMeters(any(), any(), any()) } answers {
                 firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
             }
@@ -371,6 +372,30 @@ class AnalyzeVideoUseCaseTest {
         val plates = drops.mapIndexed { i, drop ->
             if (i % 3 == 0) PlateObservation(0.5f, 0.3f + drop * 333.33f / imageHeight, 0.15f, 1f) else null
         }
+
+        val summary = analyzeSquat(poses, plates)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertEquals(2, summary.completedReps.value)
+    }
+
+    @Test
+    fun `an air squat is counted from the landmarks without any plate`() = runBlocking {
+        val drops = twoSquats()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+
+        val summary = analyzeSquat(poses, plates = null, exerciseType = ExerciseType.AIR_SQUAT)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertTwoSquats(summary)
+    }
+
+    @Test
+    fun `a plate that does not move is not the bar and the landmarks are used`() = runBlocking {
+        val drops = twoSquats()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+        // A round object behind the lifter: always at the same place.
+        val plates = drops.map { PlateObservation(0.5f, 0.3f, 0.15f, 1f) }
 
         val summary = analyzeSquat(poses, plates)
 

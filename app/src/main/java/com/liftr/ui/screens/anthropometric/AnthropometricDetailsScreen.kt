@@ -140,7 +140,7 @@ fun AnthropometricDetailsScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                MeasurementField("Shoulder Width", uiState.shoulderWidth) { viewModel.onShoulderWidthChanged(it) }
+                MeasurementField("Shoulder Width (joint to joint)", uiState.shoulderWidth) { viewModel.onShoulderWidthChanged(it) }
                 MeasurementField("Hip Width", uiState.hipWidth) { viewModel.onHipWidthChanged(it) }
 
                 Spacer(modifier = Modifier.height(24.dp))

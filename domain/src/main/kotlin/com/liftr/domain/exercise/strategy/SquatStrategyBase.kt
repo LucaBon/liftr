@@ -149,6 +149,9 @@ abstract class SquatStrategyBase(
             kneesY = currentKneesY,
             hipsX = currentHipsX,
             kneesX = currentKneesX
+        ).withAnklePositions(
+            bodyPositions.anklesY?.let { positionCalculator.pixelsToMeters(it, poseResult, calibrationData) },
+            bodyPositions.anklesX?.let { positionCalculator.pixelsToMeters(it, poseResult, calibrationData) }
         )
         val barPosition = calculateBarPosition(currentHeadY, currentShouldersY)
 
@@ -396,7 +399,7 @@ abstract class SquatStrategyBase(
             kneesY = meters(positions.kneesY),
             hipsX = meters(positions.hipsX),
             kneesX = meters(positions.kneesX)
-        )
+        ).withAnklePositions(meters(positions.anklesY), meters(positions.anklesX))
         return validateSquatDepth(state)
     }
 

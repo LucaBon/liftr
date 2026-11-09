@@ -90,7 +90,7 @@ fun VolumeTonnageChart(
 }
 
 private fun getExerciseColor(exerciseType: ExerciseType): Int = when (exerciseType) {
-    ExerciseType.BACK_SQUAT -> ChartBackSquat.toArgb()
+    ExerciseType.BACK_SQUAT, ExerciseType.AIR_SQUAT -> ChartBackSquat.toArgb()
     ExerciseType.FRONT_SQUAT -> ChartFrontSquat.toArgb()
     ExerciseType.BENCH_PRESS -> ChartBenchPress.toArgb()
     ExerciseType.DEADLIFT -> ChartDeadlift.toArgb()

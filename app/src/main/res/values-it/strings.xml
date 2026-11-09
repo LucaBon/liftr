@@ -35,10 +35,12 @@
     <string name="set_summary_lowering_header">Discesa media</string>
     <string name="history_ecc_label">ecc</string>
     <string name="history_lowering_label">discesa</string>
-    <string name="history_rep_metrics_format">Rep %1$d: %4$s %2$s m/s \u00B7 %5$s %3$s</string>
+    <string name="history_rep_metrics_format">Rep %1$d: %6$s %7$s m/s \u00B7 %8$s %9$s m/s \u00B7 %4$s %2$s m/s \u00B7 %5$s %3$s</string>
     <string name="catch_muscle">Muscle</string>
     <string name="catch_power">Power</string>
     <string name="catch_squat">Squat</string>
+    <string name="exercise_air_squat">Squat a corpo libero</string>
+    <string name="settings_air_squat_depth">Profondità air squat</string>
     <string name="import_video">Importa video</string>
     <string name="import_video_as">Importa video come %1$s</string>
     <string name="jump_head_out_of_frame">Durante il salto la testa è uscita dall\'inquadratura: allontana il telefono o alzalo, lasciando spazio sopra la testa.</string>
