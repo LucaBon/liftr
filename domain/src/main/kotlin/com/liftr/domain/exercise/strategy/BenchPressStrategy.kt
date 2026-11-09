@@ -156,6 +156,18 @@ class BenchPressStrategy @Inject constructor(
         }
 
         val startingWristsY = state.startingWristsY
+
+        // The start is the lockout, the highest the bar sits between reps. A
+        // recording begins before the lifter lies down, so the first wrist seen
+        // is usually lower (standing, arms down): follow the wrists up.
+        if (wristsY < startingWristsY) {
+            return PhaseTransitionResult(
+                newState = state.withStartingWristsY(wristsY).withLowestWristsY(wristsY),
+                repCompleted = false,
+                debugInfo = "Starting position raised"
+            )
+        }
+
         val displacement = wristsY - startingWristsY
 
         // Bar descending (wrist Y increases as bar lowers toward chest in normalized coords)
@@ -266,10 +278,27 @@ class BenchPressStrategy @Inject constructor(
             )
         }
 
+        val returnTolerance = criteriaRef.get().returnTolerance.value
+
+        // Pressed well above the start: the start was taken before the lifter
+        // was in position (e.g. standing, then sitting down read as a descent).
+        // Not a rep; re-anchor at the new height and wait for the real one.
+        if (wristsY < startingWristsY - returnTolerance) {
+            logger.d(TAG, "Phase: CONCENTRIC -> IDLE (above stale start, re-anchoring)")
+            return PhaseTransitionResult(
+                newState = state
+                    .withCurrentPhase(MovementPhase.IDLE)
+                    .withStartingWristsY(wristsY)
+                    .withLowestWristsY(wristsY),
+                repCompleted = false,
+                debugInfo = "Start re-anchored above stale position"
+            )
+        }
+
         val returnDistance = abs(wristsY - startingWristsY)
 
         // Lockout requires returning near start AND sufficient elbow extension
-        val nearStart = returnDistance <= criteriaRef.get().returnTolerance.value
+        val nearStart = returnDistance <= returnTolerance
         val elbowsExtended = elbowAngle == null || elbowAngle >= ExerciseThresholds.BenchPress.LOCKOUT_MIN_ANGLE
 
         logger.d(TAG, "CONCENTRIC: returnDist=%.2f m, elbowAngle=${elbowAngle?.let { "%.1f°".format(it) } ?: "N/A"}, nearStart=$nearStart, elbowsExtended=$elbowsExtended".format(returnDistance))
