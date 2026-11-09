@@ -35,7 +35,7 @@
     <string name="set_summary_lowering_header">Discesa media</string>
     <string name="history_ecc_label">ecc</string>
     <string name="history_lowering_label">discesa</string>
-    <string name="history_rep_metrics_format">Rep %1$d: %4$s %2$s m/s \u00B7 %5$s %3$s</string>
+    <string name="history_rep_metrics_format">Rep %1$d: %6$s %7$s m/s \u00B7 %8$s %9$s m/s \u00B7 %4$s %2$s m/s \u00B7 %5$s %3$s</string>
     <string name="catch_muscle">Muscle</string>
     <string name="catch_power">Power</string>
     <string name="catch_squat">Squat</string>

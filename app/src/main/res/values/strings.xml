@@ -281,7 +281,7 @@
     <string name="set_summary_lowering_header">Lowering mean</string>
     <string name="history_ecc_label">ecc</string>
     <string name="history_lowering_label">lowering</string>
-    <string name="history_rep_metrics_format">Rep %1$d: %4$s %2$s m/s \u00B7 %5$s %3$s</string>
+    <string name="history_rep_metrics_format">Rep %1$d: %6$s %7$s m/s \u00B7 %8$s %9$s m/s \u00B7 %4$s %2$s m/s \u00B7 %5$s %3$s</string>
     <string name="set_summary_depth_header">Depth</string>
     <string name="set_summary_form_header">Form</string>
     <string name="set_summary_bar_path_header">Path</string>
