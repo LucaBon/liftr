@@ -47,6 +47,7 @@ import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PoseSanity
 import com.liftr.domain.video.VideoSpeedCheck
 import com.liftr.domain.vision.VideoPoseSource
 import com.liftr.domain.model.MovementPhase
@@ -55,6 +56,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.abs
 
 /**
  * Analyzes a recorded workout video offline using the heavy pose model
@@ -163,18 +165,34 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
 
             // --- Phase 2: bidirectional velocities over the whole set ---
-            // Frames whose tracked joint is occluded produce no position. Hold
-            // the last known one instead of substituting 0: a fabricated zero is
-            // a ~1.4 m jump from a real bar position, which one frame later
-            // reads as a ~40 m/s spike and wrecks peak velocity, velocity loss
-            // and the VBT zones. The list stays 1:1 with poseResults, which
-            // buildSummary relies on.
-            var lastKnownPosition: Float? = null
-            val positionSamples = poseResults.map { pose ->
-                val measured = trackingPositionMeters(pose, params)
-                if (measured != null) lastKnownPosition = measured
+            // The scale locks frame by frame, as it does live.
+            positionCalculator.resetScale()
+            // Frames whose tracked joint is occluded produce no position, and for
+            // squats a broken skeleton or an impossible jump is dropped too.
+            // Never substitute 0: a fabricated zero is a ~1.4 m jump from a real
+            // bar position, which reads as a ~40 m/s spike and wrecks peak
+            // velocity, velocity loss and the VBT zones. The list stays 1:1 with
+            // poseResults, which buildSummary relies on.
+            val isSquat = params.exerciseType == ExerciseType.FRONT_SQUAT || params.exerciseType == ExerciseType.BACK_SQUAT
+            // Most of a set is spent standing: the median torso of the upright
+            // frames is the standing one a folded skeleton is measured against.
+            val standingTorso = if (isSquat) {
+                poseResults.filter { PoseSanity.isPlausible(it) }.mapNotNull { PoseSanity.torsoHeight(it) }
+                    .sorted().let { it.getOrNull(it.size / 2) }
+            } else null
+            val measured = poseResults.map { pose ->
+                trackingPositionMeters(pose, params)?.takeUnless { isSquat && !PoseSanity.isPlausible(pose, standingTorso) }
+            }
+            val timesUs = poseResults.map { it.timestampUs }
+            val track = fillTrackGaps(
+                timesUs,
+                if (isSquat) dropTrackJumps(timesUs, measured, PoseSanity.MAX_SQUAT_SPEED_MPS) else measured,
+                MAX_INTERPOLATED_GAP_US
+            )
+            logger.i(TAG, "Tracking: ${track.missing} of ${measured.size} frames without a usable position")
+            val positionSamples = poseResults.mapIndexed { i, pose ->
                 BidirectionalVelocityCalculator.PositionSample(
-                    positionMeters = measured ?: lastKnownPosition ?: 0f,
+                    positionMeters = track.positions[i],
                     timestampMs = pose.timestamp,
                     timestampUs = pose.timestampUs
                 )
@@ -182,6 +200,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             val velocities = BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
+            // The strategy converts positions again, from the first frame on.
+            positionCalculator.resetScale()
             val summary = buildSummary(params, poseResults, velocities, onProgress, onFrameAnnotation, timeScale)
 
             logger.i(TAG, "Analysis complete: ${summary.completedReps.value} reps, score=${summary.overallScore}")
@@ -667,8 +687,62 @@ class AnalyzeVideoUseCase @Inject constructor(
         val rescore: suspend (List<AnalyzeRepUseCase.RepFrame>) -> RepQualityScore
     )
 
+    /** A tracked position per frame, gaps filled; [missing] counts the frames that had none. */
+    internal class FilledTrack(val positions: List<Float>, val missing: Int)
+
     companion object {
         private const val TAG = "AnalyzeVideoUseCase"
+
+        /** Longest tracking gap bridged by a straight line; longer gaps hold the last position. */
+        internal const val MAX_INTERPOLATED_GAP_US = 200_000L
+
+        /**
+         * Drops positions reached faster than [maxSpeedMps] from the last kept
+         * one. The allowance grows with the time since that position, so the
+         * track picks up again after a real move that a gap hid.
+         */
+        internal fun dropTrackJumps(timesUs: List<Long>, positions: List<Float?>, maxSpeedMps: Float): List<Float?> {
+            var lastIndex = -1
+            return positions.mapIndexed { i, p ->
+                if (p == null) return@mapIndexed null
+                val last = lastIndex
+                if (last >= 0 && abs(p - positions[last]!!) > maxSpeedMps * (timesUs[i] - timesUs[last]) / 1_000_000f) {
+                    null
+                } else {
+                    lastIndex = i
+                    p
+                }
+            }
+        }
+
+        /**
+         * Fills the frames without a position: linearly between the known
+         * neighbors when they are at most [maxInterpolatedGapUs] apart,
+         * otherwise holding the last known position (the first known one
+         * before it). All null gives zeros.
+         */
+        internal fun fillTrackGaps(timesUs: List<Long>, positions: List<Float?>, maxInterpolatedGapUs: Long): FilledTrack {
+            val filled = FloatArray(positions.size)
+            var prev = -1
+            for (i in positions.indices) {
+                val p = positions[i] ?: continue
+                if (prev < 0) {
+                    for (j in 0 until i) filled[j] = p
+                } else {
+                    val start = positions[prev]!!
+                    val span = timesUs[i] - timesUs[prev]
+                    for (j in prev + 1 until i) {
+                        filled[j] = if (span in 1..maxInterpolatedGapUs) {
+                            start + (p - start) * (timesUs[j] - timesUs[prev]) / span.toFloat()
+                        } else start
+                    }
+                }
+                filled[i] = p
+                prev = i
+            }
+            if (prev >= 0) for (j in prev + 1 until positions.size) filled[j] = positions[prev]!!
+            return FilledTrack(filled.toList(), positions.count { it == null })
+        }
 
         /** Share of the progress bar for pass 1 when a dense pass follows. */
         private const val COARSE_PASS_SHARE = 0.8f

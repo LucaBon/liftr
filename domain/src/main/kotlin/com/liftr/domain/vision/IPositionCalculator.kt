@@ -36,6 +36,13 @@ interface IPositionCalculator {
     ): Float
 
     /**
+     * Forgets the scale locked from earlier frames. Call at the start of every
+     * set (live or video): the scale is measured from the standing person and
+     * then held, so it must not carry over to another set or camera position.
+     */
+    fun resetScale() {}
+
+    /**
      * Assesses the quality of calibration based on pose visibility.
      *
      * @param poseResult The detected pose

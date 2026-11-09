@@ -265,6 +265,9 @@ class VelocityCalculator @Inject constructor(
         // Reset velocity smoothing
         velocitySmoothing.clear()
 
+        // Its own PositionCalculator instance locks a scale too.
+        positionCalculator.resetScale()
+
         startTime = null
     }
 }

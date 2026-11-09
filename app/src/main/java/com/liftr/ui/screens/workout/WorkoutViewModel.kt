@@ -1194,6 +1194,7 @@ class WorkoutViewModel @Inject constructor(
         lastNoPoseLogTime.set(0L)
         previousRepCount = 0
         exerciseState = ExercisePhaseState.initial()  // Reset to fresh state
+        processFrameUseCase.startSet()
 
         // Reset rep quality scoring accumulators
         currentRepBarPathPoints.clear()

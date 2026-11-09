@@ -25,6 +25,7 @@ import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PoseSanity
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -437,6 +438,9 @@ abstract class SquatStrategyBase(
         currentState: ExercisePhaseState?,
         phase: MovementPhase?
     ): FormValidationResult {
+        // A broken skeleton (plate hiding the upper body) would only report its own faults.
+        if (!PoseSanity.isPlausible(poseResult)) return FormValidationResult(isValid = true, issues = emptyList())
+
         val issues = mutableListOf<FormIssue>()
 
         // Knee valgus/varus can only be measured from a frontal view; the app
@@ -522,9 +526,11 @@ abstract class SquatStrategyBase(
         currentState: ExercisePhaseState?
     ): List<FormIssue> {
         // Median-filtered over time so a one-frame landmark jump is not a lift.
+        // Broken skeletons are left out, not read as a foot.
+        val plausible = frames.filter { PoseSanity.isPlausible(it.pose) }
         val slopes = rollingMedianOrNull(
-            frames.map { it.pose.timestampUs },
-            frames.map { footSlope(it.pose) },
+            plausible.map { it.pose.timestampUs },
+            plausible.map { footSlope(it.pose) },
             ExerciseThresholds.SquatForm.HEEL_LIFT_SMOOTH_MS
         ).filterNotNull()
         val reference = slopes.firstOrNull() ?: return emptyList()

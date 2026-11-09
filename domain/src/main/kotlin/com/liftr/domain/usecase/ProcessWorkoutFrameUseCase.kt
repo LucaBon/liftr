@@ -158,6 +158,14 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
     }
 
     /**
+     * Starts a new set: forgets the previous set's locked scale and velocity history.
+     */
+    fun startSet() {
+        positionCalculator.resetScale()
+        velocityCalculator.reset()
+    }
+
+    /**
      * Configures squat depth setting for squat exercise strategies.
      * Loads the user's preferred squat depth from settings and updates the strategy.
      */

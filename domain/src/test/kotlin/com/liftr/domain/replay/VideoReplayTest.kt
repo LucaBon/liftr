@@ -115,7 +115,9 @@ class VideoReplayTest {
             println("RESULT ${file.name}: reps=${summary.completedReps.value} " +
                 "conMean=${summary.repVelocities.map { "%.2f".format(it.value) }} " +
                 "conPeak=${summary.repPeakVelocities.map { "%.2f".format(it.value) }} " +
-                "maxFrameVelocity=%.2f m/s".format(annotations.maxOf { it.velocity.value }))
+                "maxFrameVelocity=%.2f m/s".format(annotations.maxOf { it.velocity.value }) +
+                // An empty pose measures nothing, so this reads back the scale the set locked.
+                " scale=%.0f px/m".format(dump.height / calculator.pixelsToMeters(1f, PoseResult(emptyList(), 0, dump.width, dump.height), calibration)))
             return
         }
         println("RESULT ${file.name}: reps=${summary.completedReps.value} heights=${summary.repJumpHeights.map { it.value }} " +

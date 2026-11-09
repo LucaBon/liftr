@@ -14,6 +14,7 @@ import com.liftr.domain.value.Kilograms
 import com.liftr.domain.vision.IPositionCalculator
 import com.liftr.domain.vision.VideoPoseSource
 import io.mockk.every
+import io.mockk.justRun
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -27,9 +28,19 @@ class AnalyzeVideoUseCaseTest {
     private val imageHeight = 1000
     private val pixelsPerMeter = 1000f
 
-    /** Shoulders at normalized [y]; the rest of the body is irrelevant to the tracked point. */
+    /**
+     * Shoulders (the tracked point) at normalized [y]; the head above and the
+     * hips and legs below, so the squat's plausibility gate keeps the frame.
+     */
     private fun poseAt(y: Float, timestampMs: Long): PoseResult {
-        val landmarks = List(33) { PoseKeypoint(0.5f, y, 0f, 1f) }
+        val landmarks = List(33) { i ->
+            val dy = when {
+                i <= PoseResult.RIGHT_EAR -> -0.05f
+                i < PoseResult.LEFT_HIP -> 0f
+                else -> 0.15f
+            }
+            PoseKeypoint(0.5f, y + dy, 0f, 1f)
+        }
         return PoseResult(landmarks, timestampMs, imageWidth = 500, imageHeight = imageHeight)
     }
 
@@ -37,6 +48,7 @@ class AnalyzeVideoUseCaseTest {
     fun `a tracked point moving 0_5 m in one second reads about 0_5 m per second`() = runBlocking {
         // Same contract as the real calculator: normalized y in, meters out.
         val calculator = mockk<IPositionCalculator> {
+            justRun { resetScale() }
             every { pixelsToMeters(any(), any(), any()) } answers {
                 firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
             }
@@ -82,6 +94,7 @@ class AnalyzeVideoUseCaseTest {
     @Test
     fun `rep mean velocity covers only the concentric part`() = runBlocking {
         val calculator = mockk<IPositionCalculator> {
+            justRun { resetScale() }
             every { pixelsToMeters(any(), any(), any()) } answers {
                 firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
             }
