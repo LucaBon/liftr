@@ -71,6 +71,22 @@ class BodyPositionCalculatorTest {
     }
 
     @Test
+    fun `a new session keeps its own scale`() {
+        val shared = BodyPositionCalculator(mockk(relaxed = true))
+        val session = shared.newSession()
+        (0 until 30).forEach { session.pixelsToMeters(1f, squatPose(0f, it * 33L), calibration) }
+        val locked = session.pixelsToMeters(1f, squatPose(0f, 1000L), calibration)
+        // A live set resets the shared calculator and measures someone else.
+        shared.resetScale()
+        val far = squatPose(0f, 0L).let { p ->
+            p.copy(landmarks = p.landmarks.map { if (it.visibility > 0f) it.copy(y = 0.5f + (it.y - 0.5f) / 2) else it })
+        }
+        (0 until 30).forEach { shared.pixelsToMeters(1f, far, calibration) }
+
+        assertEquals(locked, session.pixelsToMeters(1f, squatPose(1f, 1033L), calibration), 1e-4f)
+    }
+
+    @Test
     fun `an upside-down pose is not flipped`() {
         val calculator = BodyPositionCalculator(mockk(relaxed = true))
         val upright = squatPose(0f, 0L)

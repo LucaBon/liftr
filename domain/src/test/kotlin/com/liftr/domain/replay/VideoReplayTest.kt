@@ -19,6 +19,7 @@ import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.value.Kilograms
 import com.liftr.domain.vision.BodyPositionCalculator
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PlateObservation
 import com.liftr.domain.vision.VideoPoseSource
 import io.mockk.every
 import io.mockk.mockk
@@ -44,7 +45,9 @@ import java.util.regex.Pattern
  * Run (comma-separated files; add -i to see the strategy log):
  * `LIFTR_REPLAY=/path/a.json,/path/b.json ./gradlew :domain:test --tests '*VideoReplayTest' -i`
  * Optional: LIFTR_REPLAY_TYPE (default VERTICAL_JUMP), LIFTR_REPLAY_HEIGHT_M (default 1.75),
- * LIFTR_REPLAY_TIMESCALE (slow-mo factor, default 1).
+ * LIFTR_REPLAY_TIMESCALE (slow-mo factor, default 1), LIFTR_REPLAY_PLATE (a plate track fed in as the
+ * source's plate observations: `{fps, w, h, track:[{t (s), c:[cx, cy, r] | null}]}`, cx and r normalized
+ * by the width, cy by the height; the plate diameter is the setting's default).
  */
 class VideoReplayTest {
 
@@ -81,7 +84,9 @@ class VideoReplayTest {
         val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
         val settings = mockk<SettingsRepository>(relaxed = true) {
             every { getStringSetting(any(), any()) } returns flowOf(SquatDepthType.DEFAULT.name)
+            every { getFloatSetting(any(), any()) } answers { flowOf(secondArg()) }
         }
+        val plates = System.getenv("LIFTR_REPLAY_PLATE")?.takeIf { it.isNotBlank() }?.let { parsePlates(File(it).readText()) }
         val useCase = AnalyzeVideoUseCase(
             calculator, factory, AnalyzeRepUseCase(factory, logger), settings, logger
         )
@@ -94,10 +99,13 @@ class VideoReplayTest {
                 for (i in 0 until dump.frames) {
                     val entry = dump.poses[i]
                     val tUs = entry?.first ?: Math.round(i * 1_000_000.0 / dump.captureFps)
-                    val pose = if (include(tUs) && entry != null) {
+                    // Like the phone, the plate is tracked on the frames analyzed for pose.
+                    val analyzed = include(tUs)
+                    val pose = if (analyzed && entry != null) {
                         PoseResult(entry.second, tUs / 1_000, dump.width, dump.height, dump.height > dump.width, tUs)
                     } else null
-                    emit(VideoPoseSource.Frame(tUs / 1_000, pose))
+                    val plate = if (analyzed) plates?.nearest(tUs / 1_000) else null
+                    emit(VideoPoseSource.Frame(tUs / 1_000, pose, plate))
                 }
             }
             override fun close() = Unit
@@ -112,6 +120,15 @@ class VideoReplayTest {
         }
         if (!type.isJumpExercise()) {
             printSquatReps(annotations)
+            for (n in 0 until summary.completedReps.value) {
+                println(("SUMMARY REP ${n + 1} (${summary.barTrackSource}): ROM %.2f m | ecc %.2f m/s over %.2f s | " +
+                    "pause %.2f s | con mean %.2f m/s over %.2f s, peak %.2f m/s").format(
+                    summary.repRangeOfMotion.getOrNull(n)?.value, summary.repEccentricVelocities.getOrNull(n)?.value,
+                    summary.repEccentricDurations.getOrNull(n), summary.repPauseMs.getOrNull(n)?.div(1000.0),
+                    summary.repVelocities[n].value, summary.repConcentricDurations.getOrNull(n),
+                    summary.repPeakVelocities[n].value
+                ))
+            }
             println("RESULT ${file.name}: reps=${summary.completedReps.value} " +
                 "conMean=${summary.repVelocities.map { "%.2f".format(it.value) }} " +
                 "conPeak=${summary.repPeakVelocities.map { "%.2f".format(it.value) }} " +
@@ -149,6 +166,24 @@ class VideoReplayTest {
                 rom, active.maxOf { it.velocity.value }
             ))
         }
+    }
+
+    /** Plate observations by frame time (ms); [nearest] matches a frame within half a 60 fps frame. */
+    private class PlateTrack(val byMs: java.util.TreeMap<Long, PlateObservation>) {
+        fun nearest(ms: Long): PlateObservation? =
+            listOfNotNull(byMs.floorEntry(ms), byMs.ceilingEntry(ms))
+                .filter { kotlin.math.abs(it.key - ms) <= 8 }
+                .minByOrNull { kotlin.math.abs(it.key - ms) }?.value
+    }
+
+    private fun parsePlates(json: String): PlateTrack {
+        val byMs = java.util.TreeMap<Long, PlateObservation>()
+        val entry = Regex("\\{\"t\"\\s*:\\s*([0-9.eE+-]+)\\s*,\\s*\"c\"\\s*:\\s*\\[([^\\]]*)\\]")
+        for (m in entry.findAll(json)) {
+            val (cx, cy, r) = m.groupValues[2].split(',').map { it.trim().toFloat() }
+            byMs[Math.round(m.groupValues[1].toDouble() * 1000)] = PlateObservation(cx, cy, r, 1f)
+        }
+        return PlateTrack(byMs)
     }
 
     private fun parse(json: String): Dump {

@@ -43,6 +43,14 @@ interface IPositionCalculator {
     fun resetScale() {}
 
     /**
+     * A calculator with its own scale state. The app shares one calculator
+     * between live sets and background video analysis; an analysis takes its
+     * own so a live set's [resetScale] (or frames) cannot shift its scale
+     * midway. A stateless implementation may return itself.
+     */
+    fun newSession(): IPositionCalculator = this
+
+    /**
      * Assesses the quality of calibration based on pose visibility.
      *
      * @param poseResult The detected pose

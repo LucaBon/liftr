@@ -1,0 +1,178 @@
+package com.liftr.domain.exercise
+
+import kotlin.math.abs
+
+/**
+ * Finds squat reps in a whole set's bar track and splits each into its phases
+ * (video path). Pure: positions in, reps out.
+ *
+ * The standing height is not the first frame: it is the level of the last
+ * plateau (|v| under [PLATEAU_MAX_SPEED] for at least [PLATEAU_MIN_US]) before
+ * each descent, so walking in, unracking and stepping back never shift a rep's
+ * top, and the top is re-anchored for every rep.
+ *
+ * A rep leaves the top, drops at least the depth type's bar descent below it
+ * and comes back within [RETURN_TOLERANCE]. The re-rack, which goes down and
+ * stays, never completes one. A rep that crosses an unmeasured stretch (a long
+ * tracking gap held flat, see [Sample.measured]) is dropped rather than timed
+ * across the gap.
+ */
+object RepSegmenter {
+
+    /**
+     * One bar track sample: time, [height] in meters (up positive),
+     * smoothed signed [velocity] (up positive), and whether the height is
+     * measured or interpolated over a short gap (false for a held value).
+     */
+    data class Sample(val timestampUs: Long, val height: Float, val velocity: Float, val measured: Boolean = true)
+
+    /**
+     * One rep, as sample indices and its metrics.
+     *
+     * [pauseStart]..[concentricStart] are the samples within [PAUSE_BAND] of
+     * the lowest point around [bottom] (all equal to it without a pause).
+     * The ascent runs from the end of the pause to lockout at [concentricEnd].
+     * The descent runs from [eccentricStart] to the start of a real pause (one
+     * of at least [PLATEAU_MIN_US], the bar parked at the bottom), so descent,
+     * pause and ascent tile the rep; a shorter one is the turnaround, and the
+     * descent runs to the lowest point, [bottom], as velocity trackers time it.
+     * Velocities are magnitudes in m/s. The means are the bar's travel over
+     * the phase time: down to the lowest point, and up from it to lockout. That is [rangeOfMotion] over the
+     * time when lockout is at the standing height; a bar that rises past it
+     * (onto the toes, bar whip) is credited the extra travel it really made.
+     */
+    data class Rep(
+        val eccentricStart: Int,
+        val bottom: Int,
+        val pauseStart: Int,
+        val concentricStart: Int,
+        val concentricEnd: Int,
+        val standingHeight: Float,
+        val rangeOfMotion: Float,
+        val eccentricDurationS: Float,
+        val pauseMs: Long,
+        val concentricDurationS: Float,
+        val meanEccentricVelocity: Float,
+        val meanConcentricVelocity: Float,
+        val peakConcentricVelocity: Float
+    )
+
+    /** Fastest a standing bar moves, m/s. */
+    const val PLATEAU_MAX_SPEED = 0.05f
+
+    /** Shortest standing plateau, µs. */
+    const val PLATEAU_MIN_US = 300_000L
+
+    /** How close to the standing height the bar must come back for a rep, m. */
+    const val RETURN_TOLERANCE = 0.03f
+
+    /** Band below the standing height that still counts as the top, m. */
+    const val TOP_TOLERANCE = 0.02f
+
+    /** Band above the lowest point that counts as the bottom pause, m. */
+    const val PAUSE_BAND = 0.01f
+
+    private class Plateau(val start: Int, val end: Int, val level: Float)
+
+    /**
+     * @param minDescent bar descent below the standing height a rep needs
+     *   (the squat depth type's `minBarDescent`), m
+     */
+    fun segment(samples: List<Sample>, minDescent: Float): List<Rep> {
+        val plateaus = plateaus(samples)
+        val reps = mutableListOf<Rep>()
+        var from = 0
+        // Plateaus starting before this index belong to an earlier rep (a long pause at its bottom).
+        var plateausFrom = 0
+        var standing: Plateau? = null
+        var i = 0
+        while (i < samples.size) {
+            plateaus.lastOrNull { it.end < i && it.start >= plateausFrom }?.let { standing = it }
+            val top = standing?.level
+            if (top == null || i < from || !samples[i].measured || samples[i].height >= top - minDescent) {
+                i++
+                continue
+            }
+            val descent = i
+            val back = (descent until samples.size).firstOrNull { samples[it].height >= top - RETURN_TOLERANCE }
+                ?: break
+            val rep = measure(samples, top, (from - 1).coerceAtLeast(0), descent, back)
+            if (rep != null) {
+                reps += rep
+                plateausFrom = rep.concentricStart
+                from = rep.concentricEnd + 1
+            } else {
+                from = back + 1
+            }
+            i = from
+        }
+        return reps
+    }
+
+    /**
+     * The rep through [descent] that is back near [top] at [back], starting no
+     * earlier than [floor], or null when it crosses unmeasured samples.
+     */
+    private fun measure(samples: List<Sample>, top: Float, floor: Int, descent: Int, back: Int): Rep? {
+        var eccentricStart = descent
+        while (eccentricStart > floor && samples[eccentricStart].height < top - TOP_TOLERANCE) eccentricStart--
+        val bottom = (descent..back).minBy { samples[it].height }
+        val low = samples[bottom].height
+        var pauseStart = bottom
+        while (pauseStart > eccentricStart && samples[pauseStart - 1].height <= low + PAUSE_BAND) pauseStart--
+        var concentricStart = bottom
+        while (concentricStart < back && samples[concentricStart + 1].height <= low + PAUSE_BAND) concentricStart++
+        // Lockout: back near the top, the bar stops rising. It may stop just
+        // short of the top, or overshoot it (onto the toes, bar whip) first.
+        val concentricEnd = (back until samples.size)
+            .firstOrNull { samples[it].velocity < PLATEAU_MAX_SPEED || !samples[it].measured } ?: samples.lastIndex
+        if ((eccentricStart..concentricEnd).any { !samples[it].measured }) return null
+
+        fun t(index: Int) = samples[index].timestampUs
+        // The bar is in the band from about halfway between the last sample
+        // outside it and the first inside, to halfway past the last inside.
+        val pauseFromUs = if (pauseStart == bottom) t(bottom) else (t(pauseStart - 1) + t(pauseStart)) / 2
+        val pauseToUs = if (concentricStart == bottom) t(bottom) else (t(concentricStart) + t(concentricStart + 1)) / 2
+        val pauseMs = if (pauseStart == concentricStart) 0L else (pauseToUs - pauseFromUs) / 1_000
+        val eccentricToUs = if (pauseMs * 1_000 >= PLATEAU_MIN_US) pauseFromUs else t(bottom)
+        val concentricFromUs = if (pauseMs == 0L) t(bottom) else pauseToUs
+
+        val rangeOfMotion = top - low
+        val eccentricS = (eccentricToUs - t(eccentricStart)) / 1_000_000f
+        val concentricS = (t(concentricEnd) - concentricFromUs) / 1_000_000f
+        return Rep(
+            eccentricStart = eccentricStart,
+            bottom = bottom,
+            pauseStart = pauseStart,
+            concentricStart = concentricStart,
+            concentricEnd = concentricEnd,
+            standingHeight = top,
+            rangeOfMotion = rangeOfMotion,
+            eccentricDurationS = eccentricS,
+            pauseMs = pauseMs,
+            concentricDurationS = concentricS,
+            meanEccentricVelocity = if (eccentricS > 0f) (samples[eccentricStart].height - low) / eccentricS else 0f,
+            meanConcentricVelocity = if (concentricS > 0f) (samples[concentricEnd].height - low) / concentricS else 0f,
+            peakConcentricVelocity = (concentricStart..concentricEnd).maxOf { samples[it].velocity }.coerceAtLeast(0f)
+        )
+    }
+
+    /** Runs of measured samples slower than [PLATEAU_MAX_SPEED] lasting [PLATEAU_MIN_US], with their median height. */
+    private fun plateaus(samples: List<Sample>): List<Plateau> {
+        val found = mutableListOf<Plateau>()
+        var start = -1
+        for (i in 0..samples.size) {
+            val still = i < samples.size && samples[i].measured && abs(samples[i].velocity) < PLATEAU_MAX_SPEED
+            if (still) {
+                if (start < 0) start = i
+                continue
+            }
+            if (start >= 0 && samples[i - 1].timestampUs - samples[start].timestampUs >= PLATEAU_MIN_US) {
+                val heights = (start until i).map { samples[it].height }.sorted()
+                found += Plateau(start, i - 1, heights[heights.size / 2])
+            }
+            start = -1
+        }
+        return found
+    }
+}

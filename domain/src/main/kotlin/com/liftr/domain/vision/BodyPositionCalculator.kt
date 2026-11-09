@@ -44,6 +44,8 @@ open class BodyPositionCalculator(
     /** Median measurements (time in µs, px/m) of the last [STANDING_MEMORY_US], for the tallest span. */
     private val recentPeaks = ArrayDeque<Pair<Long, Float>>()
 
+    override fun newSession(): IPositionCalculator = BodyPositionCalculator(logger)
+
     @Synchronized
     override fun resetScale() {
         lockedScale = null

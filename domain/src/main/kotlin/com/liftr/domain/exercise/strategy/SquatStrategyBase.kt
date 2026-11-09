@@ -375,6 +375,29 @@ abstract class SquatStrategyBase(
     }
 
     /**
+     * Depth check of a single frame, with positions from [calculator]. The
+     * video path finds the bottom from the bar track and judges its frames
+     * here, with the analysis' own calculator (see [IPositionCalculator.newSession]).
+     */
+    fun validateDepthAt(
+        poseResult: PoseResult,
+        calibrationData: CalibrationData,
+        calculator: IPositionCalculator
+    ): DepthValidationResult? {
+        val positions = calculator.getBodyPartPositions(poseResult) ?: return null
+        fun meters(value: Float?) = value?.let { calculator.pixelsToMeters(it, poseResult, calibrationData) }
+        val state = ExercisePhaseState.initial().withCurrentPositions(
+            headY = meters(positions.headY),
+            shouldersY = meters(positions.shouldersY),
+            hipsY = meters(positions.hipsY),
+            kneesY = meters(positions.kneesY),
+            hipsX = meters(positions.hipsX),
+            kneesX = meters(positions.kneesX)
+        )
+        return validateSquatDepth(state)
+    }
+
+    /**
      * Validates squat depth using robust multi-method validation with confidence scoring.
      *
      * @return DepthValidationResult if sufficient landmark data is available, null otherwise

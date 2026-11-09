@@ -41,6 +41,14 @@ import com.liftr.domain.model.BarPathData
  *   (see [JumpData.contactTimeMs]); null for the first jump, after a rest and for approach jumps
  * @property repReactiveStrengthIndices Per-jump RSI (flight time / contact time), null where there
  *   is no contact time; both index-aligned with [repJumpHeights]
+ * @property repEccentricVelocities Per-rep mean eccentric velocity (range of motion over the
+ *   descent time) for squats analyzed from video; empty elsewhere. [repVelocities] and
+ *   [repPeakVelocities] stay the mean and peak concentric velocity.
+ * @property repPauseMs Per-rep bottom pause in ms (0 without one); squats from video only
+ * @property repEccentricDurations Per-rep descent time in seconds; squats from video only
+ * @property repConcentricDurations Per-rep ascent time in seconds; squats from video only
+ * @property repRangeOfMotion Per-rep bar travel from standing to the bottom; squats from video only
+ * @property barTrackSource What the squat velocities were measured on; null where no bar track was built
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -71,7 +79,13 @@ data class SetSummary(
     val repJumpQualities: List<JumpQuality> = emptyList(),
     val repMechanics: List<JumpMechanics?> = emptyList(),
     val repContactTimesMs: List<Float?> = emptyList(),
-    val repReactiveStrengthIndices: List<Float?> = emptyList()
+    val repReactiveStrengthIndices: List<Float?> = emptyList(),
+    val repEccentricVelocities: List<MetersPerSecond> = emptyList(),
+    val repPauseMs: List<Long> = emptyList(),
+    val repEccentricDurations: List<Float> = emptyList(),
+    val repConcentricDurations: List<Float> = emptyList(),
+    val repRangeOfMotion: List<Meters> = emptyList(),
+    val barTrackSource: BarTrackSource? = null
 ) {
     val overallGrade: ScoreGrade get() = ScoreGrade.fromScore(overallScore)
 
@@ -142,6 +156,15 @@ data class SetSummary(
         /** Rebound jumps whose RSI the set's [bestFiveMeanRsi] averages. */
         const val RSI_BEST_OF = 5
     }
+}
+
+/** Where a squat's bar kinematics came from. */
+enum class BarTrackSource {
+    /** The plate's center, scaled by its own diameter: the bar plane. */
+    PLATE,
+
+    /** The tracked landmark, scaled by the body: an estimate, the plate wasn't found. */
+    LANDMARKS
 }
 
 /**
