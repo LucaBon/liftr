@@ -174,7 +174,10 @@ object SquatDepthValidator {
 
     /**
      * Calculates the femur angle from vertical using hip and knee positions.
-     * Returns angle in degrees (0° = standing, 90° = horizontal/parallel).
+     * Returns angle in degrees (0° = standing, 90° = horizontal/parallel,
+     * above 90° = hips below the knees). Signed past parallel: the hip-knee
+     * height difference keeps its sign, so a deep squat is not folded back
+     * under 90°.
      */
     private fun calculateFemurAngle(state: ExercisePhaseState): Float? {
         val hipsY = state.currentHipsY ?: return null
@@ -183,9 +186,9 @@ object SquatDepthValidator {
         val kneesX = state.currentKneesX ?: return null
 
         val dx = abs(hipsX - kneesX)
-        val dy = abs(hipsY - kneesY)
+        // Positive while the hips are above the knees (y grows downward).
+        val dy = kneesY - hipsY
 
-        // Angle from vertical (atan2 gives angle from horizontal, so we adjust)
         val angleRad = atan2(dx, dy)
         return Math.toDegrees(angleRad.toDouble()).toFloat()
     }
