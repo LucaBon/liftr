@@ -112,4 +112,35 @@ class BidirectionalVelocityCalculatorTest {
             assertTrue(v.instantaneous.value.isFinite())
         }
     }
+
+    @Test
+    fun `signed velocities keep the direction`() {
+        // Up 0.5 m/s for a second, then down 0.5 m/s, at 30 fps.
+        val input = (0..60).map { i ->
+            val t = i / 30f
+            PositionSample(if (t <= 1f) 0.5f * t else 1f - 0.5f * t, Math.round(t * 1000).toLong())
+        }
+        val signed = BidirectionalVelocityCalculator.signedVelocities(input)
+        assertTrue(signed[15] > 0.1f)
+        assertTrue(signed[45] < -0.1f)
+        // Same magnitudes as the unsigned result.
+        val unsigned = BidirectionalVelocityCalculator.calculateVelocities(input)
+        signed.indices.forEach { assertEquals(unsigned[it].instantaneous.value, kotlin.math.abs(signed[it]), 1e-5f) }
+    }
+
+    @Test
+    fun `the acceleration model follows a squat-length ramp`() {
+        // Standing, then 0.6 m down at 0.5 m/s, at 30 fps.
+        val input = (0..60).map { i ->
+            val t = i / 30f
+            PositionSample(-0.5f * (t - 0.5f).coerceIn(0f, 1.2f), Math.round(t * 1000).toLong())
+        }
+        val default = BidirectionalVelocityCalculator.signedVelocities(input)
+        val tracked = BidirectionalVelocityCalculator.signedVelocities(
+            input, measurementNoise = 1e-4f, accelerationNoise = 0.5f
+        )
+        // Mid-descent (t = 1.1 s): the acceleration model reads the real 0.5 m/s, the default lags far behind.
+        assertEquals(-0.5f, tracked[33], 0.05f)
+        assertTrue(default[33] > -0.35f)
+    }
 }
