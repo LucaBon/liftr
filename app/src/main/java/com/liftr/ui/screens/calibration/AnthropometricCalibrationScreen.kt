@@ -395,7 +395,7 @@ fun CaptureSuccessDialog(
 
                 anthropometricData?.let { data ->
                     MeasurementRow("Height", "${(data.userHeight * 100).toInt()} cm")
-                    MeasurementRow("Shoulder Width", "${(data.getShoulderWidth() * 100).toInt()} cm")
+                    MeasurementRow("Shoulder Width (joint to joint)", "${(data.getShoulderWidth() * 100).toInt()} cm")
                     MeasurementRow("Torso Height", "${(data.getTorsoHeight() * 100).toInt()} cm")
                     MeasurementRow("Leg Length", "${((data.getUpperLegHeight() + data.getLowerLegHeight()) * 100).toInt()} cm")
 
