@@ -44,7 +44,8 @@ class ExerciseStrategyFactory(
      */
     fun getStrategy(exerciseType: ExerciseType): ExerciseStrategy {
         return when (exerciseType) {
-            ExerciseType.BACK_SQUAT -> backSquatStrategy
+            // An air squat is a back squat with no bar: same checks, same depth.
+            ExerciseType.BACK_SQUAT, ExerciseType.AIR_SQUAT -> backSquatStrategy
             ExerciseType.FRONT_SQUAT -> frontSquatStrategy
             ExerciseType.BENCH_PRESS -> benchPressStrategy
             ExerciseType.DEADLIFT -> deadliftStrategy
@@ -76,6 +77,7 @@ class ExerciseStrategyFactory(
      * @return List of exercise types that have strategies implemented
      */
     fun getSupportedExercises(): List<ExerciseType> {
-        return getAllStrategies().map { it.exerciseType }
+        // An air squat is judged by the back squat strategy.
+        return getAllStrategies().map { it.exerciseType } + ExerciseType.AIR_SQUAT
     }
 }

@@ -177,7 +177,8 @@ class ProcessWorkoutFrameUseCase @Inject constructor(
         when (strategy) {
             is BackSquatStrategy -> {
                 val depthTypeName = settingsRepository.getStringSetting(
-                    SettingsKeys.SQUAT_DEPTH_BACK_SQUAT,
+                    if (exerciseType == ExerciseType.AIR_SQUAT) SettingsKeys.SQUAT_DEPTH_AIR_SQUAT
+                    else SettingsKeys.SQUAT_DEPTH_BACK_SQUAT,
                     SquatDepthType.DEFAULT.name
                 ).first()
                 val depthType = SquatDepthType.fromString(depthTypeName)

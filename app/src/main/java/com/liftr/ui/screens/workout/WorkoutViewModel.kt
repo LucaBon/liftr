@@ -2010,7 +2010,7 @@ class WorkoutViewModel @Inject constructor(
     fun getRestDurationForExercise(exerciseType: ExerciseType): Int {
         // Default durations in seconds
         return when (exerciseType) {
-            ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT -> 180
+            ExerciseType.BACK_SQUAT, ExerciseType.FRONT_SQUAT, ExerciseType.AIR_SQUAT -> 180
             ExerciseType.BENCH_PRESS -> 120
             ExerciseType.DEADLIFT -> 180
             ExerciseType.VERTICAL_JUMP, ExerciseType.LOADED_JUMP, ExerciseType.APPROACH_JUMP -> 60

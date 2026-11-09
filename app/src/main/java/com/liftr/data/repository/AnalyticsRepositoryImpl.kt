@@ -125,7 +125,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
                     meanVelocity = MetersPerSecond(it.avgVelocity),
                     timestamp = it.timestamp
                 ) }
-            if (!isJump && lvPoints.size >= LoadVelocityProfile.MIN_DATA_POINTS) {
+            if (!isJump && et.hasExternalLoad() && lvPoints.size >= LoadVelocityProfile.MIN_DATA_POINTS) {
                 val profile = LoadVelocityProfile(
                     exerciseType = et,
                     dataPoints = lvPoints,
@@ -193,6 +193,7 @@ class AnalyticsRepositoryImpl @Inject constructor(
         exerciseType: ExerciseType,
         timeRange: TimeRange
     ): List<TrendDataPoint> {
+        if (!exerciseType.hasExternalLoad()) return emptyList()
         val fromTimestamp = getFromTimestamp(timeRange)
         val sets = setDao.getSetsForExerciseInRange(exerciseType, fromTimestamp)
             .filter { it.completedReps > 0 }

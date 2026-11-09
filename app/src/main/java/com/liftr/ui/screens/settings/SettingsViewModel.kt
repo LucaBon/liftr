@@ -44,6 +44,9 @@ class SettingsViewModel @Inject constructor(
     private val _frontSquatDepthType = MutableStateFlow(SquatDepthType.DEFAULT)
     val frontSquatDepthType: StateFlow<SquatDepthType> = _frontSquatDepthType.asStateFlow()
 
+    private val _airSquatDepthType = MutableStateFlow(SquatDepthType.DEFAULT)
+    val airSquatDepthType: StateFlow<SquatDepthType> = _airSquatDepthType.asStateFlow()
+
     private val _vbtZonesEnabled = MutableStateFlow(true)
     val vbtZonesEnabled: StateFlow<Boolean> = _vbtZonesEnabled.asStateFlow()
 
@@ -123,6 +126,15 @@ class SettingsViewModel @Inject constructor(
                 _frontSquatDepthType.value = SquatDepthType.fromString(depthTypeName)
             }
         }
+
+        viewModelScope.launch {
+            settingsRepository.getStringSetting(
+                SettingsKeys.SQUAT_DEPTH_AIR_SQUAT,
+                SquatDepthType.DEFAULT.name
+            ).collect { depthTypeName ->
+                _airSquatDepthType.value = SquatDepthType.fromString(depthTypeName)
+            }
+        }
     }
 
     private fun loadPlateDiameter() {
@@ -173,6 +185,17 @@ class SettingsViewModel @Inject constructor(
                 depthType.name
             ).onSuccess {
                 _frontSquatDepthType.value = depthType
+            }
+        }
+    }
+
+    fun updateAirSquatDepth(depthType: SquatDepthType) {
+        viewModelScope.launch {
+            settingsRepository.saveStringSetting(
+                SettingsKeys.SQUAT_DEPTH_AIR_SQUAT,
+                depthType.name
+            ).onSuccess {
+                _airSquatDepthType.value = depthType
             }
         }
     }

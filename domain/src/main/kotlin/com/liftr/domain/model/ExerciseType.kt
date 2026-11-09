@@ -3,6 +3,7 @@ package com.liftr.domain.model
 enum class ExerciseType {
     FRONT_SQUAT,
     BACK_SQUAT,
+    AIR_SQUAT,
     BENCH_PRESS,
     DEADLIFT,
     CLEAN,
@@ -20,7 +21,10 @@ enum class ExerciseType {
     fun isFastMovement(): Boolean = isJumpExercise() || this == CLEAN || this == SNATCH
 
     /** False for bodyweight exercises, which are performed without a weight. */
-    fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP && this != APPROACH_JUMP
+    fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP && this != APPROACH_JUMP && this != AIR_SQUAT
+
+    /** Any squat, with a barbell or without one. */
+    fun isSquat(): Boolean = this == FRONT_SQUAT || this == BACK_SQUAT || this == AIR_SQUAT
 
     /**
      * Barbell lifts whose bar is followed by its plate in video: side-on, the
@@ -43,7 +47,7 @@ enum class ExerciseType {
      * is the lifter dropping under the bar.
      */
     fun isConcentricPhase(phase: MovementPhase): Boolean = when (this) {
-        FRONT_SQUAT, BACK_SQUAT, BENCH_PRESS, DEADLIFT,
+        FRONT_SQUAT, BACK_SQUAT, AIR_SQUAT, BENCH_PRESS, DEADLIFT,
         VERTICAL_JUMP, LOADED_JUMP, APPROACH_JUMP -> phase == MovementPhase.CONCENTRIC
         CLEAN, SNATCH -> phase == MovementPhase.ECCENTRIC || phase == MovementPhase.BOTTOM
     }
@@ -69,6 +73,7 @@ enum class ExerciseType {
     fun getDisplayName(): String = when (this) {
         FRONT_SQUAT -> "Front Squat"
         BACK_SQUAT -> "Back Squat"
+        AIR_SQUAT -> "Air Squat"
         BENCH_PRESS -> "Bench Press"
         DEADLIFT -> "Deadlift"
         CLEAN -> "Clean"

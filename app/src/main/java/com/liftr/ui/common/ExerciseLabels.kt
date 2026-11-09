@@ -14,6 +14,7 @@ val ExerciseType.labelRes: Int
     get() = when (this) {
         ExerciseType.FRONT_SQUAT -> R.string.exercise_front_squat
         ExerciseType.BACK_SQUAT -> R.string.exercise_back_squat
+        ExerciseType.AIR_SQUAT -> R.string.exercise_air_squat
         ExerciseType.BENCH_PRESS -> R.string.exercise_bench_press
         ExerciseType.DEADLIFT -> R.string.exercise_deadlift
         ExerciseType.CLEAN -> R.string.exercise_clean

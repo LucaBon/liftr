@@ -34,7 +34,9 @@ class ExerciseStrategyFactoryTest {
     @Test
     fun `every exercise type resolves to a strategy for that type`() {
         ExerciseType.entries.forEach { type ->
-            assertEquals(type, factory.getStrategy(type).exerciseType)
+            // An air squat is judged by the back squat strategy.
+            val expected = if (type == ExerciseType.AIR_SQUAT) ExerciseType.BACK_SQUAT else type
+            assertEquals(expected, factory.getStrategy(type).exerciseType)
         }
     }
 

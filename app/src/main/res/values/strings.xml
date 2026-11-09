@@ -22,6 +22,7 @@
     <string name="settings_section_exercise">Exercise Settings</string>
     <string name="settings_back_squat_depth">Back Squat Depth</string>
     <string name="settings_front_squat_depth">Front Squat Depth</string>
+    <string name="settings_air_squat_depth">Air Squat Depth</string>
     <string name="settings_depth_type_label">Depth Type</string>
     <string name="settings_threshold_label">Threshold</string>
 
@@ -107,6 +108,7 @@
     <!-- Exercise Types -->
     <string name="exercise_front_squat">Front Squat</string>
     <string name="exercise_back_squat">Back Squat</string>
+    <string name="exercise_air_squat">Air squat</string>
     <string name="exercise_bench_press">Bench Press</string>
     <string name="exercise_deadlift">Deadlift</string>
     <string name="exercise_clean">Clean</string>

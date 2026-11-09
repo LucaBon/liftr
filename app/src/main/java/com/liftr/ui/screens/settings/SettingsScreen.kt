@@ -41,6 +41,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val backSquatDepthType by viewModel.backSquatDepthType.collectAsState()
+    val airSquatDepthType by viewModel.airSquatDepthType.collectAsState()
     val frontSquatDepthType by viewModel.frontSquatDepthType.collectAsState()
     val vbtZonesEnabled by viewModel.vbtZonesEnabled.collectAsState()
     val velocityLossThreshold by viewModel.velocityLossThreshold.collectAsState()
@@ -220,6 +221,15 @@ fun SettingsScreen(
                 title = stringResource(R.string.settings_front_squat_depth),
                 currentDepth = frontSquatDepthType,
                 onDepthSelected = { viewModel.updateFrontSquatDepth(it) }
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
+
+            // Air Squat Depth Selector
+            SquatDepthSelector(
+                title = stringResource(R.string.settings_air_squat_depth),
+                currentDepth = airSquatDepthType,
+                onDepthSelected = { viewModel.updateAirSquatDepth(it) }
             )
 
             Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))

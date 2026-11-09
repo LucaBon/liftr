@@ -26,7 +26,7 @@ enum class TrackingPoint {
 
 /** The single tracking point used for [type] everywhere (live, video, velocity). */
 fun trackingPoint(type: ExerciseType): TrackingPoint = when (type) {
-    ExerciseType.FRONT_SQUAT, ExerciseType.BACK_SQUAT -> TrackingPoint.SHOULDERS
+    ExerciseType.FRONT_SQUAT, ExerciseType.BACK_SQUAT, ExerciseType.AIR_SQUAT -> TrackingPoint.SHOULDERS
     ExerciseType.BENCH_PRESS,
     ExerciseType.DEADLIFT,
     ExerciseType.CLEAN,

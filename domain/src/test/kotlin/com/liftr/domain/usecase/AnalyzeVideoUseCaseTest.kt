@@ -377,4 +377,15 @@ class AnalyzeVideoUseCaseTest {
         assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
         assertEquals(2, summary.completedReps.value)
     }
+
+    @Test
+    fun `an air squat is counted from the landmarks without any plate`() = runBlocking {
+        val drops = twoSquats()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+
+        val summary = analyzeSquat(poses, plates = null, exerciseType = ExerciseType.AIR_SQUAT)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertTwoSquats(summary)
+    }
 }

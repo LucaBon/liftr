@@ -190,7 +190,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             // bar position, which reads as a ~40 m/s spike and wrecks peak
             // velocity, velocity loss and the VBT zones. The list stays 1:1 with
             // poseResults, which buildSummary relies on.
-            val isSquat = params.exerciseType == ExerciseType.FRONT_SQUAT || params.exerciseType == ExerciseType.BACK_SQUAT
+            val isSquat = params.exerciseType.isSquat()
             // Most of a set is spent standing: the median torso of the upright
             // frames is the standing one a folded skeleton is measured against.
             val standingTorso = if (isSquat) {
@@ -213,7 +213,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             }
             // A plate-tracked lift's kinematics come from its bar track: the plate
             // when it was followed, else the landmark track above.
-            val barTrack = if (params.exerciseType.tracksBarPlate()) barTrack(params, poseResults, plateTrack, kept) else null
+            val barTrack = if (isSquat || params.exerciseType.tracksBarPlate()) barTrack(params, poseResults, plateTrack, kept) else null
             val velocities = barTrack?.velocities() ?: BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
@@ -802,7 +802,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         // Plates are keyed by frame time in ms.
         val observed = poses.map { plates[it.timestampUs / 1_000] }
         val seen = observed.filterNotNull()
-        if (seen.isNotEmpty()) {
+        if (seen.isNotEmpty() && params.exerciseType.tracksBarPlate()) {
             val diameter = settingsRepository.getFloatSetting(
                 SettingsKeys.PLATE_DIAMETER_M, SettingsKeys.DEFAULT_PLATE_DIAMETER_M
             ).first()
@@ -823,11 +823,18 @@ class AnalyzeVideoUseCase @Inject constructor(
             if (coverage >= MIN_PLATE_COVERAGE) return plateTrack.also(::logReps)
         }
         logger.i(TAG, "Bar track from the landmarks (no usable plate track)")
-        return barTrack(
-            BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE,
-            minDescent, direction
-        ).also(::logReps)
+        return landmarkTrack(timesUs, landmarks, minDescent, direction)
     }
+
+    private fun landmarkTrack(
+        timesUs: List<Long>,
+        landmarks: List<Float?>,
+        minDescent: Float,
+        direction: RepSegmenter.Direction
+    ): BarTrack = barTrack(
+        BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE,
+        minDescent, direction
+    ).also(::logReps)
 
     /**
      * Heights (null where unseen) to a [BarTrack]. Every gap is bridged by a
@@ -930,7 +937,9 @@ class AnalyzeVideoUseCase @Inject constructor(
         when (val strategy = runCatching { strategyFactory.getStrategy(exerciseType) }.getOrNull()) {
             is BackSquatStrategy -> {
                 val name = settingsRepository.getStringSetting(
-                    SettingsKeys.SQUAT_DEPTH_BACK_SQUAT, SquatDepthType.DEFAULT.name
+                    if (exerciseType == ExerciseType.AIR_SQUAT) SettingsKeys.SQUAT_DEPTH_AIR_SQUAT
+                    else SettingsKeys.SQUAT_DEPTH_BACK_SQUAT,
+                    SquatDepthType.DEFAULT.name
                 ).first()
                 strategy.updateSquatDepthType(SquatDepthType.fromString(name))
             }

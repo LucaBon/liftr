@@ -16,6 +16,7 @@ object SettingsKeys {
      * Value should be a SquatDepthType enum name (e.g., "QUARTER", "HALF", "POWERLIFTING", "FULL")
      */
     const val SQUAT_DEPTH_FRONT_SQUAT = "squat_depth_front_squat"
+    const val SQUAT_DEPTH_AIR_SQUAT = "squat_depth_air_squat"
 
     /**
      * Whether VBT zone display is enabled on the workout screen.

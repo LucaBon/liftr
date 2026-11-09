@@ -121,6 +121,8 @@ data class LoadVelocityProfile(
         fun getMinVelocityAt1RM(exerciseType: ExerciseType): Float = when (exerciseType) {
             ExerciseType.BACK_SQUAT -> 0.30f
             ExerciseType.FRONT_SQUAT -> 0.30f
+            // No load, so no load-velocity profile; the default keeps the when exhaustive.
+            ExerciseType.AIR_SQUAT -> 0.30f
             ExerciseType.BENCH_PRESS -> 0.17f
             ExerciseType.DEADLIFT -> 0.15f
             // Conservative defaults for exercises without established thresholds
