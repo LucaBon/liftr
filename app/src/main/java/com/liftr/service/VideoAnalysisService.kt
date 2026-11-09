@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
+import com.liftr.BuildConfig
 import com.liftr.domain.logging.Logger
 import com.liftr.domain.model.BarTrackSource
 import com.liftr.domain.model.CalibrationData
@@ -223,6 +224,34 @@ class VideoAnalysisService : LifecycleService() {
         super.onDestroy()
     }
 
+    /**
+     * Debug builds: copies the recording about to be analysed, with a note of
+     * its settings, to the app's external files so it can be pulled with adb
+     * and replayed offline. Keeps the newest [DEBUG_RECORDINGS_KEPT].
+     */
+    private suspend fun keepDebugRecording(
+        videoFile: File,
+        exerciseType: ExerciseType,
+        weight: Kilograms,
+        calibrationData: CalibrationData,
+        knownCaptureFps: Int?
+    ) = withContext(Dispatchers.IO) {
+        runCatching {
+            val dir = getExternalFilesDir(DEBUG_RECORDINGS_DIR) ?: return@runCatching
+            val copy = File(dir, videoFile.name).also { videoFile.copyTo(it, overwrite = true) }
+            File(dir, copy.nameWithoutExtension + ".txt").writeText(
+                "exercise=$exerciseType\nweightKg=${weight.value}\n" +
+                    "userHeightM=${calibrationData.userHeight}\ncaptureFps=${knownCaptureFps ?: "unknown"}\n"
+            )
+            dir.listFiles { f -> f.extension != "txt" }.orEmpty().sortedByDescending { it.lastModified() }
+                .drop(DEBUG_RECORDINGS_KEPT).forEach {
+                    it.delete()
+                    File(dir, it.nameWithoutExtension + ".txt").delete()
+                }
+            logger.i(TAG, "Debug copy of the recording: ${copy.absolutePath}")
+        }.onFailure { logger.w(TAG, "Could not keep a debug copy of the recording: ${it.message}") }
+    }
+
     private suspend fun runAnalysis(
         owner: String,
         videoFile: File,
@@ -237,6 +266,9 @@ class VideoAnalysisService : LifecycleService() {
         try {
             showProgress(AnalyzeVideoUseCase.Progress(0, 1, 0f, 0))
             waitWhileRecording()
+            if (BuildConfig.DEBUG) {
+                keepDebugRecording(videoFile, exerciseType, weight, calibrationData, knownCaptureFps)
+            }
 
             // Each analysis pass creates its own detector; this one only checks
             // that the pose model loads on this device.
@@ -469,6 +501,8 @@ class VideoAnalysisService : LifecycleService() {
         private const val EXTRA_OWNER = "owner"
         private const val EXTRA_INPUTS_KEY = "inputs_key"
         private const val EXTRA_CAPTURE_FPS = "capture_fps"
+        private const val DEBUG_RECORDINGS_DIR = "debug_recordings"
+        private const val DEBUG_RECORDINGS_KEPT = 5
 
         private val _analysisState = MutableStateFlow<AnalysisState>(AnalysisState.Idle)
 

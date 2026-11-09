@@ -63,6 +63,37 @@ object RepSegmenter {
         val peakConcentricVelocity: Float
     )
 
+    /** Why a candidate that left the top was not counted as a rep. */
+    enum class RejectionReason {
+        /** Dipped below the top but stayed above the minimum descent, then came back. */
+        TOO_SHALLOW,
+
+        /** Dropped far enough but did not return to within [RETURN_TOLERANCE] of the top before the track ended. */
+        NEVER_RETURNED,
+
+        /** Went down and back, but crossed an unmeasured (held) stretch, so it cannot be timed. */
+        CROSSED_GAP
+    }
+
+    /**
+     * A candidate that left the top and was discarded: samples [startIndex]..
+     * [endIndex] ([startUs]..[endUs]), the deepest travel it made below the
+     * top, [depth] m, and for [RejectionReason.CROSSED_GAP] the longest
+     * unmeasured stretch, [gapUs].
+     */
+    data class Rejection(
+        val reason: RejectionReason,
+        val startIndex: Int,
+        val endIndex: Int,
+        val startUs: Long,
+        val endUs: Long,
+        val depth: Float,
+        val gapUs: Long = 0L
+    )
+
+    /** The reps of a track and the candidates that were left out. */
+    data class Segmentation(val reps: List<Rep>, val rejections: List<Rejection>)
+
     /** Which way a rep's first movement goes. */
     enum class Direction {
         /** Down, then up: squat and bench press. [Rep.pauseMs] is the rest at the bottom. */
@@ -97,6 +128,9 @@ object RepSegmenter {
     /** Band above the lowest point that counts as the bottom pause, m. */
     const val PAUSE_BAND = 0.01f
 
+    /** A dip below the top is reported as a shallow rejection from this share of the minimum descent. */
+    private const val MIN_DIP_SHARE = 0.5f
+
     private class Plateau(val start: Int, val end: Int, val level: Float)
 
     /**
@@ -105,17 +139,30 @@ object RepSegmenter {
      *   deadlift's pull), m
      */
     fun segment(samples: List<Sample>, minDescent: Float, direction: Direction = Direction.DOWN_FIRST): List<Rep> =
-        if (direction == Direction.UP_FIRST) segmentUpFirst(samples, minDescent) else segmentDownFirst(samples, minDescent)
+        segmentDetailed(samples, minDescent, direction).reps
+
+    /** [segment], plus the candidates that left the top and were discarded, and why. */
+    fun segmentDetailed(
+        samples: List<Sample>,
+        minDescent: Float,
+        direction: Direction = Direction.DOWN_FIRST
+    ): Segmentation {
+        val rejections = mutableListOf<Rejection>()
+        val reps = if (direction == Direction.UP_FIRST) {
+            segmentUpFirst(samples, minDescent, rejections)
+        } else segmentDownFirst(samples, minDescent, rejections)
+        return Segmentation(reps, rejections)
+    }
 
     /**
      * A pull is a descent of the negated track: its floor rest is the top
      * plateau, its pull the eccentric and its lowering the concentric. Mapped
      * back to physical phases, with the floor rest before each pull as pause.
      */
-    private fun segmentUpFirst(samples: List<Sample>, minDescent: Float): List<Rep> {
+    private fun segmentUpFirst(samples: List<Sample>, minDescent: Float, rejections: MutableList<Rejection>): List<Rep> {
         val negated = samples.map { it.copy(height = -it.height, velocity = -it.velocity) }
         var previousEnd = -1
-        return segmentDownFirst(negated, minDescent).map { r ->
+        return segmentDownFirst(negated, minDescent, rejections).map { r ->
             val restUs = if (previousEnd < 0) 0L else samples[r.eccentricStart].timestampUs - samples[previousEnd].timestampUs
             previousEnd = r.concentricEnd
             Rep(
@@ -136,25 +183,61 @@ object RepSegmenter {
         }
     }
 
-    private fun segmentDownFirst(samples: List<Sample>, minDescent: Float): List<Rep> {
+    private fun segmentDownFirst(samples: List<Sample>, minDescent: Float, rejections: MutableList<Rejection>): List<Rep> {
         val plateaus = plateaus(samples)
         val reps = mutableListOf<Rep>()
         var from = 0
         // Plateaus starting before this index belong to an earlier rep (a long pause at its bottom).
         var plateausFrom = 0
         var standing: Plateau? = null
+        // Diagnostics only: a dip below the top that never reached minDescent.
+        var dipStart = -1
+        var dipLow = 0f
+        var dipUnmeasured = false
+        fun closeDip(end: Int, top: Float) {
+            if (dipStart >= 0 && top - dipLow >= minDescent * MIN_DIP_SHARE) {
+                // A dip that crossed unmeasured samples never gets to be a candidate: it is no shallow one.
+                rejections += Rejection(
+                    if (dipUnmeasured) RejectionReason.CROSSED_GAP else RejectionReason.TOO_SHALLOW,
+                    dipStart, end, samples[dipStart].timestampUs, samples[end].timestampUs, top - dipLow,
+                    if (dipUnmeasured) longestGapUs(samples, dipStart, end) else 0L
+                )
+            }
+            dipStart = -1
+            dipUnmeasured = false
+        }
         var i = 0
         while (i < samples.size) {
             plateaus.lastOrNull { it.end < i && it.start >= plateausFrom }?.let { standing = it }
             val top = standing?.level
+            if (top != null && i >= from) {
+                val h = samples[i].height
+                if (h < top - TOP_TOLERANCE) {
+                    if (dipStart < 0) { dipStart = i; dipLow = h } else dipLow = minOf(dipLow, h)
+                    if (!samples[i].measured) dipUnmeasured = true
+                } else closeDip(i, top)
+            }
             if (top == null || i < from || !samples[i].measured || samples[i].height >= top - minDescent) {
                 i++
                 continue
             }
+            dipStart = -1
+            dipUnmeasured = false
             val descent = i
             val back = (descent until samples.size).firstOrNull { samples[it].height >= top - RETURN_TOLERANCE }
-                ?: break
-            val rep = measure(samples, top, (from - 1).coerceAtLeast(0), descent, back)
+            if (back == null) {
+                rejections += Rejection(
+                    RejectionReason.NEVER_RETURNED, descent, samples.lastIndex, samples[descent].timestampUs,
+                    samples.last().timestampUs, top - (descent until samples.size).minOf { samples[it].height }
+                )
+                break
+            }
+            val rep = measure(samples, top, (from - 1).coerceAtLeast(0), descent, back) { start, end ->
+                rejections += Rejection(
+                    RejectionReason.CROSSED_GAP, start, end, samples[start].timestampUs, samples[end].timestampUs,
+                    top - (descent..back).minOf { samples[it].height }, longestGapUs(samples, start, end)
+                )
+            }
             if (rep != null) {
                 reps += rep
                 plateausFrom = rep.concentricStart
@@ -169,9 +252,17 @@ object RepSegmenter {
 
     /**
      * The rep through [descent] that is back near [top] at [back], starting no
-     * earlier than [floor], or null when it crosses unmeasured samples.
+     * earlier than [floor], or null when it crosses unmeasured samples (then
+     * [onCrossedGap] gets the first and last sample index of the span).
      */
-    private fun measure(samples: List<Sample>, top: Float, floor: Int, descent: Int, back: Int): Rep? {
+    private fun measure(
+        samples: List<Sample>,
+        top: Float,
+        floor: Int,
+        descent: Int,
+        back: Int,
+        onCrossedGap: (Int, Int) -> Unit
+    ): Rep? {
         var eccentricStart = descent
         while (eccentricStart > floor && samples[eccentricStart].height < top - TOP_TOLERANCE) eccentricStart--
         val bottom = (descent..back).minBy { samples[it].height }
@@ -184,7 +275,10 @@ object RepSegmenter {
         // short of the top, or overshoot it (onto the toes, bar whip) first.
         val concentricEnd = (back until samples.size)
             .firstOrNull { samples[it].velocity < PLATEAU_MAX_SPEED || !samples[it].measured } ?: samples.lastIndex
-        if ((eccentricStart..concentricEnd).any { !samples[it].measured }) return null
+        if ((eccentricStart..concentricEnd).any { !samples[it].measured }) {
+            onCrossedGap(eccentricStart, concentricEnd)
+            return null
+        }
 
         fun t(index: Int) = samples[index].timestampUs
         // The bar is in the band from about halfway between the last sample
@@ -213,6 +307,21 @@ object RepSegmenter {
             meanConcentricVelocity = if (concentricS > 0f) (samples[concentricEnd].height - low) / concentricS else 0f,
             peakConcentricVelocity = (concentricStart..concentricEnd).maxOf { samples[it].velocity }.coerceAtLeast(0f)
         )
+    }
+
+    /** Longest run of unmeasured samples in [from]..[to], as the time between the measured samples around it, µs. */
+    private fun longestGapUs(samples: List<Sample>, from: Int, to: Int): Long {
+        var longest = 0L
+        var i = from
+        while (i <= to) {
+            if (samples[i].measured) { i++; continue }
+            val start = i
+            while (i <= to && !samples[i].measured) i++
+            val before = (start - 1).coerceAtLeast(0)
+            val after = i.coerceAtMost(samples.lastIndex)
+            longest = maxOf(longest, samples[after].timestampUs - samples[before].timestampUs)
+        }
+        return longest
     }
 
     /** Runs of measured samples slower than [PLATEAU_MAX_SPEED] lasting [PLATEAU_MIN_US], with their median height. */

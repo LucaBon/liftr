@@ -55,4 +55,20 @@ class TrackGapsTest {
         val gated = AnalyzeVideoUseCase.dropTrackJumps(times(5, 50), listOf(1f, null, null, null, 1.5f), 3f)
         assertEquals(listOf(1f, null, null, null, 1.5f), gated)
     }
+
+    @Test
+    fun `lost frames merge into ranges per reason`() {
+        val reasons = listOf(null, "sanity", "sanity", "sanity", null, "track jump", "sanity")
+        val ranges = AnalyzeVideoUseCase.gapRanges(times(7, 100), reasons)
+        assertEquals(
+            listOf("0.10-0.30 s (sanity, 3 frames)", "0.50-0.50 s (track jump, 1 frames)", "0.60-0.60 s (sanity, 1 frames)"),
+            ranges
+        )
+    }
+
+    @Test
+    fun `a jump in the pose spacing is a no pose gap`() {
+        val times = listOf(0L, 33_000L, 66_000L, 166_000L, 199_000L, 232_000L)
+        assertEquals(listOf("0.07-0.17 s (no pose, ~2 frames)"), AnalyzeVideoUseCase.noPoseGaps(times))
+    }
 }

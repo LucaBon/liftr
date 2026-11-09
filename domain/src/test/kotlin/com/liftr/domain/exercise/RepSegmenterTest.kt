@@ -233,4 +233,55 @@ class RepSegmenterTest {
         // The first pull starts when the bar leaves the floor, after 1 s.
         assertEquals(1f, seconds(reps[0].eccentricStart), 0.05f)
     }
+
+    @Test
+    fun `a candidate through a long gap is reported as crossing it`() {
+        val track = Track(1.5f).hold(1f)
+        squat(track)
+        val gapped = track.heights.mapIndexed { i, h -> if (seconds(i) in 1.6f..2.7f) null else h }
+        val result = RepSegmenter.segmentDetailed(samples(gapped), minDescent)
+
+        assertEquals(0, result.reps.size)
+        assertEquals(1, result.rejections.size)
+        val rejection = result.rejections[0]
+        assertEquals(RepSegmenter.RejectionReason.CROSSED_GAP, rejection.reason)
+        assertEquals(1.1f, rejection.gapUs / 1e6f, 0.15f)
+        // The travel is the bridged line over the gap: a lower bound of the real one.
+        assertTrue("travel ${rejection.depth}", rejection.depth > 0.25f)
+    }
+
+    @Test
+    fun `a descent that never comes back is reported as never returning`() {
+        val track = Track(1.5f).hold(1f).moveTo(0.9f, 1.2f).hold(1f)
+        val result = RepSegmenter.segmentDetailed(samples(track.heights), minDescent)
+
+        assertEquals(0, result.reps.size)
+        assertEquals(1, result.rejections.size)
+        assertEquals(RepSegmenter.RejectionReason.NEVER_RETURNED, result.rejections[0].reason)
+        assertEquals(0.6f, result.rejections[0].depth, 0.02f)
+    }
+
+    @Test
+    fun `a dip that stays above the minimum descent is reported as too shallow`() {
+        val track = Track(1.5f).hold(1f).moveTo(1.3f, 1f).moveTo(1.5f, 1f).hold(1f)
+        val result = RepSegmenter.segmentDetailed(samples(track.heights), minDescent)
+
+        assertEquals(0, result.reps.size)
+        assertEquals(1, result.rejections.size)
+        assertEquals(RepSegmenter.RejectionReason.TOO_SHALLOW, result.rejections[0].reason)
+        assertEquals(0.2f, result.rejections[0].depth, 0.02f)
+    }
+
+    @Test
+    fun `a counted rep reports no rejection and segment returns the same reps`() {
+        val track = Track(1.5f).hold(1f)
+        squat(track)
+        squat(track)
+        val s = samples(track.heights)
+        val result = RepSegmenter.segmentDetailed(s, minDescent)
+
+        assertEquals(2, result.reps.size)
+        assertEquals(emptyList<RepSegmenter.Rejection>(), result.rejections)
+        assertEquals(RepSegmenter.segment(s, minDescent), result.reps)
+    }
 }

@@ -185,6 +185,11 @@ object SquatDepthValidator {
         val hipsX = state.currentHipsX ?: return null
         val kneesX = state.currentKneesX ?: return null
 
+        return femurAngleDegrees(hipsX, hipsY, kneesX, kneesY)
+    }
+
+    /** The femur angle (see [calculateFemurAngle]) from raw hip and knee coordinates, y growing downward. */
+    fun femurAngleDegrees(hipsX: Float, hipsY: Float, kneesX: Float, kneesY: Float): Float {
         val dx = abs(hipsX - kneesX)
         // Positive while the hips are above the knees (y grows downward).
         val dy = kneesY - hipsY
