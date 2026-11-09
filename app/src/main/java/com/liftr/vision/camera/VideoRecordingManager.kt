@@ -170,8 +170,18 @@ class VideoRecordingManager @Inject constructor(
             .start(context.mainExecutor) { event ->
                 if (event is VideoRecordEvent.Finalize) {
                     if (event.hasError()) {
-                        logger.e(TAG, "Recording finalize error code=${event.error}")
-                        deferred.complete(null)
+                        logger.e(
+                            TAG,
+                            "Recording finalize error code=${event.error} cause=${event.cause} " +
+                                "path=${outputFile.absolutePath} exists=${outputFile.exists()} size=${outputFile.length()}",
+                        )
+                        if (isRecoverableFinalizeError(event.error, outputFile)) {
+                            logger.w(TAG, "Keeping partial recording after finalize error ${event.error}")
+                            deferred.complete(outputFile)
+                        } else {
+                            if (outputFile.exists()) outputFile.delete()
+                            deferred.complete(null)
+                        }
                     } else {
                         val ready = outputFile.takeIf { it.exists() && it.length() > 0 }
                         if (ready == null) {
@@ -237,4 +247,17 @@ class VideoRecordingManager @Inject constructor(
         private const val FINALIZE_TIMEOUT_MS = 5_000L
         private const val MIN_HIGH_SPEED_FPS = 120
     }
+}
+
+/**
+ * Whether a recording that finalized with [errorCode] still left a playable
+ * file: the recorder stopped early (app backgrounded, storage or size limit)
+ * but the data written so far is valid.
+ */
+internal fun isRecoverableFinalizeError(errorCode: Int, file: File): Boolean {
+    val recoverable = errorCode == VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE ||
+        errorCode == VideoRecordEvent.Finalize.ERROR_INSUFFICIENT_STORAGE ||
+        errorCode == VideoRecordEvent.Finalize.ERROR_DURATION_LIMIT_REACHED ||
+        errorCode == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
+    return recoverable && file.exists() && file.length() > 0
 }
