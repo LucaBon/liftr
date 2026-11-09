@@ -123,7 +123,7 @@ class PlateTracker {
                 hintAtPlate -> SeedWindow(SEED_BESIDE_PLATE, SEED_ABOVE_PLATE, SEED_BELOW_PLATE)
                 else -> SeedWindow(SEED_BESIDE_SHOULDER, SEED_ABOVE_SHOULDER, SEED_BELOW_SHOULDER)
             }
-            seed(gray, seed ?: hint ?: return null, window, expectedRadius, timestampMs)
+            seed(gray, seed ?: hint ?: return null, window, expectedRadius, seed != null, timestampMs)
         } ?: return null
         last = found
         lastMs = timestampMs
@@ -148,11 +148,15 @@ class PlateTracker {
         hint: Pair<Float, Float>,
         window: SeedWindow,
         expectedRadius: Float?,
+        tapped: Boolean,
         timestampMs: Long
     ): Circle? {
         val hx = hint.first * bw
         val hy = hint.second * bh
-        val rMin = (if (expectedRadius != null) expectedRadius * EXPECTED_RADIUS_MIN else MIN_RADIUS) * bw
+        // A tap without a body scale still pins the plate's position, so the
+        // range opens down to small (far or landscape) plates.
+        val minWithoutScale = if (tapped) TAP_MIN_RADIUS else MIN_RADIUS
+        val rMin = (if (expectedRadius != null) expectedRadius * EXPECTED_RADIUS_MIN else minWithoutScale) * bw
         val rMax = (if (expectedRadius != null) expectedRadius * EXPECTED_RADIUS_MAX else MAX_RADIUS) * bw
         // The seed area spans from `below` radii below the hint to `above` radii
         // above it; search around its middle.
@@ -396,6 +400,9 @@ class PlateTracker {
 
         /** A user tap is trusted over a pose: its window is this much wider. */
         const val TAP_WINDOW_SCALE = 1.5f
+
+        /** Smallest radius (fraction of frame width) a tap seeds without a body scale. */
+        const val TAP_MIN_RADIUS = 0.04f
 
         /** Seeding radius range around the body-scale expected radius. */
         const val EXPECTED_RADIUS_MIN = 0.65f

@@ -234,18 +234,12 @@ class PlateTrackerTest {
         val tracker = PlateTracker()
         var last: PlateObservation? = null
         for (frame in 0 until 15) {
-            // The tap lands about a radius off center.
+            // The tap lands about a radius off center. No pose, so no body
+            // scale: an 8% landscape bench plate is below the squat range, but
+            // a tap says where the plate is, so smaller plates are allowed.
             last = tracker.track(
                 renderDiscs(fw, fh, frame, listOf(Triple(300f, 150f, pr))), fw, fh, frame * 33L,
                 hint = null, expectedRadius = null, seed = (300f + 0.5f * pr) / fw to (150f + 0.9f * pr) / fh
-            )
-        }
-        // Without an expected radius the 8% plate is below MIN_RADIUS; with one the tap finds it.
-        assertNull("fallback range must not see an 8% plate", last)
-        for (frame in 15 until 30) {
-            last = tracker.track(
-                renderDiscs(fw, fh, frame, listOf(Triple(300f, 150f, pr))), fw, fh, frame * 33L,
-                hint = null, expectedRadius = pr / fw, seed = (300f + 0.5f * pr) / fw to (150f + 0.9f * pr) / fh
             )
         }
         assertNotNull(tracker.lockedRadius)
