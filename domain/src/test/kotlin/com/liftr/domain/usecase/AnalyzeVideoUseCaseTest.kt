@@ -54,6 +54,7 @@ class AnalyzeVideoUseCaseTest {
     private fun calculator(): IPositionCalculator {
         val calculator = mockk<IPositionCalculator> {
             justRun { resetScale() }
+            justRun { lockScaleToStanding(any(), any()) }
             every { pixelsToMeters(any(), any(), any()) } answers {
                 firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
             }

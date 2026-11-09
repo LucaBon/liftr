@@ -41,8 +41,8 @@ class BodyPositionCalculatorTest {
         }
         standing.forEach { calculator.scaleAt(it) }
         val standingScale = calculator.scaleAt(standing.last())
-        // Head-to-ankle span 0.60 of 1280 px for 1.75 m.
-        assertEquals(0.60f * imageHeight / 1.75f, standingScale, 1f)
+        // Head-to-ankle span 0.60 of 1280 px for 89% of 1.75 m.
+        assertEquals(0.60f * imageHeight / (0.89f * 1.75f), standingScale, 1f)
 
         squat.forEach { assertEquals(standingScale, calculator.scaleAt(it), 1f) }
     }
@@ -54,8 +54,8 @@ class BodyPositionCalculatorTest {
         val bottom = squatPose(1f, 1500L)
         val top = squatPose(0f, 1533L)
         val shoulderDrop = calculator.pixelsToMeters(0.54f, bottom, calibration) - calculator.pixelsToMeters(0.26f, top, calibration)
-        // 0.28 of the frame at the standing scale (0.60 of the frame = 1.75 m).
-        assertEquals(0.28f / 0.60f * 1.75f, shoulderDrop, 0.01f)
+        // 0.28 of the frame at the standing scale (0.60 of the frame = 89% of 1.75 m).
+        assertEquals(0.28f / 0.60f * 0.89f * 1.75f, shoulderDrop, 0.01f)
     }
 
     @Test
@@ -67,7 +67,7 @@ class BodyPositionCalculatorTest {
         val far = squatPose(0f, 0L).let { p ->
             p.copy(landmarks = p.landmarks.map { if (it.visibility > 0f) it.copy(y = 0.5f + (it.y - 0.5f) / 2) else it })
         }
-        assertEquals(0.30f * imageHeight / 1.75f, calculator.scaleAt(far), 1f)
+        assertEquals(0.30f * imageHeight / (0.89f * 1.75f), calculator.scaleAt(far), 1f)
     }
 
     @Test

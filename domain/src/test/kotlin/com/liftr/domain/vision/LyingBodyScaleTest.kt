@@ -16,6 +16,8 @@ import kotlin.math.hypot
 class LyingBodyScaleTest {
 
     private lateinit var calculator: BodyPositionCalculator
+    /** Head landmarks to ankles: 89% of the 1.75 m height. */
+    private val bodySpanM = 0.89f * 1.75f
     private val calibration = CalibrationData.fromUserInput(heightCm = 175f)
 
     @Before
@@ -69,7 +71,7 @@ class LyingBodyScaleTest {
             seg(Pt(0.55f, 0.47f), Pt(0.72f, 0.42f)) +
             seg(Pt(0.72f, 0.42f), Pt(0.75f, 0.70f))
 
-        assertEquals(bodyPx / 1.75f, ppmFromMeters(p), bodyPx / 1.75f * 0.01f)
+        assertEquals(bodyPx / bodySpanM, ppmFromMeters(p), bodyPx / bodySpanM * 0.01f)
         assertEquals(CalibrationQuality.OPTIMAL, calculator.getCalibrationQuality(p, calibration))
     }
 
@@ -85,7 +87,7 @@ class LyingBodyScaleTest {
             ankle = Pt(0.50f, 0.92f),
             width = 1080, height = 1920
         )
-        val expected = (0.92f - 0.10f) * 1920f / 1.75f
+        val expected = (0.92f - 0.10f) * 1920f / bodySpanM
 
         assertEquals(expected, ppmFromMeters(p), 0.5f)
     }
@@ -132,7 +134,7 @@ class LyingBodyScaleTest {
         standing.forEach { calculator.lockedPixelsPerMeter(it, calibration) }
         val locked = frames.map { calculator.lockedPixelsPerMeter(it, calibration) }.last()
 
-        assertEquals(bodyPx / 1.75f, locked, bodyPx / 1.75f * 0.01f)
+        assertEquals(bodyPx / bodySpanM, locked, bodyPx / bodySpanM * 0.01f)
     }
 
     @Test

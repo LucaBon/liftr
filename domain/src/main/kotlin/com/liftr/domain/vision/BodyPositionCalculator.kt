@@ -47,10 +47,30 @@ open class BodyPositionCalculator(
     /** Median measurements (time in µs, px/m) of the last [STANDING_MEMORY_US], for the tallest span. */
     private val recentPeaks = ArrayDeque<Pair<Long, Float>>()
 
+    /** The whole set's scale, when it was measured up front; beats [lockedScale]. */
+    private var standingScale: Float? = null
+
     override fun newSession(): IPositionCalculator = BodyPositionCalculator(logger)
 
     @Synchronized
+    override fun lockScaleToStanding(poses: List<PoseResult>, calibrationData: CalibrationData?) {
+        val samples = poses.filter { PoseSanity.isPlausible(it) }.mapNotNull { pose ->
+            calculatePixelsPerMeter(pose, calibrationData)
+                .takeIf { it.quality == CalibrationQuality.OPTIMAL }
+                ?.let { StandingScale.Sample(pose.timestampUs, it.pixelsPerMeter) }
+        }
+        val estimate = StandingScale.estimate(samples)
+        standingScale = estimate?.pixelsPerMeter
+        if (estimate != null) {
+            logger.i(TAG, "Scale held for the set: ${estimate.pixelsPerMeter} px/m, from ${estimate.frames} standing frames")
+        } else {
+            logger.w(TAG, "No still standing frames, the scale follows the frames")
+        }
+    }
+
+    @Synchronized
     override fun resetScale() {
+        standingScale = null
         lockedScale = null
         recentScales.clear()
         recentPeaks.clear()
@@ -117,6 +137,7 @@ open class BodyPositionCalculator(
      */
     @Synchronized
     fun lockedPixelsPerMeter(poseResult: PoseResult, calibrationData: CalibrationData?): Float {
+        standingScale?.let { return it }
         val measured = calculatePixelsPerMeter(poseResult, calibrationData)
         val measures = measured.quality == CalibrationQuality.OPTIMAL || measured.quality == CalibrationQuality.ESTIMATED
         // The upright stacking check would reject a lying lifter (arched back,
@@ -192,7 +213,9 @@ open class BodyPositionCalculator(
             (bottom.map { it.y }.average() - top.map { it.y }.average()).toFloat() * poseResult.imageHeight
 
         if (head.isNotEmpty() && ankles.isNotEmpty()) {
-            return CalibrationResult(span(head, ankles) / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
+            return CalibrationResult(
+                span(head, ankles) / HEAD_TO_ANKLE_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.OPTIMAL
+            )
         }
         if (head.isNotEmpty() && hips.isNotEmpty()) {
             return CalibrationResult(
@@ -225,7 +248,7 @@ open class BodyPositionCalculator(
         val torso = distancePx(head, hips, poseResult)
         return if (knees != null && ankles != null) {
             val body = torso + distancePx(hips, knees, poseResult) + distancePx(knees, ankles, poseResult)
-            CalibrationResult(body / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
+            CalibrationResult(body / HEAD_TO_ANKLE_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
         } else {
             CalibrationResult(torso / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
         }
@@ -271,6 +294,12 @@ open class BodyPositionCalculator(
 
         /** How long the tallest standing span is remembered: longer than any squat rep. */
         const val STANDING_MEMORY_US = 8_000_000L
+
+        /**
+         * The head landmarks (nose, eyes, ears) to the ankle joint span about
+         * 89% of standing height: they sit below the crown and above the sole.
+         */
+        private const val HEAD_TO_ANKLE_SHARE_OF_HEIGHT = 0.89f
 
         /** Head to hip is about 52% of standing height. */
         private const val TORSO_SHARE_OF_HEIGHT = 0.52f

@@ -193,6 +193,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             // velocity, velocity loss and the VBT zones. The list stays 1:1 with
             // poseResults, which buildSummary relies on.
             val isSquat = params.exerciseType.isSquat()
+            if (isSquat) calculator.lockScaleToStanding(poseResults, params.calibrationData)
             // Most of a set is spent standing: the median torso of the upright
             // frames is the standing one a folded skeleton is measured against.
             val standingTorso = if (isSquat) {
@@ -747,6 +748,7 @@ class AnalyzeVideoUseCase @Inject constructor(
      */
     private fun metersPerUnit(poses: List<PoseResult>, params: Params): List<Float> {
         val session = positionCalculator.newSession()
+        session.lockScaleToStanding(poses, params.calibrationData)
         return poses.map { session.pixelsToMeters(1f, it, params.calibrationData) }
     }
 

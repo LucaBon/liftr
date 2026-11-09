@@ -43,6 +43,14 @@ interface IPositionCalculator {
     fun resetScale() {}
 
     /**
+     * Holds one scale for a whole recorded set, measured where the lifter
+     * stands still, instead of following the frames as they come. Only a
+     * recording can do this, having every frame up front. Stays in force until
+     * [resetScale]; does nothing when the lifter never stood still.
+     */
+    fun lockScaleToStanding(poses: List<PoseResult>, calibrationData: CalibrationData?) {}
+
+    /**
      * A calculator with its own scale state. The app shares one calculator
      * between live sets and background video analysis; an analysis takes its
      * own so a live set's [resetScale] (or frames) cannot shift its scale
