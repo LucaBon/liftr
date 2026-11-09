@@ -5,6 +5,7 @@ import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.RepQualityScore
 import kotlin.math.abs
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -26,6 +27,12 @@ object RepQualityScorer {
     const val MAX_BAR_PATH = 20
     const val MAX_TEMPO = 20
     const val MAX_FORM = 30
+
+    /** Most an invalid depth can score: a valid one is worth at least 20. */
+    private const val MAX_INVALID_DEPTH = 20
+
+    /** Shortfall (cm) at which an invalid depth scores nothing. */
+    private const val DEPTH_SHORTFALL_ZERO_CM = 12f
 
     /**
      * Scores a single rep based on depth, bar path, tempo, and form.
@@ -76,7 +83,13 @@ object RepQualityScorer {
      * - Valid with high confidence (>0.8): 30 pts
      * - Valid with medium confidence (>0.6): 25 pts
      * - Valid with low confidence: 20 pts
-     * - Invalid: partial credit based on confidence (up to 15 pts)
+     * - Invalid with a measured shortfall ([DepthValidationResult.shortfallCm], how
+     *   far the hip crease missed the standard): `20 * (1 - shortfall / 12 cm)`,
+     *   rounded and kept within 0..20, so 3 cm short scores 15, 4 cm 13 and 12 cm
+     *   or more 0. A rep that is a few cm short, within landmark error, is not
+     *   scored below no data, and a valid rep (at least 20) always beats an
+     *   invalid one.
+     * - Invalid without a shortfall: partial credit based on confidence (up to 15 pts)
      * - No data: 15 pts (benefit of the doubt)
      *
      * A deadlift has no depth: its strategy reports the lockout at the top instead.
@@ -87,6 +100,8 @@ object RepQualityScorer {
             result.isValid && result.confidence > 0.8f -> 30
             result.isValid && result.confidence > 0.6f -> 25
             result.isValid -> 20
+            result.shortfallCm != null -> (MAX_INVALID_DEPTH * (1f - result.shortfallCm / DEPTH_SHORTFALL_ZERO_CM))
+                .coerceIn(0f, MAX_INVALID_DEPTH.toFloat()).roundToInt()
             else -> (result.confidence * 15).toInt()
         }
     }

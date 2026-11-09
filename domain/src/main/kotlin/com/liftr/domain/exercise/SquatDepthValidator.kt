@@ -87,7 +87,8 @@ object SquatDepthValidator {
             isValid = isValid,
             confidence = confidence,
             methods = methods,
-            debugInfo = debugInfo
+            debugInfo = debugInfo,
+            shortfallCm = methods.firstNotNullOfOrNull { it.shortfallCm }
         )
     }
 
@@ -120,11 +121,20 @@ object SquatDepthValidator {
             SquatDepthType.FULL -> creaseToKneeDistance >= 0.05f - tolerance.value
         }
 
+        // The standard itself, without the measurement tolerance.
+        val shortfall = when (depthType) {
+            SquatDepthType.QUARTER -> creaseToKneeDistance - -0.15f
+            SquatDepthType.HALF -> creaseToKneeDistance - -0.08f
+            SquatDepthType.POWERLIFTING -> 0f - creaseToKneeDistance
+            SquatDepthType.FULL -> 0.05f - creaseToKneeDistance
+        }
+
         return DepthValidationResult.ValidationMethod(
             name = "Hip Crease",
             passed = passed,
             weight = HIP_CREASE_WEIGHT,
-            value = "${(abs(creaseToKneeDistance) * 100).toInt()}cm ${if (creaseToKneeDistance >= 0) "below" else "above"}"
+            value = "${(abs(creaseToKneeDistance) * 100).toInt()}cm ${if (creaseToKneeDistance >= 0) "below" else "above"}",
+            shortfallCm = (shortfall * 100f).coerceAtLeast(0f)
         )
     }
 

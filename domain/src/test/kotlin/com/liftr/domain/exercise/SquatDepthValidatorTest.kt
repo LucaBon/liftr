@@ -444,4 +444,39 @@ class SquatDepthValidatorTest {
             .methods.first { it.name == "Femur Angle" }
         assertTrue("FULL's 95 degrees is reachable: ${femur.value}", femur.passed)
     }
+
+    @Test
+    fun `shortfall is how far the hip crease stayed above the parallel target`() {
+        // Hip joint 5 cm above the knee: the crease sits 12% of the 5 cm thigh drop higher still.
+        val state = ExercisePhaseState(
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
+            currentHipsY = KNEE_Y - 0.05f,
+            currentKneesY = KNEE_Y,
+            currentHipsX = CENTER_X + 0.4f,
+            currentKneesX = CENTER_X
+        )
+        val result = SquatDepthValidator.validateDepth(state, SquatDepthType.POWERLIFTING, Meters(0.02f))
+        assertFalse(result.isValid)
+        assertEquals(5.6f, result.shortfallCm!!, 0.05f)
+    }
+
+    @Test
+    fun `shortfall is zero once the depth is reached`() {
+        val state = ExercisePhaseState(
+            currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM,
+            currentHipsY = KNEE_Y + 0.05f,
+            currentKneesY = KNEE_Y,
+            currentHipsX = CENTER_X + 0.4f,
+            currentKneesX = CENTER_X
+        )
+        val result = SquatDepthValidator.validateDepth(state, SquatDepthType.POWERLIFTING, Meters(0.02f))
+        assertTrue(result.isValid)
+        assertEquals(0f, result.shortfallCm!!, 0.001f)
+    }
+
+    @Test
+    fun `shortfall is unknown without hips and knees`() {
+        val state = ExercisePhaseState(currentPhase = com.liftr.domain.model.MovementPhase.BOTTOM)
+        assertEquals(null, SquatDepthValidator.validateDepth(state, SquatDepthType.POWERLIFTING).shortfallCm)
+    }
 }

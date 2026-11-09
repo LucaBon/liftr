@@ -320,4 +320,25 @@ class RepQualityScorerTest {
             score.grade
         )
     }
+
+    @Test
+    fun `scoreDepth grades an invalid depth by how many cm it fell short`() {
+        fun score(cm: Float?) = RepQualityScorer.scoreDepth(
+            DepthValidationResult(isValid = false, confidence = 0.2f, methods = emptyList(), shortfallCm = cm)
+        )
+        assertEquals(20, score(0f))
+        assertEquals(15, score(3f))
+        assertEquals(13, score(4f))
+        assertEquals(0, score(12f))
+        assertEquals(0, score(30f))
+        // No shortfall measured: the old confidence-based credit.
+        assertEquals(3, score(null))
+    }
+
+    @Test
+    fun `scoreDepth never ranks an invalid depth above a valid one`() {
+        val invalid = DepthValidationResult(isValid = false, confidence = 0.5f, methods = emptyList(), shortfallCm = 0f)
+        val valid = DepthValidationResult(isValid = true, confidence = 0.6f, methods = emptyList())
+        assertTrue(RepQualityScorer.scoreDepth(valid) >= RepQualityScorer.scoreDepth(invalid))
+    }
 }
