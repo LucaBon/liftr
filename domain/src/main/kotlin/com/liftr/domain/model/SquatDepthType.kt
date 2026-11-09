@@ -65,8 +65,8 @@ enum class SquatDepthType(
      * Note: -0.05 allows 5cm above with default 2cm tolerance
      */
     POWERLIFTING(
-        displayName = "Powerlifting (Parallel)",
-        description = "Competition standard - hip crease below knee",
+        displayName = "Parallel (estimated)",
+        description = "Estimated from body landmarks, not a judge's call",
         minHipKneeDistance = -0.05f, // Hips within 5cm of knee level
         minBarDescent = Meters(0.30f)
     ),

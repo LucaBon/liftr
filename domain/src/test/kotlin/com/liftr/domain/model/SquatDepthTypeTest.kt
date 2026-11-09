@@ -169,7 +169,7 @@ class SquatDepthTypeTest {
     fun `depth types should have correct display names`() {
         assertEquals("Quarter Squat", SquatDepthType.QUARTER.displayName)
         assertEquals("Half Squat", SquatDepthType.HALF.displayName)
-        assertEquals("Powerlifting (Parallel)", SquatDepthType.POWERLIFTING.displayName)
+        assertEquals("Parallel (estimated)", SquatDepthType.POWERLIFTING.displayName)
         assertEquals("Full Depth (ATG)", SquatDepthType.FULL.displayName)
     }
 
@@ -177,7 +177,7 @@ class SquatDepthTypeTest {
     fun `depth types should have descriptive descriptions`() {
         assertTrue(SquatDepthType.QUARTER.description.contains("explosive power"))
         assertTrue(SquatDepthType.HALF.description.contains("athletic performance"))
-        assertTrue(SquatDepthType.POWERLIFTING.description.contains("Competition standard"))
+        assertTrue(SquatDepthType.POWERLIFTING.description.contains("Estimated"))
         assertTrue(SquatDepthType.FULL.description.contains("Maximum depth"))
     }
 
