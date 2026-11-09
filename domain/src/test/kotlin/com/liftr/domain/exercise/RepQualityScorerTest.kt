@@ -341,4 +341,46 @@ class RepQualityScorerTest {
         val valid = DepthValidationResult(isValid = true, confidence = 0.6f, methods = emptyList())
         assertTrue(RepQualityScorer.scoreDepth(valid) >= RepQualityScorer.scoreDepth(invalid))
     }
+
+    private fun score(type: com.liftr.domain.model.ExerciseType, xs: List<Float>) = RepQualityScorer.scoreRep(
+        exerciseType = type,
+        depthValidation = DepthValidationResult(isValid = true, confidence = 0.9f, methods = emptyList()),
+        barXPositions = xs,
+        eccentricDuration = 1.5f,
+        concentricDuration = 1.0f,
+        previousConcentricDurations = emptyList(),
+        formIssues = emptyList()
+    )
+
+    @Test
+    fun `an air squat has no bar path score and its other parts make up 100`() {
+        // A swaying track that would cost a barbell squat its bar path points.
+        val sway = listOf(0f, 0.2f, -0.2f, 0.2f, -0.2f)
+        val air = score(com.liftr.domain.model.ExerciseType.AIR_SQUAT, sway)
+        assertEquals(0, air.barPathScore)
+        assertFalse(air.barPathApplicable)
+        // depth 30 + tempo 20 + form 30 = 80 of 80.
+        assertEquals(100, air.totalScore)
+
+        val back = score(com.liftr.domain.model.ExerciseType.BACK_SQUAT, sway)
+        assertTrue(back.barPathApplicable)
+        assertEquals(0, back.barPathScore)
+        assertEquals(80, back.totalScore)
+    }
+
+    @Test
+    fun `an air squat total is rescaled from 80 and rounded`() {
+        val air = RepQualityScorer.scoreRep(
+            exerciseType = com.liftr.domain.model.ExerciseType.AIR_SQUAT,
+            depthValidation = DepthValidationResult(isValid = false, confidence = 0.2f, methods = emptyList(), shortfallCm = 4f),
+            barXPositions = emptyList(),
+            eccentricDuration = 1.5f,
+            concentricDuration = 1.0f,
+            previousConcentricDurations = emptyList(),
+            formIssues = emptyList()
+        )
+        // depth 13 + tempo 20 + form 30 = 63 of 80 = 78.75 -> 79.
+        assertEquals(13, air.depthScore)
+        assertEquals(79, air.totalScore)
+    }
 }

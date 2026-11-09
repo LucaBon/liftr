@@ -11,13 +11,17 @@ import com.liftr.domain.exercise.FormIssue
  * - Tempo: 0-20 points (was eccentric/concentric controlled and symmetric?)
  * - Form: 0-30 points (were there form violations?)
  *
+ * Without a bar path ([barPathApplicable] false, the air squat) the other three
+ * components are rescaled to 100 and [barPathScore] is 0.
+ *
  * @property totalScore Combined score (0-100)
  * @property depthScore Depth component (0-30)
- * @property barPathScore Bar path straightness component (0-20)
+ * @property barPathScore Bar path straightness component (0-20); 0 and unused when not applicable
  * @property tempoScore Tempo control component (0-20)
  * @property formScore Form quality component (0-30)
  * @property depthAchieved Whether the required depth was reached
  * @property formIssues Form issues detected during this rep
+ * @property barPathApplicable False when the exercise has no bar path to score
  */
 data class RepQualityScore(
     val totalScore: Int,
@@ -26,7 +30,8 @@ data class RepQualityScore(
     val tempoScore: Int,
     val formScore: Int,
     val depthAchieved: Boolean,
-    val formIssues: List<FormIssue>
+    val formIssues: List<FormIssue>,
+    val barPathApplicable: Boolean = true
 ) {
     val grade: ScoreGrade get() = ScoreGrade.fromScore(totalScore)
 

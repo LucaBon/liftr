@@ -23,6 +23,13 @@ enum class ExerciseType {
     /** False for bodyweight exercises, which are performed without a weight. */
     fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP && this != APPROACH_JUMP && this != AIR_SQUAT
 
+    /**
+     * False for the air squat: its "bar path" would be the sideways sway of
+     * the shoulders, which move forward and back in a normal bodyweight
+     * squat, so it says nothing about the rep.
+     */
+    fun scoresBarPath(): Boolean = this != AIR_SQUAT
+
     /** Any squat, with a barbell or without one. */
     fun isSquat(): Boolean = this == FRONT_SQUAT || this == BACK_SQUAT || this == AIR_SQUAT
 

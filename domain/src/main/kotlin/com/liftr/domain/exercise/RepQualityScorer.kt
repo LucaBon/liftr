@@ -17,6 +17,9 @@ import kotlin.math.sqrt
  * - Tempo (20 pts): Was the eccentric controlled? Was the concentric consistent?
  * - Form (30 pts): Were there form violations?
  *
+ * An exercise without a bar path to score ([ExerciseType.scoresBarPath], the
+ * air squat) is scored on depth, tempo and form alone, rescaled to 100.
+ *
  * Pure functions, no Android dependencies. Follows the same stateless object
  * pattern as [VelocityLossTracker].
  */
@@ -57,7 +60,8 @@ object RepQualityScorer {
         tempoAdherence: TempoAdherence? = null
     ): RepQualityScore {
         val depth = scoreDepth(depthValidation)
-        val barPath = scoreBarPath(barXPositions)
+        val barPathApplicable = exerciseType.scoresBarPath()
+        val barPath = if (barPathApplicable) scoreBarPath(barXPositions) else 0
         val tempo = if (tempoAdherence != null) {
             scoreTempoAdherence(tempoAdherence)
         } else {
@@ -66,13 +70,19 @@ object RepQualityScorer {
         val form = scoreForm(formIssues)
 
         return RepQualityScore(
-            totalScore = depth + barPath + tempo + form,
+            totalScore = if (barPathApplicable) {
+                depth + barPath + tempo + form
+            } else {
+                // The remaining parts stand for the whole 100.
+                ((depth + tempo + form) * 100f / (MAX_DEPTH + MAX_TEMPO + MAX_FORM)).roundToInt()
+            },
             depthScore = depth,
             barPathScore = barPath,
             tempoScore = tempo,
             formScore = form,
             depthAchieved = depthValidation?.isValid ?: false,
-            formIssues = formIssues
+            formIssues = formIssues,
+            barPathApplicable = barPathApplicable
         )
     }
 
