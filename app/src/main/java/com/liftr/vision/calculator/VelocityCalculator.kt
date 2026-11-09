@@ -72,7 +72,7 @@ class VelocityCalculator @Inject constructor(
 
         // 2. Convert to meters
         val positionMeters = positionCalculator.pixelsToMeters(
-            normalizedY = barPositionPixels.second,
+            pixelValue = barPositionPixels.second,
             poseResult = poseResult,
             calibrationData = calibrationData
         )
