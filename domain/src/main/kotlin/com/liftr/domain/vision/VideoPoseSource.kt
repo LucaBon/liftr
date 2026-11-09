@@ -15,8 +15,11 @@ interface VideoPoseSource {
     /** Slow-motion factor the timestamps were corrected by; 1 when none was found. Valid once [poses] has run. */
     val timeScale: Float get() = 1f
 
-    /** One decoded frame: its time, and its pose if it was analyzed and one was found. */
-    data class Frame(val timestampMs: Long, val pose: PoseResult?)
+    /**
+     * One decoded frame: its time, its pose if it was analyzed and one was
+     * found, and the barbell plate if the source tracks it and found it.
+     */
+    data class Frame(val timestampMs: Long, val pose: PoseResult?, val plate: PlateObservation? = null)
 
     /**
      * Cold flow with one element per decoded frame, in presentation order.

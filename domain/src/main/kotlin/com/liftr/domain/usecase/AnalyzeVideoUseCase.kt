@@ -47,6 +47,7 @@ import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.RepCount
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PlateObservation
 import com.liftr.domain.vision.PoseSanity
 import com.liftr.domain.video.VideoSpeedCheck
 import com.liftr.domain.vision.VideoPoseSource
@@ -136,14 +137,14 @@ class AnalyzeVideoUseCase @Inject constructor(
             // model on all of them. Pass 1 analyzes a steady subset; for jumps,
             // pass 2 then analyzes every frame around each takeoff and landing,
             // where the flight timing comes from.
-            val poseResults = try {
+            val detected = try {
                 val coarseShare = if (params.exerciseType.isJumpExercise()) COARSE_PASS_SHARE else 1f
                 val coarse = detectPoses(
                     poseSource, everyMs(coarseIntervalMs(params.exerciseType)), onProgress, 0f, coarseShare
                 )
                 val windows = if (params.exerciseType.isJumpExercise()) jumpWindows(params, coarse.poses) else emptyList()
                 if (windows.isEmpty() || coarse.skippedFrames == 0) {
-                    coarse.poses
+                    coarse
                 } else {
                     val analyzed = coarse.poses.mapTo(HashSet()) { it.timestampUs }
                     val dense = detectPoses(
@@ -152,14 +153,21 @@ class AnalyzeVideoUseCase @Inject constructor(
                         onProgress, COARSE_PASS_SHARE, 1f
                     )
                     logger.i(TAG, "Dense pass: ${dense.poses.size} poses around ${windows.size} takeoffs/landings")
-                    (coarse.poses + dense.poses).sortedBy { it.timestampUs }
+                    PassResult(
+                        (coarse.poses + dense.poses).sortedBy { it.timestampUs },
+                        coarse.plates + dense.plates,
+                        coarse.skippedFrames
+                    )
                 }
             } finally {
                 poseSource.close()
             }
+            val poseResults = detected.poses
+            // Barbell plate per analyzed frame time (ms), when the source tracks it.
+            val plateTrack = detected.plates
 
             val timeScale = poseSource.timeScale
-            logger.i(TAG, "Pose detection complete: ${poseResults.size} poses")
+            logger.i(TAG, "Pose detection complete: ${poseResults.size} poses, ${plateTrack.size} plate observations")
             if (poseResults.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("No poses detected in video"))
             }
@@ -212,7 +220,11 @@ class AnalyzeVideoUseCase @Inject constructor(
         }
     }
 
-    private class PassResult(val poses: List<PoseResult>, val skippedFrames: Int)
+    private class PassResult(
+        val poses: List<PoseResult>,
+        val plates: Map<Long, PlateObservation>,
+        val skippedFrames: Int
+    )
 
     /** Runs one decoding pass, analyzing the frames [include] accepts. */
     private suspend fun detectPoses(
@@ -223,10 +235,12 @@ class AnalyzeVideoUseCase @Inject constructor(
         progressTo: Float
     ): PassResult {
         val poses = mutableListOf<PoseResult>()
+        val plates = HashMap<Long, PlateObservation>()
         var frameIndex = 0
         var skipped = 0
         poseSource.poses { t -> include(t).also { if (!it) skipped++ } }.collect { frame ->
             frame.pose?.let { poses.add(it) }
+            frame.plate?.let { plates[frame.timestampMs] = it }
             frameIndex++
             val total = poseSource.totalFrames.coerceAtLeast(1)
             val passFraction = (frameIndex.toFloat() / total).coerceIn(0f, 1f)
@@ -240,7 +254,7 @@ class AnalyzeVideoUseCase @Inject constructor(
                 )
             )
         }
-        return PassResult(poses, skipped)
+        return PassResult(poses, plates, skipped)
     }
 
     /** Accepts frames (by µs time) at least [intervalMs] apart, thinning faster video to that rate. */

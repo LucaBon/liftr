@@ -23,6 +23,12 @@ enum class ExerciseType {
     fun hasExternalLoad(): Boolean = this != VERTICAL_JUMP && this != APPROACH_JUMP
 
     /**
+     * Barbell lifts whose bar is followed by its plate in video: side-on, the
+     * plate hides the shoulders the landmarks would track.
+     */
+    fun tracksBarPlate(): Boolean = this == FRONT_SQUAT || this == BACK_SQUAT
+
+    /**
      * A rep that starts with the lift (the pull from the floor) rather than
      * with lowering, so it is complete at lockout and its lowering comes after.
      */

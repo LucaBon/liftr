@@ -108,4 +108,13 @@ object SettingsKeys {
      * Boolean, default false (opt-in — adds render time and storage use).
      */
     const val SAVE_ANNOTATED_VIDEO = "save_annotated_video"
+
+    /**
+     * Diameter of the outer barbell plate in meters, which scales the plate
+     * track in video analysis. Float, default [DEFAULT_PLATE_DIAMETER_M].
+     */
+    const val PLATE_DIAMETER_M = "plate_diameter_m"
+
+    /** Standard bumper and competition plate diameter. */
+    const val DEFAULT_PLATE_DIAMETER_M = 0.45f
 }
