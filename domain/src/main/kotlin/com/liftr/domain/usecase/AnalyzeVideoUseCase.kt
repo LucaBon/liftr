@@ -1014,7 +1014,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         logDepthWindow(rep, poses, context, fromUs, toUs)
         val results = poses.filter { it.timestampUs in fromUs..toUs && PoseSanity.isPlausible(it, context.standingTorso) }
             .mapNotNull { squatStrategy.validateDepthAt(it, params.calibrationData, context.calculator) }
-        return results.firstOrNull { it.isValid } ?: results.maxByOrNull { it.confidence }
+        return bestDepthResult(results)
     }
 
     private fun extractBarPathPoint(
@@ -1216,3 +1216,9 @@ class AnalyzeVideoUseCase @Inject constructor(
         )
     }
 }
+
+/** The rep's verdict from its bottom frames: the first that reaches depth, else the closest miss. */
+internal fun bestDepthResult(results: List<DepthValidationResult>): DepthValidationResult? =
+    results.firstOrNull { it.isValid }
+        ?: results.filter { it.shortfallCm != null }.minByOrNull { it.shortfallCm!! }
+        ?: results.maxByOrNull { it.confidence }
