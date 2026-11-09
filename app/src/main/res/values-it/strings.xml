@@ -16,6 +16,13 @@
     <string name="jump_peak_power">Potenza di picco</string>
     <string name="analytics_best_peak_power">Miglior potenza di picco</string>
     <string name="set_summary_catch_header">Ricezione</string>
+    <string name="set_summary_con_mean_header">Con</string>
+    <string name="set_summary_con_peak_header">Picco</string>
+    <string name="set_summary_ecc_mean_header">Ecc</string>
+    <string name="set_summary_pause_header">Pausa</string>
+    <string name="set_summary_rom_header">ROM</string>
+    <string name="set_summary_bar_estimated_hint">Velocit\u00E0 del bilanciere stimata dai punti del corpo</string>
+    <string name="history_rep_metrics_format">Rep %1$d: ecc %2$s m/s \u00B7 pausa %3$s</string>
     <string name="catch_muscle">Muscle</string>
     <string name="catch_power">Power</string>
     <string name="catch_squat">Squat</string>

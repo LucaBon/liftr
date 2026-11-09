@@ -260,6 +260,13 @@
     <string name="catch_power">Power</string>
     <string name="catch_squat">Squat</string>
     <string name="set_summary_vel_header">Vel</string>
+    <string name="set_summary_con_mean_header">Con</string>
+    <string name="set_summary_con_peak_header">Peak</string>
+    <string name="set_summary_ecc_mean_header">Ecc</string>
+    <string name="set_summary_pause_header">Pause</string>
+    <string name="set_summary_rom_header">ROM</string>
+    <string name="set_summary_bar_estimated_hint">Bar speed estimated from body landmarks</string>
+    <string name="history_rep_metrics_format">Rep %1$d: ecc %2$s m/s \u00B7 pause %3$s</string>
     <string name="set_summary_depth_header">Depth</string>
     <string name="set_summary_form_header">Form</string>
     <string name="set_summary_bar_path_header">Path</string>

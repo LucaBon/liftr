@@ -49,4 +49,15 @@ class RepMapperScorePartsTest {
         assertEquals(CatchType.POWER, mapper.toDomain(mapper.toEntity(caught)).catchType)
         assertNull(mapper.toDomain(mapper.toEntity(rep(null))).catchType)
     }
+
+    @Test
+    fun `squat phase metrics survive a round trip and are null for older reps`() {
+        val squat = rep(null).copy(meanEccentricVelocity = 0.48f, bottomPauseMs = 200L)
+        val back = mapper.toDomain(mapper.toEntity(squat))
+
+        assertEquals(0.48f, back.meanEccentricVelocity)
+        assertEquals(200L, back.bottomPauseMs)
+        assertNull(mapper.toDomain(mapper.toEntity(rep(null))).meanEccentricVelocity)
+        assertNull(mapper.toDomain(mapper.toEntity(rep(null))).bottomPauseMs)
+    }
 }

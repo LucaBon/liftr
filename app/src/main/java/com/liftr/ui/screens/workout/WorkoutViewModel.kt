@@ -406,22 +406,27 @@ class WorkoutViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         val reps = summary.repScores.mapIndexed { index, score ->
             val v = summary.repVelocities.getOrNull(index) ?: MetersPerSecond(0f)
+            val eccentric = summary.repEccentricDurations.getOrNull(index) ?: 0f
+            val concentric = summary.repConcentricDurations.getOrNull(index) ?: 0f
+            val pauseMs = summary.repPauseMs.getOrNull(index)
             Rep(
                 setId = 0,
                 repNumber = index + 1,
                 peakVelocity = summary.repPeakVelocities.getOrNull(index) ?: v,
                 avgVelocity = v,
-                timeUnderTension = 0f,
-                rangeOfMotion = Meters(0f),
+                timeUnderTension = eccentric + (pauseMs ?: 0L) / 1000f + concentric,
+                rangeOfMotion = summary.repRangeOfMotion.getOrNull(index) ?: Meters(0f),
                 startPosition = Meters(0f),
                 endPosition = Meters(0f),
-                eccentricDuration = 0f,
-                concentricDuration = 0f,
+                eccentricDuration = eccentric,
+                concentricDuration = concentric,
                 velocityProfile = emptyList(),
                 positionProfile = emptyList(),
                 timestamp = now,
                 qualityScore = score.totalScore,
-                scoreParts = score.parts
+                scoreParts = score.parts,
+                meanEccentricVelocity = summary.repEccentricVelocities.getOrNull(index)?.value,
+                bottomPauseMs = pauseMs
             )
         }
         val completedSet = Set(

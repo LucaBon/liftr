@@ -193,6 +193,19 @@ private fun WorkoutCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        set.reps.forEach { rep ->
+                            val ecc = rep.meanEccentricVelocity ?: return@forEach
+                            val pause = rep.bottomPauseMs?.let { "%.1f s".format(it / 1000f) } ?: "-"
+                            Text(
+                                text = stringResource(
+                                    R.string.history_rep_metrics_format,
+                                    rep.repNumber, "%.2f".format(ecc), pause
+                                ),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = Spacing.md)
+                            )
+                        }
                     }
                 }
             }
