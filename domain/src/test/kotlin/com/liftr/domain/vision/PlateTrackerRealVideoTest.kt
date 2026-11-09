@@ -20,7 +20,8 @@ import kotlin.math.abs
 /**
  * Runs [PlateTracker] over real frames; skipped unless LIFTR_PLATE_FRAMES=<prefix>
  * points at `<prefix>.gray` (concatenated grayscale frames) and `<prefix>.txt`
- * (first line `w h fps`, then one timestamp in µs per frame).
+ * (first line `w h fps`, then one timestamp in µs per frame); frames are 640 px on
+ * the long side (640×360 landscape, 360×640 portrait), as VideoFilePoseSource makes them.
  *
  * Optional: LIFTR_PLATE_POSES (a pose dump with `poses[{i, lm}]`) for shoulder
  * hints, LIFTR_PLATE_REF (a reference track `{track[{t, c:[x,y,r]|null}]}`) to

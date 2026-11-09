@@ -2,6 +2,10 @@ package com.liftr.vision.video
 
 import android.graphics.Bitmap
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.ExerciseType
+import com.liftr.domain.repository.SettingsKeys
+import com.liftr.domain.vision.BodyPositionCalculator
 import com.liftr.domain.vision.PlateObservation
 import com.liftr.domain.vision.PlateTracker
 import com.liftr.domain.vision.VideoPoseSource
@@ -23,10 +27,15 @@ import java.io.File
 class VideoFilePoseSource(
     videoFile: File,
     private val createPoseDetector: () -> VideoFramePoseDetector,
-    logger: Logger,
+    private val logger: Logger,
     knownCaptureFps: Int? = null,
     private val beforeFrame: suspend () -> Unit = {},
-    private val createPlateTracker: (() -> PlateTracker)? = null
+    private val createPlateTracker: (() -> PlateTracker)? = null,
+    private val exerciseType: ExerciseType? = null,
+    private val calibrationData: CalibrationData? = null,
+    private val plateDiameterM: Float = SettingsKeys.DEFAULT_PLATE_DIAMETER_M,
+    /** Normalized (x, y) the user tapped on the plate; seeds the tracker without a pose. */
+    private val plateSeed: Pair<Float, Float>? = null
 ) : VideoPoseSource {
 
     private val extractor = VideoFrameExtractor(videoFile, logger, knownCaptureFps)
@@ -38,6 +47,8 @@ class VideoFilePoseSource(
     override fun poses(include: (timestampUs: Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
         val plateTracker = createPlateTracker?.invoke()
         val gray = GrayFrame()
+        val bodyScale = BodyPositionCalculator(logger)
+        val hintAtPlate = exerciseType?.let(PlateTracker::hintAtPlate) ?: false
         createPoseDetector().use { detector ->
             extractor.extractFrames().collect { frame ->
                 try {
@@ -49,7 +60,14 @@ class VideoFilePoseSource(
                                 gray.from(frame.bitmap)
                                 tracker.track(
                                     gray.luma, gray.width, gray.height, frame.timestampMs,
-                                    pose?.let(PlateTracker::shoulderHint)
+                                    hint = pose?.let { p ->
+                                        exerciseType?.let { PlateTracker.barHint(p, it) } ?: PlateTracker.shoulderHint(p)
+                                    },
+                                    hintAtPlate = hintAtPlate,
+                                    expectedRadius = pose?.let {
+                                        PlateTracker.expectedRadius(it, calibrationData, plateDiameterM, bodyScale)
+                                    },
+                                    seed = plateSeed
                                 )
                             }
                         }
@@ -72,9 +90,13 @@ class VideoFilePoseSource(
         private var argb = IntArray(0)
 
         fun from(bitmap: Bitmap) {
-            val scaled = if (bitmap.width > PLATE_FRAME_WIDTH) {
+            val longSide = maxOf(bitmap.width, bitmap.height)
+            val scaled = if (longSide > PLATE_FRAME_LONG_SIDE) {
                 Bitmap.createScaledBitmap(
-                    bitmap, PLATE_FRAME_WIDTH, bitmap.height * PLATE_FRAME_WIDTH / bitmap.width, true
+                    bitmap,
+                    bitmap.width * PLATE_FRAME_LONG_SIDE / longSide,
+                    bitmap.height * PLATE_FRAME_LONG_SIDE / longSide,
+                    true
                 )
             } else bitmap
             try {
@@ -97,7 +119,7 @@ class VideoFilePoseSource(
     }
 
     private companion object {
-        /** Width of the grayscale frames the plate tracker sees. */
-        const val PLATE_FRAME_WIDTH = 360
+        /** Long side of the grayscale frames the plate tracker sees (640×360 landscape, 360×640 portrait). */
+        const val PLATE_FRAME_LONG_SIDE = 640
     }
 }
