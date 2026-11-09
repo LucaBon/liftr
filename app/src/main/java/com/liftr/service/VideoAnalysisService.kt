@@ -108,7 +108,8 @@ class VideoAnalysisService : LifecycleService() {
         val targetReps: Int,
         val calibrationData: CalibrationData,
         val tempoPrescription: TempoPrescription?,
-        val knownCaptureFps: Int?
+        val knownCaptureFps: Int?,
+        val plateSeed: Pair<Float, Float>?
     )
 
     private val requests = Channel<AnalysisRequest>(Channel.UNLIMITED)
@@ -137,7 +138,8 @@ class VideoAnalysisService : LifecycleService() {
                             targetReps = request.targetReps,
                             calibrationData = request.calibrationData,
                             tempoPrescription = request.tempoPrescription,
-                            knownCaptureFps = request.knownCaptureFps
+                            knownCaptureFps = request.knownCaptureFps,
+                            plateSeed = request.plateSeed
                         )
                     }
                 } finally {
@@ -194,7 +196,8 @@ class VideoAnalysisService : LifecycleService() {
                 targetReps = targetReps,
                 calibrationData = inputs.calibrationData,
                 tempoPrescription = inputs.tempoPrescription,
-                knownCaptureFps = knownCaptureFps
+                knownCaptureFps = knownCaptureFps,
+                plateSeed = inputs.plateSeed
             )
         ).isSuccess
 
@@ -225,7 +228,8 @@ class VideoAnalysisService : LifecycleService() {
         targetReps: Int,
         calibrationData: CalibrationData,
         tempoPrescription: TempoPrescription?,
-        knownCaptureFps: Int?
+        knownCaptureFps: Int?,
+        plateSeed: Pair<Float, Float>?
     ) {
         try {
             showProgress(AnalyzeVideoUseCase.Progress(0, 1, 0f, 0))
@@ -246,6 +250,9 @@ class VideoAnalysisService : LifecycleService() {
 
             val saveAnnotated = settingsRepository
                 .getBooleanSetting(SettingsKeys.SAVE_ANNOTATED_VIDEO, false).first()
+            val plateDiameterM = settingsRepository.getFloatSetting(
+                SettingsKeys.PLATE_DIAMETER_M, SettingsKeys.DEFAULT_PLATE_DIAMETER_M
+            ).first()
             val annotations = if (saveAnnotated) mutableListOf<FrameAnnotation>() else null
 
             val result = analyzeVideoUseCase.invoke(
@@ -270,7 +277,11 @@ class VideoAnalysisService : LifecycleService() {
                     logger = logger,
                     knownCaptureFps = knownCaptureFps,
                     beforeFrame = ::waitWhileRecording,
-                    createPlateTracker = if (exerciseType.tracksBarPlate()) ::PlateTracker else null
+                    createPlateTracker = if (exerciseType.tracksBarPlate()) ::PlateTracker else null,
+                    exerciseType = exerciseType,
+                    calibrationData = calibrationData,
+                    plateDiameterM = plateDiameterM,
+                    plateSeed = plateSeed
                 ),
                 onProgress = { progress ->
                     showProgress(progress)
@@ -514,7 +525,9 @@ class VideoAnalysisService : LifecycleService() {
 
         private class Inputs(
             val calibrationData: CalibrationData,
-            val tempoPrescription: TempoPrescription?
+            val tempoPrescription: TempoPrescription?,
+            /** Normalized (x, y) the user tapped on the plate, or null. */
+            val plateSeed: Pair<Float, Float>? = null
         )
 
         // Passed out-of-band because CalibrationData/TempoPrescription are
@@ -532,10 +545,11 @@ class VideoAnalysisService : LifecycleService() {
             targetReps: Int,
             calibrationData: CalibrationData,
             tempoPrescription: TempoPrescription? = null,
-            knownCaptureFps: Int? = null
+            knownCaptureFps: Int? = null,
+            plateSeed: Pair<Float, Float>? = null
         ): Intent {
             val inputsKey = UUID.randomUUID().toString()
-            pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription)
+            pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription, plateSeed)
             return Intent(context, VideoAnalysisService::class.java).apply {
                 putExtra(EXTRA_OWNER, owner)
                 putExtra(EXTRA_INPUTS_KEY, inputsKey)
