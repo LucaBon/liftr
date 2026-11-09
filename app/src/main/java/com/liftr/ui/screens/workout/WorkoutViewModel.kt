@@ -397,7 +397,7 @@ class WorkoutViewModel @Inject constructor(
     private fun saveAnalyzedSet(summary: SetSummary) {
         // A recording started and stopped by mistake: nothing to keep.
         if (summary.completedReps.value == 0) {
-            logger.i(TAG, "Analyzed set has no reps, not saved")
+            logger.i(TAG, "Analyzed ${summary.exerciseType} set has no reps, not saved")
             return
         }
         if (completedSets.isEmpty() && workoutStartTime == 0L) {
@@ -1143,7 +1143,13 @@ class WorkoutViewModel @Inject constructor(
             if (event is VideoRecordEvent.Finalize && event.hasError() &&
                 _uiState.value.isVideoRecording
             ) {
-                onRecordingFailed(event.error)
+                if (_uiState.value.analysisMode == AnalysisMode.POST_EXERCISE) {
+                    // The partial file may still be usable; stopPostExerciseRecording
+                    // is idempotent against a user stop racing this callback.
+                    stopPostExerciseRecording(interrupted = true)
+                } else {
+                    onRecordingFailed(event.error)
+                }
             }
         }
         if (!started) {
@@ -1340,7 +1346,7 @@ class WorkoutViewModel @Inject constructor(
      * Stop video recording and hand the file off to [VideoAnalysisService] for
      * heavy-model analysis. The summary arrives later via [observeAnalysisService].
      */
-    private fun stopPostExerciseRecording() {
+    private fun stopPostExerciseRecording(interrupted: Boolean = false) {
         // Idempotence guard: a second stop (double tap, or a user tap racing
         // auto-stop) would find the recording already handed off, report a
         // spurious "recording failed", and wipe the progress of the analysis
@@ -1403,6 +1409,11 @@ class WorkoutViewModel @Inject constructor(
                 return@launch
             }
 
+            if (interrupted) {
+                _uiState.update {
+                    it.copy(analysisError = context.getString(R.string.recording_interrupted_analyzing))
+                }
+            }
             startAnalysis(videoFile, calibration, captureFps)
         }
     }

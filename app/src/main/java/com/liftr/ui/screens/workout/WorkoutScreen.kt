@@ -758,7 +758,16 @@ fun SetSummarySheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
-            if (isJump) {
+            if (summary.completedReps.value == 0) {
+                Text(
+                    text = stringResource(R.string.set_summary_no_reps),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = Spacing.md)
+                )
+            } else if (isJump) {
                 JumpHeightList(
                     heights = summary.repJumpHeights,
                     apexHeights = summary.repApexHeights,

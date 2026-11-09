@@ -6,6 +6,8 @@ import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.CalibrationQuality
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
+import kotlin.math.abs
+import kotlin.math.hypot
 
 /**
  * Body part positions and the pixel-to-meter scale, from pose landmarks alone.
@@ -16,6 +18,7 @@ import com.liftr.domain.model.PoseResult
  *
  * The scale is locked per set ([resetScale]) to the person's tallest recent
  * pixel height, so it does not shrink while they squat and inflate every distance.
+ * A lifter lying down (bench) is measured along the body instead, see [isLyingDown].
  */
 open class BodyPositionCalculator(
     private val logger: Logger
@@ -116,7 +119,10 @@ open class BodyPositionCalculator(
     fun lockedPixelsPerMeter(poseResult: PoseResult, calibrationData: CalibrationData?): Float {
         val measured = calculatePixelsPerMeter(poseResult, calibrationData)
         val measures = measured.quality == CalibrationQuality.OPTIMAL || measured.quality == CalibrationQuality.ESTIMATED
-        if (!measures || !PoseSanity.isPlausible(poseResult)) return lockedScale ?: measured.pixelsPerMeter
+        // The upright stacking check would reject a lying lifter (arched back,
+        // feet up), whose segment-length measurement is sound.
+        val plausible = isLyingDown(poseResult) || PoseSanity.isPlausible(poseResult)
+        if (!measures || !plausible) return lockedScale ?: measured.pixelsPerMeter
 
         recentScales.addLast(measured.pixelsPerMeter)
         if (recentScales.size > SCALE_MEDIAN_WINDOW) recentScales.removeFirst()
@@ -156,7 +162,7 @@ open class BodyPositionCalculator(
     }
 
     /**
-     * Hierarchical fallback:
+     * Hierarchical fallback, after the lying-body measurement:
      * 1. Full body (head to ankles) - most accurate
      * 2. Torso (head to hips) - anthropometric ratio
      * 3. Legs (hips to ankles) - anthropometric ratio
@@ -175,6 +181,11 @@ open class BodyPositionCalculator(
             logger.e(TAG, "No calibration data available")
             return CalibrationResult(DEFAULT_PIXELS_PER_METER, CalibrationQuality.NONE)
         }
+
+        // Lying lifter (bench press): the body runs across the frame, so the
+        // vertical spans below measure only the drop from bench to floor, a
+        // fraction of the body that also wobbles with every landmark jitter.
+        lyingBodyCalibration(poseResult, calibrationData)?.let { return it }
 
         // A bottom above the top (a broken pose) gives a negative span, rejected as implausible.
         fun span(top: List<PoseKeypoint>, bottom: List<PoseKeypoint>): Float =
@@ -195,6 +206,50 @@ open class BodyPositionCalculator(
         }
         return CalibrationResult(calibrationData.pixelsPerMeter, CalibrationQuality.FALLBACK)
     }
+
+    /**
+     * Scale for a lifter lying down, or null when the body is not horizontal.
+     *
+     * Body length is the pixel path head → hips → knees → ankles, which matches
+     * the head-to-ankle span of a standing body however the knees are bent.
+     * Without knees and ankles it falls back to the torso share of height.
+     */
+    private fun lyingBodyCalibration(poseResult: PoseResult, calibrationData: CalibrationData): CalibrationResult? {
+        if (!isLyingDown(poseResult)) return null
+        val landmarks = poseResult.landmarks
+        val head = centre(landmarks, *HEAD) ?: return null
+        val hips = centre(landmarks, PoseResult.LEFT_HIP, PoseResult.RIGHT_HIP) ?: return null
+        val knees = centre(landmarks, PoseResult.LEFT_KNEE, PoseResult.RIGHT_KNEE)
+        val ankles = centre(landmarks, PoseResult.LEFT_ANKLE, PoseResult.RIGHT_ANKLE)
+
+        val torso = distancePx(head, hips, poseResult)
+        return if (knees != null && ankles != null) {
+            val body = torso + distancePx(hips, knees, poseResult) + distancePx(knees, ankles, poseResult)
+            CalibrationResult(body / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
+        } else {
+            CalibrationResult(torso / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
+        }
+    }
+
+    /**
+     * True when the torso (head to hips) lies within 30° of horizontal. The
+     * margin keeps a squat's forward lean, which rarely gets that flat, on the
+     * upright scale.
+     */
+    fun isLyingDown(poseResult: PoseResult): Boolean {
+        val head = centre(poseResult.landmarks, *HEAD) ?: return false
+        val hips = centre(poseResult.landmarks, PoseResult.LEFT_HIP, PoseResult.RIGHT_HIP) ?: return false
+        val dx = abs(head.first - hips.first) * poseResult.imageWidth
+        val dy = abs(head.second - hips.second) * poseResult.imageHeight
+        return dx > 0f && dy < dx * LYING_MAX_TILT_TAN
+    }
+
+    private fun centre(landmarks: List<PoseKeypoint>, vararg ids: Int): Pair<Float, Float>? =
+        visible(landmarks, *ids).takeIf { it.isNotEmpty() }
+            ?.let { pts -> pts.map { it.x }.average().toFloat() to pts.map { it.y }.average().toFloat() }
+
+    private fun distancePx(a: Pair<Float, Float>, b: Pair<Float, Float>, poseResult: PoseResult): Float =
+        hypot((a.first - b.first) * poseResult.imageWidth, (a.second - b.second) * poseResult.imageHeight)
 
     private fun visible(landmarks: List<PoseKeypoint>, vararg ids: Int): List<PoseKeypoint> =
         ids.map { landmarks.getOrNull(it) }.filterNotNull().filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
@@ -219,6 +274,9 @@ open class BodyPositionCalculator(
 
         /** Head to hip is about 52% of standing height. */
         private const val TORSO_SHARE_OF_HEIGHT = 0.52f
+
+        /** tan(30°): torso tilt below which the lifter counts as lying down. */
+        private const val LYING_MAX_TILT_TAN = 0.577f
 
         /** Hip to ankle is about 48% of standing height. */
         private const val LEGS_SHARE_OF_HEIGHT = 0.48f

@@ -280,7 +280,8 @@
     <string name="set_summary_best_rep">Best</string>
     <string name="set_summary_worst_rep">Worst</string>
     <string name="set_summary_reps_format">%d/%d reps</string>
-    <string name="set_summary_no_reps">No reps completed</string>
+    <string name="set_summary_no_reps">No reps detected: check that the whole body and the bar are in frame</string>
+    <string name="recording_interrupted_analyzing">Recording interrupted — analyzing what was captured.</string>
     <string name="score_excellent">Excellent</string>
     <string name="score_good">Good</string>
     <string name="score_fair">Fair</string>
