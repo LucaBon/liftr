@@ -42,13 +42,13 @@ import com.liftr.domain.model.BarPathData
  * @property repReactiveStrengthIndices Per-jump RSI (flight time / contact time), null where there
  *   is no contact time; both index-aligned with [repJumpHeights]
  * @property repEccentricVelocities Per-rep mean eccentric velocity (range of motion over the
- *   descent time) for squats analyzed from video; empty elsewhere. [repVelocities] and
+ *   descent time) for plate-tracked lifts analyzed from video; empty elsewhere. [repVelocities] and
  *   [repPeakVelocities] stay the mean and peak concentric velocity.
- * @property repPauseMs Per-rep bottom pause in ms (0 without one); squats from video only
- * @property repEccentricDurations Per-rep descent time in seconds; squats from video only
- * @property repConcentricDurations Per-rep ascent time in seconds; squats from video only
- * @property repRangeOfMotion Per-rep bar travel from standing to the bottom; squats from video only
- * @property barTrackSource What the squat velocities were measured on; null where no bar track was built
+ * @property repPauseMs Per-rep pause in ms at the bottom (squat, bench chest pause) or on the floor before the pull (deadlift), 0 without one; plate-tracked lifts from video only
+ * @property repEccentricDurations Per-rep lowering time in seconds; plate-tracked lifts from video only
+ * @property repConcentricDurations Per-rep lifting time in seconds (a deadlift's pull); plate-tracked lifts from video only
+ * @property repRangeOfMotion Per-rep bar travel between the top and the bottom (deadlift: floor to lockout); plate-tracked lifts from video only
+ * @property barTrackSource What the bar velocities were measured on; null where no bar track was built
  * @property cameraView How the set was filmed (every exercise should be filmed side-on); UNKNOWN when it can't be judged (bench press, too few standing frames)
  */
 data class SetSummary(
@@ -158,7 +158,7 @@ data class SetSummary(
     }
 }
 
-/** Where a squat's bar kinematics came from. */
+/** Where a plate-tracked lift's bar kinematics came from. */
 enum class BarTrackSource {
     /** The plate's center, scaled by its own diameter: the bar plane. */
     PLATE,

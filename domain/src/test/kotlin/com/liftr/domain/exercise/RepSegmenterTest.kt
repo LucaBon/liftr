@@ -178,4 +178,59 @@ class RepSegmenterTest {
 
         assertEquals(0, segment(track.heights).size)
     }
+
+    @Test
+    fun `a bench set times the chest pause on the rep that has one`() {
+        // Bar at 1.0 m: down 0.3 m in 1 s, up in 0.8 s; the second rep rests 0.5 s on the chest.
+        val track = Track(1.0f).hold(1f)
+        for (pause in listOf(0f, 0.5f, 0f)) {
+            track.moveTo(0.7f, 1.0f).hold(pause).moveTo(1.0f, 0.8f).hold(1f)
+        }
+        val reps = RepSegmenter.segment(samples(track.heights), 0.15f, RepSegmenter.Direction.DOWN_FIRST)
+
+        assertEquals(3, reps.size)
+        assertEquals(0f, reps[0].pauseMs.toFloat(), 100f)
+        assertEquals(500f, reps[1].pauseMs.toFloat(), 70f)
+        assertEquals(0f, reps[2].pauseMs.toFloat(), 100f)
+        for (rep in reps) {
+            assertEquals(0.3f, rep.rangeOfMotion, 0.01f)
+            assertEquals(0.3f, rep.meanEccentricVelocity, 0.04f)
+            assertEquals(0.375f, rep.meanConcentricVelocity, 0.06f)
+            assertTrue(rep.peakConcentricVelocity in 0.33f..0.55f)
+        }
+    }
+
+    /** On the floor 1 s, then three 0.5 m pulls of 1 s with 1 s lockouts and 1 s lowerings. */
+    private fun deadliftTrack(): Track {
+        val track = Track(0f).hold(1f)
+        track.moveTo(0.5f, 1f).hold(1f).moveTo(0f, 1f)
+        // Rep 2: a dead stop, 1 s on the floor first.
+        track.hold(1f).moveTo(0.5f, 1f).hold(1f).moveTo(0f, 1f)
+        // Rep 3: touch-and-go.
+        track.moveTo(0.5f, 1f).hold(1f).moveTo(0f, 1f).hold(1f)
+        return track
+    }
+
+    @Test
+    fun `a deadlift set reads the pull as the concentric and the floor rest as the pause`() {
+        val reps = RepSegmenter.segment(samples(deadliftTrack().heights), 0.30f, RepSegmenter.Direction.UP_FIRST)
+
+        assertEquals(3, reps.size)
+        assertEquals(0f, reps[0].pauseMs.toFloat(), 1f)
+        assertEquals(1000f, reps[1].pauseMs.toFloat(), 150f)
+        assertEquals(0f, reps[2].pauseMs.toFloat(), 150f)
+        for (rep in reps) {
+            assertEquals(0.5f, rep.rangeOfMotion, 0.02f)
+            assertEquals(1.0f, rep.concentricDurationS, 0.15f)
+            assertEquals(0.5f, rep.meanConcentricVelocity, 0.07f)
+            assertTrue(rep.peakConcentricVelocity in 0.45f..0.75f)
+            assertEquals(1.0f, rep.eccentricDurationS, 0.15f)
+            assertEquals(0.5f, rep.meanEccentricVelocity, 0.07f)
+            // In time order: the pull, the lockout, the lowering.
+            assertTrue(rep.eccentricStart < rep.pauseStart && rep.pauseStart <= rep.concentricStart)
+            assertTrue(rep.concentricStart < rep.concentricEnd)
+        }
+        // The first pull starts when the bar leaves the floor, after 1 s.
+        assertEquals(1f, seconds(reps[0].eccentricStart), 0.05f)
+    }
 }

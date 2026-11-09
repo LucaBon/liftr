@@ -24,9 +24,10 @@ enum class ExerciseType {
 
     /**
      * Barbell lifts whose bar is followed by its plate in video: side-on, the
-     * plate hides the shoulders the landmarks would track.
+     * plate hides the shoulders (squats) or wrists (bench press, deadlift) the
+     * landmarks would track.
      */
-    fun tracksBarPlate(): Boolean = this == FRONT_SQUAT || this == BACK_SQUAT
+    fun tracksBarPlate(): Boolean = this == FRONT_SQUAT || this == BACK_SQUAT || this == BENCH_PRESS || this == DEADLIFT
 
     /**
      * A rep that starts with the lift (the pull from the floor) rather than

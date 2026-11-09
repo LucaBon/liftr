@@ -107,7 +107,7 @@ class AnalyzeVideoUseCaseTest {
     @Test
     fun `rep mean velocity covers only the concentric part`() = runBlocking {
         val calculator = calculator()
-        // Frame 0 idle, 1..40 slow descent, 41..60 fast ascent, 61 lockout.
+        // Frame 0 idle, 1..40 slow drift (not counted), 41..60 fast ascent (a clean counts ECCENTRIC), 61 lockout.
         val ys = (0..61).map {
             when {
                 it <= 40 -> 0.6f + 0.1f * it / 40f
@@ -120,8 +120,8 @@ class AnalyzeVideoUseCaseTest {
                 val i = frame++
                 val phase = when {
                     i == 0 -> MovementPhase.IDLE
-                    i <= 40 -> MovementPhase.ECCENTRIC
-                    i <= 60 -> MovementPhase.CONCENTRIC
+                    i <= 40 -> MovementPhase.TOP
+                    i <= 60 -> MovementPhase.ECCENTRIC
                     else -> MovementPhase.TOP
                 }
                 PhaseTransitionResult(
@@ -145,7 +145,7 @@ class AnalyzeVideoUseCaseTest {
         val result = useCase.invoke(
             AnalyzeVideoUseCase.Params(
                 videoFile = File("set.mp4"),
-                exerciseType = ExerciseType.BENCH_PRESS,
+                exerciseType = ExerciseType.CLEAN,
                 weight = Kilograms(100f),
                 targetReps = 1,
                 calibrationData = CalibrationData(pixelsPerMeter, 1.75f, 0.45f)
@@ -204,7 +204,11 @@ class AnalyzeVideoUseCaseTest {
         return drops
     }
 
-    private suspend fun analyzeSquat(poses: List<PoseResult>, plates: List<PlateObservation?>?): SetSummary {
+    private suspend fun analyzeSquat(
+        poses: List<PoseResult>,
+        plates: List<PlateObservation?>?,
+        exerciseType: ExerciseType = ExerciseType.FRONT_SQUAT
+    ): SetSummary {
         val settings = mockk<SettingsRepository>(relaxed = true) {
             every { getFloatSetting(any(), any()) } returns flowOf(0.45f)
         }
@@ -221,7 +225,7 @@ class AnalyzeVideoUseCaseTest {
         return useCase.invoke(
             AnalyzeVideoUseCase.Params(
                 videoFile = File("set.mp4"),
-                exerciseType = ExerciseType.FRONT_SQUAT,
+                exerciseType = exerciseType,
                 weight = Kilograms(100f),
                 targetReps = 2,
                 calibrationData = CalibrationData(pixelsPerMeter, 1.75f, 0.45f)
@@ -269,6 +273,94 @@ class AnalyzeVideoUseCaseTest {
 
         assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
         assertTwoSquats(summary)
+    }
+
+    /**
+     * Three bench presses at 30 fps, as the drop below the top (m): 1 s at the
+     * top, 0.3 m down in 1 s, [pauses] s on the chest, up in 0.8 s, 1 s at the top.
+     */
+    private fun threeBenches(): List<Float> {
+        val drops = mutableListOf<Float>()
+        repeat(30) { drops += 0f }
+        for (pause in listOf(0f, 0.5f, 0f)) {
+            repeat(30) { drops += 0.3f * (it + 1) / 30 }
+            repeat((pause * 30).toInt()) { drops += 0.3f }
+            repeat(24) { drops += 0.3f - 0.3f * (it + 1) / 24 }
+            repeat(30) { drops += 0f }
+        }
+        return drops
+    }
+
+    private fun assertThreeBenches(summary: SetSummary) {
+        assertEquals(3, summary.completedReps.value)
+        for (n in 0..2) {
+            assertEquals(0.3f, summary.repRangeOfMotion[n].value, 0.02f)
+            assertEquals(0.3f, summary.repEccentricVelocities[n].value, 0.05f)
+            assertEquals(0.375f, summary.repVelocities[n].value, 0.07f)
+        }
+        assertEquals(0f, summary.repPauseMs[0].toFloat(), 100f)
+        assertEquals(500f, summary.repPauseMs[1].toFloat(), 80f)
+        assertEquals(0f, summary.repPauseMs[2].toFloat(), 100f)
+    }
+
+    @Test
+    fun `a bench press's reps and chest pause come from the plate`() = runBlocking {
+        val drops = threeBenches()
+        val poses = drops.indices.map { poseAt(0.3f, it * 33L) }
+        val plates = drops.map { PlateObservation(0.5f, 0.3f + it * 333.33f / imageHeight, 0.15f, 1f) }
+
+        val summary = analyzeSquat(poses, plates, ExerciseType.BENCH_PRESS)
+
+        assertEquals(BarTrackSource.PLATE, summary.barTrackSource)
+        assertThreeBenches(summary)
+    }
+
+    @Test
+    fun `without a plate a bench press is measured on the wrists`() = runBlocking {
+        val drops = threeBenches()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+
+        val summary = analyzeSquat(poses, plates = null, exerciseType = ExerciseType.BENCH_PRESS)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertThreeBenches(summary)
+    }
+
+    /** Three deadlifts at 30 fps as the bar's height above the floor (m): 1 s on it, pulls of 0.5 m, rep 2 a dead stop. */
+    private fun threeDeadlifts(): List<Float> {
+        val heights = mutableListOf<Float>()
+        repeat(30) { heights += 0f }
+        for (rest in listOf(0, 30, 0)) {
+            repeat(rest) { heights += 0f }
+            repeat(30) { heights += 0.5f * (it + 1) / 30 }
+            repeat(30) { heights += 0.5f }
+            repeat(30) { heights += 0.5f - 0.5f * (it + 1) / 30 }
+        }
+        repeat(30) { heights += 0f }
+        return heights
+    }
+
+    @Test
+    fun `a deadlift's pulls and floor rests come from the plate`() = runBlocking {
+        val heights = threeDeadlifts()
+        val poses = heights.indices.map { poseAt(0.5f, it * 33L) }
+        // The plate rises 0.5 m = 167 px of 1000 from cy 0.5.
+        val plates = heights.map { PlateObservation(0.5f, 0.5f - it * 333.33f / imageHeight, 0.15f, 1f) }
+
+        val summary = analyzeSquat(poses, plates, ExerciseType.DEADLIFT)
+
+        assertEquals(BarTrackSource.PLATE, summary.barTrackSource)
+        assertEquals(3, summary.completedReps.value)
+        for (n in 0..2) {
+            assertEquals(0.5f, summary.repRangeOfMotion[n].value, 0.03f)
+            // The pull is the concentric, the lowering the eccentric.
+            assertEquals(0.5f, summary.repVelocities[n].value, 0.08f)
+            assertEquals(0.5f, summary.repEccentricVelocities[n].value, 0.08f)
+            assertEquals(1.0f, summary.repConcentricDurations[n], 0.15f)
+        }
+        assertEquals(0f, summary.repPauseMs[0].toFloat(), 1f)
+        assertEquals(1000f, summary.repPauseMs[1].toFloat(), 150f)
+        assertEquals(0f, summary.repPauseMs[2].toFloat(), 150f)
     }
 
     @Test
