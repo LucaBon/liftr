@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.model.BarTrackSource
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.SetSummary
@@ -90,7 +91,9 @@ class VideoAnalysisService : LifecycleService() {
         data class Complete(
             val summary: SetSummary,
             val recordedVideoPath: String,
-            val annotatedVideoPath: String? = null
+            val annotatedVideoPath: String? = null,
+            /** The recording that was analyzed; still on disk only if it was kept (see runAnalysis). */
+            val sourceVideoPath: String? = null
         ) : AnalysisState()
         data class Error(val message: String) : AnalysisState()
     }
@@ -108,7 +111,8 @@ class VideoAnalysisService : LifecycleService() {
         val targetReps: Int,
         val calibrationData: CalibrationData,
         val tempoPrescription: TempoPrescription?,
-        val knownCaptureFps: Int?
+        val knownCaptureFps: Int?,
+        val plateSeed: Pair<Float, Float>?
     )
 
     private val requests = Channel<AnalysisRequest>(Channel.UNLIMITED)
@@ -137,7 +141,8 @@ class VideoAnalysisService : LifecycleService() {
                             targetReps = request.targetReps,
                             calibrationData = request.calibrationData,
                             tempoPrescription = request.tempoPrescription,
-                            knownCaptureFps = request.knownCaptureFps
+                            knownCaptureFps = request.knownCaptureFps,
+                            plateSeed = request.plateSeed
                         )
                     }
                 } finally {
@@ -194,7 +199,8 @@ class VideoAnalysisService : LifecycleService() {
                 targetReps = targetReps,
                 calibrationData = inputs.calibrationData,
                 tempoPrescription = inputs.tempoPrescription,
-                knownCaptureFps = knownCaptureFps
+                knownCaptureFps = knownCaptureFps,
+                plateSeed = inputs.plateSeed
             )
         ).isSuccess
 
@@ -225,7 +231,8 @@ class VideoAnalysisService : LifecycleService() {
         targetReps: Int,
         calibrationData: CalibrationData,
         tempoPrescription: TempoPrescription?,
-        knownCaptureFps: Int?
+        knownCaptureFps: Int?,
+        plateSeed: Pair<Float, Float>?
     ) {
         try {
             showProgress(AnalyzeVideoUseCase.Progress(0, 1, 0f, 0))
@@ -246,6 +253,9 @@ class VideoAnalysisService : LifecycleService() {
 
             val saveAnnotated = settingsRepository
                 .getBooleanSetting(SettingsKeys.SAVE_ANNOTATED_VIDEO, false).first()
+            val plateDiameterM = settingsRepository.getFloatSetting(
+                SettingsKeys.PLATE_DIAMETER_M, SettingsKeys.DEFAULT_PLATE_DIAMETER_M
+            ).first()
             val annotations = if (saveAnnotated) mutableListOf<FrameAnnotation>() else null
 
             val result = analyzeVideoUseCase.invoke(
@@ -270,7 +280,11 @@ class VideoAnalysisService : LifecycleService() {
                     logger = logger,
                     knownCaptureFps = knownCaptureFps,
                     beforeFrame = ::waitWhileRecording,
-                    createPlateTracker = if (exerciseType.tracksBarPlate()) ::PlateTracker else null
+                    createPlateTracker = if (exerciseType.tracksBarPlate()) ::PlateTracker else null,
+                    exerciseType = exerciseType,
+                    calibrationData = calibrationData,
+                    plateDiameterM = plateDiameterM,
+                    plateSeed = plateSeed
                 ),
                 onProgress = { progress ->
                     showProgress(progress)
@@ -288,8 +302,12 @@ class VideoAnalysisService : LifecycleService() {
                         generateAnnotatedVideo(videoFile, exerciseType, weight, targetReps, annotations)
                     } else null
                     // Keep the raw recording for in-app replay. If an annotated
-                    // export was produced, drop the raw file to save space.
-                    if (annotatedPath != null) {
+                    // export was produced, drop the raw file to save space, unless the
+                    // plate was not found: the lifter can tap it and analyze again, so
+                    // the raw file stays until the summary is dismissed.
+                    val keepForTap = exerciseType.tracksBarPlate() &&
+                        summary.barTrackSource == BarTrackSource.LANDMARKS
+                    if (annotatedPath != null && !keepForTap) {
                         videoStorageRepository.deleteRecording(videoFile)
                     }
                     val playbackPath = annotatedPath ?: videoFile.absolutePath
@@ -298,7 +316,8 @@ class VideoAnalysisService : LifecycleService() {
                         AnalysisState.Complete(
                             summary = summary,
                             recordedVideoPath = playbackPath,
-                            annotatedVideoPath = annotatedPath
+                            annotatedVideoPath = annotatedPath,
+                            sourceVideoPath = videoFile.absolutePath
                         )
                     )
                     logger.i(TAG, "Analysis complete (playback=$playbackPath, annotated=$annotatedPath)")
@@ -502,6 +521,7 @@ class VideoAnalysisService : LifecycleService() {
         private fun deleteVideos(result: AnalysisState) {
             if (result is AnalysisState.Complete) {
                 runCatching { File(result.recordedVideoPath).delete() }
+                result.sourceVideoPath?.let { runCatching { File(it).delete() } }
             }
         }
 
@@ -514,7 +534,9 @@ class VideoAnalysisService : LifecycleService() {
 
         private class Inputs(
             val calibrationData: CalibrationData,
-            val tempoPrescription: TempoPrescription?
+            val tempoPrescription: TempoPrescription?,
+            /** Normalized (x, y) the user tapped on the plate, or null. */
+            val plateSeed: Pair<Float, Float>? = null
         )
 
         // Passed out-of-band because CalibrationData/TempoPrescription are
@@ -532,10 +554,11 @@ class VideoAnalysisService : LifecycleService() {
             targetReps: Int,
             calibrationData: CalibrationData,
             tempoPrescription: TempoPrescription? = null,
-            knownCaptureFps: Int? = null
+            knownCaptureFps: Int? = null,
+            plateSeed: Pair<Float, Float>? = null
         ): Intent {
             val inputsKey = UUID.randomUUID().toString()
-            pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription)
+            pendingInputs[inputsKey] = Inputs(calibrationData, tempoPrescription, plateSeed)
             return Intent(context, VideoAnalysisService::class.java).apply {
                 putExtra(EXTRA_OWNER, owner)
                 putExtra(EXTRA_INPUTS_KEY, inputsKey)

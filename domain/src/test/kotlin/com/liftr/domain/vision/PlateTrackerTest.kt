@@ -1,5 +1,6 @@
 package com.liftr.domain.vision
 
+import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import org.junit.Assert.assertEquals
@@ -152,5 +153,154 @@ class PlateTrackerTest {
         assertTrue(abs(upright!!.second - 0.3f) < 1e-6f)
         // Collapsed skeleton: "shoulders" below the hips.
         assertNull(PlateTracker.shoulderHint(pose(0.6f, 0.5f, 0.7f, 0.9f)))
+    }
+
+    // --- Bench (landscape) and deadlift (portrait): hint at the wrists, radius from the body ---
+
+    /** Textured frame with one disc per (cx, cy, radius), like the squat renderer but any size. */
+    private fun renderDiscs(fw: Int, fh: Int, frame: Int, discs: List<Triple<Float, Float, Float>>): ByteArray {
+        val random = Random(frame)
+        val blocks = Random(11)
+        val shade = IntArray(fw * fh) { 90 + 60 * (it / fw) / fh }
+        repeat(30) {
+            val bx = blocks.nextInt(fw)
+            val by = blocks.nextInt(fh)
+            val bw = 10 + blocks.nextInt(50)
+            val bh = 10 + blocks.nextInt(50)
+            val v = 40 + blocks.nextInt(180)
+            for (y in by until minOf(fh, by + bh)) for (x in bx until minOf(fw, bx + bw)) shade[y * fw + x] = v
+        }
+        for ((cx, cy, pr) in discs) for (y in 0 until fh) for (x in 0 until fw) {
+            val d = hypot(x - cx, y - cy)
+            when {
+                d < 6 -> shade[y * fw + x] = 170
+                d < pr - 4 -> shade[y * fw + x] = 30
+                d < pr -> shade[y * fw + x] = 120
+            }
+        }
+        return ByteArray(fw * fh) { (shade[it] + random.nextInt(-12, 13)).coerceIn(0, 255).toByte() }
+    }
+
+    @Test
+    fun landscapeBenchPlateAtTheWristsLocksAndTracks() {
+        val fw = 640
+        val fh = 360
+        val pr = 0.08f * fw
+        val expected = pr / fw
+        val tracker = PlateTracker()
+        // 35 cm of a 45 cm plate, two reps at 30 fps.
+        val travel = 0.35f / 0.45f * 2 * pr
+        for (frame in 0 until 150) {
+            val t = (frame % 75) / 75f
+            val cy = 120f + travel * (1 - cos(2 * PI * t).toFloat()) / 2
+            val wrist = (320f + 12) / fw to (cy + 0.4f * pr) / fh
+            val obs = tracker.track(
+                renderDiscs(fw, fh, frame, listOf(Triple(320f, cy, pr))), fw, fh, frame * 33L,
+                wrist, hintAtPlate = true, expectedRadius = expected
+            )
+            if (frame < PlateTracker.FRAMES_TO_LOCK) continue
+            assertNotNull("lost the plate at frame $frame", obs)
+            assertEquals("x at frame $frame", 320f, obs!!.cx * fw, 2.5f)
+            assertEquals("y at frame $frame", cy, obs.cy * fh, 2.5f)
+        }
+        assertEquals((pr - 2) / fw, tracker.lockedRadius!!, 3f / fw)
+    }
+
+    @Test
+    fun portraitDeadliftPlateNearTheBottomIsFound() {
+        val fw = 360
+        val fh = 640
+        val pr = 30f
+        val tracker = PlateTracker()
+        val cx = 200f
+        val cy = 0.85f * fh
+        var last: PlateObservation? = null
+        for (frame in 0 until 15) {
+            last = tracker.track(
+                renderDiscs(fw, fh, frame, listOf(Triple(cx, cy, pr))), fw, fh, frame * 33L,
+                (cx - 10) / fw to (cy - 0.5f * pr) / fh, hintAtPlate = true, expectedRadius = pr / fw
+            )
+        }
+        assertNotNull(tracker.lockedRadius)
+        assertEquals(cx, last!!.cx * fw, 2.5f)
+        assertEquals(cy, last.cy * fh, 2.5f)
+    }
+
+    @Test
+    fun tapSeedFindsThePlateWithoutAPose() {
+        val fw = 640
+        val fh = 360
+        val pr = 0.08f * fw
+        val tracker = PlateTracker()
+        var last: PlateObservation? = null
+        for (frame in 0 until 15) {
+            // The tap lands about a radius off center. No pose, so no body
+            // scale: an 8% landscape bench plate is below the squat range, but
+            // a tap says where the plate is, so smaller plates are allowed.
+            last = tracker.track(
+                renderDiscs(fw, fh, frame, listOf(Triple(300f, 150f, pr))), fw, fh, frame * 33L,
+                hint = null, expectedRadius = null, seed = (300f + 0.5f * pr) / fw to (150f + 0.9f * pr) / fh
+            )
+        }
+        assertNotNull(tracker.lockedRadius)
+        assertEquals(300f, last!!.cx * fw, 2.5f)
+        assertEquals(150f, last.cy * fh, 2.5f)
+    }
+
+    @Test
+    fun tapWindowIsWiderThanTheWristWindow() {
+        val fw = 640
+        val fh = 360
+        val pr = 0.08f * fw
+        val frameOf = { f: Int -> renderDiscs(fw, fh, f, listOf(Triple(300f, 150f, pr))) }
+        val off = 1.5f * pr // beyond the wrist window (1.2), inside the tap window (1.8)
+        val wrist = PlateTracker()
+        val tap = PlateTracker()
+        repeat(PlateTracker.FRAMES_TO_LOCK + 2) { f ->
+            wrist.track(frameOf(f), fw, fh, f * 33L, (300f + off) / fw to 150f / fh, true, pr / fw)
+            tap.track(frameOf(f), fw, fh, f * 33L, null, false, pr / fw, (300f + off) / fw to 150f / fh)
+        }
+        assertNull(wrist.lockedRadius)
+        assertNotNull(tap.lockedRadius)
+    }
+
+    @Test
+    fun expectedRadiusIgnoresADecoyOfAnotherSize() {
+        val fw = 640
+        val fh = 360
+        val pr = 0.08f * fw
+        val tracker = PlateTracker()
+        var last: PlateObservation? = null
+        for (frame in 0 until 15) {
+            // A big circle (2.2x) encloses the hint; the real plate sits slightly off it.
+            val discs = listOf(Triple(380f, 200f, 2.2f * pr), Triple(300f, 150f, pr))
+            last = tracker.track(
+                renderDiscs(fw, fh, frame, discs), fw, fh, frame * 33L,
+                300f / fw to 150f / fh, hintAtPlate = true, expectedRadius = pr / fw
+            )
+        }
+        assertNotNull(tracker.lockedRadius)
+        assertEquals((pr - 2) / fw, tracker.lockedRadius!!, 3f / fw)
+        assertEquals(300f, last!!.cx * fw, 2.5f)
+    }
+
+    @Test
+    fun wristHintUsesVisibleWristsAndBarHintPicksPerLift() {
+        fun pose(left: PoseKeypoint, right: PoseKeypoint): PoseResult {
+            val lm = MutableList(33) { PoseKeypoint(0.5f, 0.5f, 0f, 1f) }
+            lm[PoseResult.LEFT_WRIST] = left
+            lm[PoseResult.RIGHT_WRIST] = right
+            return PoseResult(lm, 0L, 1280, 720, false)
+        }
+        val both = pose(PoseKeypoint(0.2f, 0.4f, 0f, 1f), PoseKeypoint(0.4f, 0.6f, 0f, 1f))
+        val hint = PlateTracker.barHint(both, ExerciseType.BENCH_PRESS)!!
+        assertEquals(0.3f, hint.first, 1e-6f)
+        assertEquals(0.5f, hint.second, 1e-6f)
+        val one = pose(PoseKeypoint(0.2f, 0.4f, 0f, 0.1f), PoseKeypoint(0.4f, 0.6f, 0f, 1f))
+        assertEquals(0.4f, PlateTracker.barHint(one, ExerciseType.DEADLIFT)!!.first, 1e-6f)
+        assertNull(PlateTracker.barHint(pose(PoseKeypoint(0f, 0f, 0f, 0f), PoseKeypoint(0f, 0f, 0f, 0f)), ExerciseType.DEADLIFT))
+        // Squats keep the shoulder hint: this pose is not upright, so none.
+        assertNull(PlateTracker.barHint(both, ExerciseType.BACK_SQUAT))
+        assertNull(PlateTracker.barHint(both, ExerciseType.CLEAN))
     }
 }

@@ -131,6 +131,9 @@ object ExerciseThresholds {
         /** Minimum pull height to count as a rep (40cm) */
         val MIN_LIFT_HEIGHT = Meters(0.40f)
 
+        /** Minimum bar pull to count a rep in the video bar track (30cm) */
+        val MIN_BAR_PULL = Meters(0.30f)
+
         /** Return tolerance for lowering back to floor (15cm) */
         val RETURN_TOLERANCE = Meters(0.15f)
 

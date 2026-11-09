@@ -187,7 +187,7 @@ class AnalyzeVideoJumpLandingTest {
         // Same scripted phases, rep counted at the first TOP frame like a lift's lockout.
         // A lift whose phases come from its strategy (a squat's come from its bar track).
         val strategy = mockk<ExerciseStrategy>(relaxed = true) {
-            every { exerciseType } returns ExerciseType.BENCH_PRESS
+            every { exerciseType } returns ExerciseType.CLEAN
             every { detectPhase(any(), any(), any()) } answers {
                 val i = (firstArg<PoseResult>().timestamp / frameMs).toInt()
                 PhaseTransitionResult(ExercisePhaseState(currentPhase = phaseAt(i)), repCompleted = i == 25)
@@ -195,7 +195,7 @@ class AnalyzeVideoJumpLandingTest {
             every { validateRep(capture(buffered), any(), any()) } returns emptyList()
         }
 
-        val summary = analyze(video(15.0), strategy, ExerciseType.BENCH_PRESS)
+        val summary = analyze(video(15.0), strategy, ExerciseType.CLEAN)
 
         assertEquals(1, summary.repScores.size)
         assertEquals(1, buffered.size)

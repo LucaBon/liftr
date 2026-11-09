@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.liftr.R
 import com.liftr.domain.model.Workout
+import com.liftr.ui.screens.workout.eccentricHistoryLabelRes
+import com.liftr.ui.screens.workout.pauseLabelRes
 import com.liftr.ui.components.common.StatItem
 import com.liftr.ui.theme.Spacing
 import java.text.SimpleDateFormat
@@ -199,7 +201,9 @@ private fun WorkoutCard(
                             Text(
                                 text = stringResource(
                                     R.string.history_rep_metrics_format,
-                                    rep.repNumber, "%.2f".format(ecc), pause
+                                    rep.repNumber, "%.2f".format(ecc), pause,
+                                    stringResource(set.exerciseType.eccentricHistoryLabelRes()),
+                                    stringResource(set.exerciseType.pauseLabelRes())
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,

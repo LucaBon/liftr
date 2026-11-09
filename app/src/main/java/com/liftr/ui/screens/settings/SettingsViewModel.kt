@@ -50,6 +50,9 @@ class SettingsViewModel @Inject constructor(
     private val _velocityLossThreshold = MutableStateFlow(VelocityLossState.DEFAULT_THRESHOLD)
     val velocityLossThreshold: StateFlow<Float> = _velocityLossThreshold.asStateFlow()
 
+    private val _plateDiameterM = MutableStateFlow(SettingsKeys.DEFAULT_PLATE_DIAMETER_M)
+    val plateDiameterM: StateFlow<Float> = _plateDiameterM.asStateFlow()
+
     private val _audioFeedbackEnabled = MutableStateFlow(true)
     val audioFeedbackEnabled: StateFlow<Boolean> = _audioFeedbackEnabled.asStateFlow()
 
@@ -94,6 +97,7 @@ class SettingsViewModel @Inject constructor(
     init {
         loadSquatDepthSettings()
         loadVbtSettings()
+        loadPlateDiameter()
         loadFeedbackSettings()
         loadRestTimerSettings()
         loadTempoSettings()
@@ -117,6 +121,17 @@ class SettingsViewModel @Inject constructor(
                 SquatDepthType.DEFAULT.name
             ).collect { depthTypeName ->
                 _frontSquatDepthType.value = SquatDepthType.fromString(depthTypeName)
+            }
+        }
+    }
+
+    private fun loadPlateDiameter() {
+        viewModelScope.launch {
+            settingsRepository.getFloatSetting(
+                SettingsKeys.PLATE_DIAMETER_M,
+                SettingsKeys.DEFAULT_PLATE_DIAMETER_M
+            ).collect { diameter ->
+                _plateDiameterM.value = diameter
             }
         }
     }
@@ -180,6 +195,17 @@ class SettingsViewModel @Inject constructor(
                 threshold
             ).onSuccess {
                 _velocityLossThreshold.value = threshold
+            }
+        }
+    }
+
+    fun updatePlateDiameter(diameterM: Float) {
+        viewModelScope.launch {
+            settingsRepository.saveFloatSetting(
+                SettingsKeys.PLATE_DIAMETER_M,
+                diameterM
+            ).onSuccess {
+                _plateDiameterM.value = diameterM
             }
         }
     }

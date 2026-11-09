@@ -265,8 +265,21 @@
     <string name="set_summary_ecc_mean_header">Ecc</string>
     <string name="set_summary_pause_header">Pause</string>
     <string name="set_summary_rom_header">ROM</string>
-    <string name="set_summary_bar_estimated_hint">Bar speed estimated from body landmarks</string>
-    <string name="history_rep_metrics_format">Rep %1$d: ecc %2$s m/s \u00B7 pause %3$s</string>
+    <string name="set_summary_bar_estimated_hint">Plate not found \u2014 speeds estimated from the body</string>
+    <string name="set_summary_bar_still_estimated_hint">Plate still not found \u2014 speeds are estimated from the body</string>
+    <string name="set_summary_tap_plate">Tap the plate to re-analyze</string>
+    <string name="tap_plate_dialog_title">Tap the plate</string>
+    <string name="tap_plate_dialog_hint">Tap the centre of the barbell plate in the first frame.</string>
+    <string name="tap_plate_frame_failed">Could not load the video frame.</string>
+    <string name="pause_label_bottom">Bottom pause</string>
+    <string name="pause_label_chest">Chest pause</string>
+    <string name="pause_label_floor">Floor pause</string>
+    <string name="set_summary_pull_mean_header">Pull mean</string>
+    <string name="set_summary_pull_peak_header">Pull peak</string>
+    <string name="set_summary_lowering_header">Lowering mean</string>
+    <string name="history_ecc_label">ecc</string>
+    <string name="history_lowering_label">lowering</string>
+    <string name="history_rep_metrics_format">Rep %1$d: %4$s %2$s m/s \u00B7 %5$s %3$s</string>
     <string name="set_summary_depth_header">Depth</string>
     <string name="set_summary_form_header">Form</string>
     <string name="set_summary_bar_path_header">Path</string>
@@ -500,4 +513,11 @@
     <string name="import_video_as">Import video as %1$s</string>
     <string name="jump_head_out_of_frame">Your head left the top of the frame during the jump: move the phone farther away or raise it, leaving room above your head.</string>
     <string name="high_speed_unavailable_hint">In-app recording is limited to 60 fps. For jumps, cleans and snatches, record in slow motion with your phone\'s camera and import the video.</string>
+    <string name="settings_plate_diameter">Outer plate diameter</string>
+    <string name="settings_plate_diameter_description">The outermost plate on the bar; scales bar speed in video analysis</string>
+    <string name="settings_plate_diameter_cm">%1$d cm</string>
+    <string name="settings_plate_diameter_standard">%1$d cm (standard bumper / 20–25 kg)</string>
+    <string name="settings_plate_diameter_custom">Custom…</string>
+    <string name="settings_plate_diameter_custom_label">Diameter (cm)</string>
+    <string name="settings_plate_diameter_error">Enter a value between %1$d and %2$d cm</string>
 </resources>

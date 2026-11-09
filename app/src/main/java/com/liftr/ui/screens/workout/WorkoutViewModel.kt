@@ -54,7 +54,9 @@ import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.model.Rep
 import com.liftr.domain.model.RepQualityScore
+import com.liftr.domain.model.BarTrackSource
 import com.liftr.domain.model.Set
+import com.liftr.vision.video.VideoFrameExtractor
 import com.liftr.domain.model.SetSummary
 import com.liftr.domain.model.VbtZone
 import com.liftr.domain.model.Workout
@@ -212,6 +214,12 @@ class WorkoutViewModel @Inject constructor(
 
     // --- Session-level accumulators for workout persistence ---
     private val completedSets = mutableListOf<Set>()
+
+    /** Tap re-analyses in flight, by raw recording path: which set each will replace. */
+    private val pendingReanalyses = mutableMapOf<String, PlateReanalysis>()
+
+    /** Capture rate of each analyzed recording, so a re-analysis reads the file the same way. */
+    private val analysisCaptureFps = mutableMapOf<String, Int?>()
     private var workoutStartTime: Long = 0L
 
     // --- Tempo Training ---
@@ -360,11 +368,22 @@ class WorkoutViewModel @Inject constructor(
     private fun onAnalysisComplete(state: VideoAnalysisService.AnalysisState.Complete) {
         val playbackFile = java.io.File(state.recordedVideoPath)
             .takeIf { it.exists() && it.length() > 0 }
+        val tapped = state.sourceVideoPath?.let { pendingReanalyses.remove(it) }
+        val setKey = saveAnalyzedSet(state.summary, tapped)
+        // The raw recording survives only for a plate-tracked set whose plate was
+        // not found (or when it is the playback file itself): offer the tap again.
+        val keptRaw = state.sourceVideoPath?.takeIf { java.io.File(it).exists() }
+        val offer = if (
+            keptRaw != null &&
+            state.summary.exerciseType.tracksBarPlate() &&
+            state.summary.barTrackSource == BarTrackSource.LANDMARKS
+        ) PlateReanalysis(keptRaw, setKey, tapped = tapped != null) else null
         val result = PendingSetResult(
             summary = state.summary,
             annotatedVideo = playbackFile?.let { AnnotatedVideoInfo(it.absolutePath, it.length()) },
             playbackIsAnnotated = state.annotatedVideoPath != null &&
-                playbackFile?.absolutePath == state.annotatedVideoPath
+                playbackFile?.absolutePath == state.annotatedVideoPath,
+            plateReanalysis = offer
         )
         _uiState.update { current ->
             // The athlete may already be recording the next set: leave the
@@ -387,18 +406,23 @@ class WorkoutViewModel @Inject constructor(
                 current.showing(result)
             }
         }
-        saveAnalyzedSet(state.summary)
     }
 
     /**
      * Persists a set produced by post-exercise analysis. Mirrors the tail of the
      * real-time [stopRecording] (accumulate set, PR check, rest timer).
+     *
+     * A tap re-analysis ([reanalysis]) replaces the set it was made from instead of
+     * adding one: the session holds it once, the rest timer is not started again, and
+     * the PR check sees only the replacing set (session tonnage is counted once).
+     *
+     * @return the key ([Set.timestamp]) of the session set this result stands for, or null
      */
-    private fun saveAnalyzedSet(summary: SetSummary) {
+    private fun saveAnalyzedSet(summary: SetSummary, reanalysis: PlateReanalysis? = null): Long? {
         // A recording started and stopped by mistake: nothing to keep.
         if (summary.completedReps.value == 0) {
             logger.i(TAG, "Analyzed ${summary.exerciseType} set has no reps, not saved")
-            return
+            return reanalysis?.setKey
         }
         if (completedSets.isEmpty() && workoutStartTime == 0L) {
             workoutStartTime = System.currentTimeMillis()
@@ -442,11 +466,20 @@ class WorkoutViewModel @Inject constructor(
             timestamp = now,
             reps = withCatchTypes(withJumpData(reps, summary), summary)
         )
-        completedSets.add(completedSet)
+        val update = applyAnalyzedSet(completedSets, completedSet, reanalysis)
+        if (update.action == AnalyzedSetAction.SKIP) {
+            logger.i(TAG, "Re-analyzed set is no longer in the session, not saved again")
+            return reanalysis?.setKey
+        }
+        completedSets.clear()
+        completedSets.addAll(update.sets)
         _uiState.update { it.copy(completedSetCount = completedSets.size) }
-        logger.i(TAG, "Analyzed set persisted (${completedSets.size} sets in session)")
+        logger.i(TAG, "Analyzed set ${update.action} (${completedSets.size} sets in session)")
 
         checkForPersonalRecords(completedSet)
+
+        // A re-analysis is not a new set: no rest to start.
+        if (update.action == AnalyzedSetAction.REPLACE) return completedSet.timestamp
 
         // Analysis runs in the background precisely so the lifter can start the
         // next set while it finishes. Starting the rest timer on completion
@@ -455,6 +488,7 @@ class WorkoutViewModel @Inject constructor(
         if (restTimerEnabled && !state.isRecording && !state.isVideoRecording) {
             startRestTimer()
         }
+        return completedSet.timestamp
     }
 
     /**
@@ -1418,21 +1452,85 @@ class WorkoutViewModel @Inject constructor(
         }
     }
 
-    private fun startAnalysis(videoFile: File, calibration: CalibrationData, captureFps: Int?) {
+    private fun startAnalysis(
+        videoFile: File,
+        calibration: CalibrationData,
+        captureFps: Int?,
+        plateSeed: Pair<Float, Float>? = null,
+        reanalyzing: SetSummary? = null
+    ) {
         val state = _uiState.value
+        analysisCaptureFps[videoFile.absolutePath] = captureFps
         val intent = VideoAnalysisService.createIntent(
             context = context,
             owner = analysisOwner,
             videoFile = videoFile,
-            exerciseType = state.selectedExercise,
-            weight = state.weight,
-            targetReps = state.targetReps.value,
+            exerciseType = reanalyzing?.exerciseType ?: state.selectedExercise,
+            weight = reanalyzing?.weight ?: state.weight,
+            targetReps = reanalyzing?.targetReps?.value ?: state.targetReps.value,
             calibrationData = calibration,
             tempoPrescription = if (state.tempoModeEnabled) state.tempoPrescription else null,
-            knownCaptureFps = captureFps
+            knownCaptureFps = captureFps,
+            plateSeed = plateSeed
         )
         ContextCompat.startForegroundService(context, intent)
         logger.i(TAG, "Post-exercise analysis service started for ${videoFile.name} (${videoFile.length()} bytes)")
+    }
+
+    /**
+     * The first frame of the recording as the tracker sees it (decoded by the
+     * app's own pipeline, upright), for the tap-the-plate dialog; null if it can't be read.
+     */
+    suspend fun loadPlateFrame(videoPath: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        runCatching {
+            VideoFrameExtractor(File(videoPath), logger, analysisCaptureFps[videoPath]).use { extractor ->
+                extractor.extractFrames().first().bitmap
+            }
+        }.onFailure { logger.e(TAG, "Could not read the first frame of $videoPath", it) }.getOrNull()
+    }
+
+    /**
+     * Analyzes the open summary's recording again with the plate [seed] the lifter tapped
+     * (normalized x by width, y by height of the upright frame). The new result replaces
+     * the set saved from the first analysis. The summary closes so the usual progress
+     * shows; the raw recording stays until the re-analysis ends or its summary is dismissed.
+     */
+    fun reanalyzeWithPlateTap(seed: Pair<Float, Float>) {
+        val current = _uiState.value
+        val offer = current.plateReanalysis ?: return
+        val summary = current.lastSetSummary ?: return
+        val raw = File(offer.videoPath)
+        val calibration = calibrationData
+        if (!raw.exists()) {
+            _uiState.update { it.copy(analysisError = "The recording is no longer available.") }
+            return
+        }
+        if (calibration == null) {
+            _uiState.update { it.copy(analysisError = "Calibration required before analysis.") }
+            return
+        }
+        pendingReanalyses[offer.videoPath] = offer
+        // The first result's annotated export is superseded; the raw file is the re-analysis input.
+        current.annotatedVideo?.path?.takeIf { it != offer.videoPath }?.let { runCatching { File(it).delete() } }
+        _uiState.update {
+            it.copy(
+                lastSetSummary = null,
+                isSetSummaryVisible = false,
+                annotatedVideo = null,
+                playbackIsAnnotated = false,
+                plateReanalysis = null,
+                analysisProgress = it.analysisProgress ?: AnalysisProgress(0, 1, 0f, 0),
+                analysisProgressDismissed = false
+            )
+        }
+        startAnalysis(raw, calibration, analysisCaptureFps[offer.videoPath], seed, summary)
+    }
+
+    /** Deletes the kept raw recording of [offer] unless a re-analysis is still reading it. */
+    private fun releaseKeptRecording(offer: PlateReanalysis?) {
+        if (offer == null || offer.videoPath in pendingReanalyses) return
+        runCatching { File(offer.videoPath).delete() }
+        analysisCaptureFps.remove(offer.videoPath)
     }
 
     private var importInProgress = false
@@ -1698,12 +1796,14 @@ class WorkoutViewModel @Inject constructor(
         _uiState.value.annotatedVideo?.let { info ->
             runCatching { java.io.File(info.path).delete() }
         }
+        releaseKeptRecording(_uiState.value.plateReanalysis)
         _uiState.update {
             it.copy(
                 lastSetSummary = null,
                 isSetSummaryVisible = false,
                 annotatedVideo = null,
-                playbackIsAnnotated = false
+                playbackIsAnnotated = false,
+                plateReanalysis = null
             )
         }
     }
@@ -1985,6 +2085,11 @@ class WorkoutViewModel @Inject constructor(
         }
         _uiState.value.pendingResults.forEach { result ->
             result.annotatedVideo?.let { runCatching { java.io.File(it.path).delete() } }
+        }
+        // Raw recordings kept for a tap re-analysis (the service drops the ones it still holds).
+        _uiState.value.plateReanalysis?.let { runCatching { java.io.File(it.videoPath).delete() } }
+        _uiState.value.pendingResults.forEach { result ->
+            result.plateReanalysis?.let { runCatching { java.io.File(it.videoPath).delete() } }
         }
         // No set is being recorded once this screen is gone, and nobody is
         // left to open the summaries of analyses still queued.

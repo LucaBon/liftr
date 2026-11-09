@@ -1,5 +1,8 @@
 package com.liftr.domain.vision
 
+import com.liftr.domain.model.CalibrationData
+import com.liftr.domain.model.CalibrationQuality
+import com.liftr.domain.model.ExerciseType
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import kotlin.math.PI
@@ -27,9 +30,11 @@ data class PlateObservation(val cx: Float, val cy: Float, val r: Float, val conf
  * Edge pixels vote for centers along their gradient, the strongest centers are
  * scored by how much of their rim is backed by a radial edge, and the best wins.
  *
- * - **Seeding**: while unlocked, only circles centered near the shoulder hint
- *   (a standing pose; side-on, the bar end sits at the shoulders) are taken.
- *   Once [FRAMES_TO_LOCK] consecutive seeds agree on position and radius, the
+ * - **Seeding**: while unlocked, only circles centered near a hint point are
+ *   taken: the shoulders on a squat (side-on, the bar end sits there), the
+ *   wrists on a bench press or deadlift (see [barHint]), or a user tap. The
+ *   radius searched is the body-scale [expectedRadius] ±, when known, else
+ *   [MIN_RADIUS]..[MAX_RADIUS]. Once [FRAMES_TO_LOCK] consecutive seeds agree on position and radius, the
  *   radius locks to their median.
  * - **Tracking**: once locked, only circles within ±10% of that radius whose
  *   center moved no faster than a physical cap from the last one count. A
@@ -37,7 +42,7 @@ data class PlateObservation(val cx: Float, val cy: Float, val r: Float, val conf
  *   starts over.
  *
  * Stateful: use one instance per analysis pass, with increasing timestamps,
- * or call [reset]. Not thread-safe. Frames are ~360 px wide grayscale.
+ * or call [reset]. Not thread-safe. Frames are grayscale, ~640 px on the long side.
  */
 class PlateTracker {
 
@@ -79,15 +84,25 @@ class PlateTracker {
      * Finds the plate in one frame.
      *
      * @param gray luma, row-major, [width] × [height]
-     * @param shoulderHint normalized (x, y) of the shoulder on a standing pose,
-     *   or null; only used while seeding, which needs it
+     * @param hint normalized (x, y) where the plate is expected: the shoulder
+     *   on a standing pose ([shoulderHint]) or the wrists ([barHint]), or null;
+     *   only used while seeding
+     * @param hintAtPlate the hint is at the plate centre itself (wrists) rather
+     *   than the squat shoulder, so the seed window is symmetric around it
+     * @param expectedRadius plate radius as a fraction of the frame width from
+     *   the body scale ([expectedRadius]); only used while seeding
+     * @param seed normalized (x, y) the user tapped on the plate; replaces
+     *   [hint] while seeding, with a wider window, and works without a pose
      */
     fun track(
         gray: ByteArray,
         width: Int,
         height: Int,
         timestampMs: Long,
-        shoulderHint: Pair<Float, Float>? = null
+        hint: Pair<Float, Float>? = null,
+        hintAtPlate: Boolean = false,
+        expectedRadius: Float? = null,
+        seed: Pair<Float, Float>? = null
     ): PlateObservation? {
         require(gray.size >= width * height) { "gray has ${gray.size} bytes for $width x $height" }
         if (width != bw || height != bh) {
@@ -98,12 +113,17 @@ class PlateTracker {
         val prev = last
         if (locked != null && prev != null && timestampMs - lastMs > RELOCK_AFTER_MS) {
             reset()
-            return track(gray, width, height, timestampMs, shoulderHint)
+            return track(gray, width, height, timestampMs, hint, hintAtPlate, expectedRadius, seed)
         }
         val found = if (locked != null && prev != null) {
             trackLocked(gray, locked, prev, timestampMs)
         } else {
-            seed(gray, shoulderHint ?: return null, timestampMs)
+            val window = when {
+                seed != null -> SeedWindow(SEED_BESIDE_PLATE, SEED_ABOVE_PLATE, SEED_BELOW_PLATE).scaled(TAP_WINDOW_SCALE)
+                hintAtPlate -> SeedWindow(SEED_BESIDE_PLATE, SEED_ABOVE_PLATE, SEED_BELOW_PLATE)
+                else -> SeedWindow(SEED_BESIDE_SHOULDER, SEED_ABOVE_SHOULDER, SEED_BELOW_SHOULDER)
+            }
+            seed(gray, seed ?: hint ?: return null, window, expectedRadius, seed != null, timestampMs)
         } ?: return null
         last = found
         lastMs = timestampMs
@@ -118,20 +138,35 @@ class PlateTracker {
         return best.takeIf { it.support >= MIN_TRACK_SUPPORT }
     }
 
-    private fun seed(gray: ByteArray, hint: Pair<Float, Float>, timestampMs: Long): Circle? {
+    /** Seed area around the hint, in plate radii. */
+    private class SeedWindow(val beside: Float, val above: Float, val below: Float) {
+        fun scaled(k: Float) = SeedWindow(beside * k, above * k, below * k)
+    }
+
+    private fun seed(
+        gray: ByteArray,
+        hint: Pair<Float, Float>,
+        window: SeedWindow,
+        expectedRadius: Float?,
+        tapped: Boolean,
+        timestampMs: Long
+    ): Circle? {
         val hx = hint.first * bw
         val hy = hint.second * bh
-        val rMin = MIN_RADIUS * bw
-        val rMax = MAX_RADIUS * bw
-        // The seed area spans from SEED_BELOW_SHOULDER radii below the shoulder
-        // to SEED_ABOVE_SHOULDER radii above it; search around its middle.
-        val midRadii = (SEED_ABOVE_SHOULDER - SEED_BELOW_SHOULDER) / 2
-        val reach = rMax * hypot(SEED_BESIDE_SHOULDER, (SEED_ABOVE_SHOULDER + SEED_BELOW_SHOULDER) / 2)
+        // A tap without a body scale still pins the plate's position, so the
+        // range opens down to small (far or landscape) plates.
+        val minWithoutScale = if (tapped) TAP_MIN_RADIUS else MIN_RADIUS
+        val rMin = (if (expectedRadius != null) expectedRadius * EXPECTED_RADIUS_MIN else minWithoutScale) * bw
+        val rMax = (if (expectedRadius != null) expectedRadius * EXPECTED_RADIUS_MAX else MAX_RADIUS) * bw
+        // The seed area spans from `below` radii below the hint to `above` radii
+        // above it; search around its middle.
+        val midRadii = (window.above - window.below) / 2
+        val reach = rMax * hypot(window.beside, (window.above + window.below) / 2)
         val found = search(gray, hx, hy - midRadii * rMax, reach, rMin, rMax)
             ?.takeIf {
                 it.support >= MIN_SEED_SUPPORT &&
-                    abs(it.x - hx) <= SEED_BESIDE_SHOULDER * it.r &&
-                    it.y - hy in -SEED_ABOVE_SHOULDER * it.r..SEED_BELOW_SHOULDER * it.r
+                    abs(it.x - hx) <= window.beside * it.r &&
+                    it.y - hy in -window.above * it.r..window.below * it.r
             }
             ?: return null
         val previous = seeds.lastOrNull()
@@ -354,6 +389,25 @@ class PlateTracker {
         const val SEED_ABOVE_SHOULDER = 1.8f
         const val SEED_BELOW_SHOULDER = 0.6f
 
+        /**
+         * Seeds from a hint at the plate itself (the wrists on bench and
+         * deadlift: the hands grip the bar beside the plate): symmetric, in
+         * plate radii, wide enough for pose error of about a radius.
+         */
+        const val SEED_BESIDE_PLATE = 1.2f
+        const val SEED_ABOVE_PLATE = 1.2f
+        const val SEED_BELOW_PLATE = 1.2f
+
+        /** A user tap is trusted over a pose: its window is this much wider. */
+        const val TAP_WINDOW_SCALE = 1.5f
+
+        /** Smallest radius (fraction of frame width) a tap seeds without a body scale. */
+        const val TAP_MIN_RADIUS = 0.04f
+
+        /** Seeding radius range around the body-scale expected radius. */
+        const val EXPECTED_RADIUS_MIN = 0.65f
+        const val EXPECTED_RADIUS_MAX = 1.5f
+
         /** Consecutive consistent seeds that lock the radius. */
         const val FRAMES_TO_LOCK = 10
 
@@ -386,6 +440,47 @@ class PlateTracker {
 
         private val COS = FloatArray(RIM_SAMPLES) { cos(2 * PI * it / RIM_SAMPLES).toFloat() }
         private val SIN = FloatArray(RIM_SAMPLES) { sin(2 * PI * it / RIM_SAMPLES).toFloat() }
+
+        /**
+         * Where the plate is on this lift: the shoulders for squats, the
+         * wrists for bench press and deadlift (the bar end is at the hands),
+         * null for other lifts or when the pose gives no usable point.
+         */
+        fun barHint(pose: PoseResult, exerciseType: ExerciseType): Pair<Float, Float>? = when (exerciseType) {
+            ExerciseType.FRONT_SQUAT, ExerciseType.BACK_SQUAT -> shoulderHint(pose)
+            ExerciseType.BENCH_PRESS, ExerciseType.DEADLIFT -> wristHint(pose)
+            else -> null
+        }
+
+        /** Whether [barHint] for this lift is at the plate centre (wrists) rather than the squat shoulders. */
+        fun hintAtPlate(exerciseType: ExerciseType): Boolean =
+            exerciseType == ExerciseType.BENCH_PRESS || exerciseType == ExerciseType.DEADLIFT
+
+        /** Midpoint of the visible wrists; one visible wrist is enough. */
+        fun wristHint(pose: PoseResult): Pair<Float, Float>? {
+            val wrists = listOf(PoseResult.LEFT_WRIST, PoseResult.RIGHT_WRIST)
+                .mapNotNull { pose.landmarks.getOrNull(it) }
+                .filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
+            if (wrists.isEmpty()) return null
+            return wrists.map { it.x }.average().toFloat() to wrists.map { it.y }.average().toFloat()
+        }
+
+        /**
+         * Plate radius as a fraction of the frame width, from the body scale
+         * (pixels per meter of the original frame), or null when the scale is
+         * only a fallback guess.
+         */
+        fun expectedRadius(
+            pose: PoseResult,
+            calibration: CalibrationData?,
+            plateDiameterM: Float,
+            calculator: BodyPositionCalculator
+        ): Float? {
+            val scale = calculator.calculatePixelsPerMeter(pose, calibration)
+            if (scale.quality != CalibrationQuality.OPTIMAL && scale.quality != CalibrationQuality.ESTIMATED) return null
+            if (pose.imageWidth <= 0) return null
+            return (plateDiameterM / 2) * scale.pixelsPerMeter / pose.imageWidth
+        }
 
         /**
          * Seeding hint from a pose: the shoulder midpoint, normalized, when the
