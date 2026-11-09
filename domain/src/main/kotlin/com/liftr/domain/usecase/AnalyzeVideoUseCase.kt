@@ -75,9 +75,9 @@ import kotlin.math.abs
  *
  * 1. Decode frames and detect pose per frame ([VideoPoseSource], heavy model).
  * 2. Smooth velocities bidirectionally ([BidirectionalVelocityCalculator]).
- * 3. Walk frames: phase detection + rep counting (`ExerciseStrategy`). Squats
- *    instead take reps and phases from their bar track ([RepSegmenter]), the
- *    plate when it was tracked, else the landmarks.
+ * 3. Walk frames: phase detection + rep counting (`ExerciseStrategy`). Squats,
+ *    bench press and deadlift instead take reps and phases from their bar track
+ *    ([RepSegmenter]), the plate when it was tracked, else the landmarks.
  * 4. Per rep: form validation ([AnalyzeRepUseCase]), quality scoring, bar path.
  * 5. Assemble a [SetSummary].
  */
@@ -211,17 +211,18 @@ class AnalyzeVideoUseCase @Inject constructor(
                     timestampUs = pose.timestampUs
                 )
             }
-            // A squat's kinematics come from its bar track: the plate when it
-            // was followed, else the landmark track above.
-            val barTrack = if (isSquat) squatBarTrack(params, poseResults, plateTrack, kept) else null
+            // A plate-tracked lift's kinematics come from its bar track: the plate
+            // when it was followed, else the landmark track above.
+            val barTrack = if (params.exerciseType.tracksBarPlate()) barTrack(params, poseResults, plateTrack, kept) else null
             val velocities = barTrack?.velocities() ?: BidirectionalVelocityCalculator.calculateVelocities(positionSamples)
 
             // --- Phase 3: phase detection, rep counting, scoring ---
-            // Other lifts' strategies convert positions again, from the first
-            // frame on, with the app's calculator. A squat's phases come from
-            // the bar track, and its depth checks read the hips and knees with
-            // this analysis' calculator, its scale locked over the whole set.
-            if (barTrack == null) positionCalculator.resetScale()
+            // Strategies convert positions again, from the first frame on, with
+            // the app's calculator (a bench or deadlift's form checks still run
+            // on them). A bar track's phases and reps replace the strategy's,
+            // and a squat's depth checks read the hips and knees with this
+            // analysis' calculator, its scale locked over the whole set.
+            if (!isSquat) positionCalculator.resetScale()
             val summary = buildSummary(
                 params, poseResults, velocities, onProgress, onFrameAnnotation, timeScale,
                 barTrack, SquatContext(calculator, standingTorso)
@@ -321,9 +322,17 @@ class AnalyzeVideoUseCase @Inject constructor(
         squatContext: SquatContext? = null
     ): SetSummary {
         val strategy = strategyFactory.getStrategy(params.exerciseType)
-        // A squat's phases and reps come from its bar track, not the strategy's state machine.
+        // A plate-tracked lift's phases and reps come from its bar track, not the
+        // strategy's state machine. A rep completes at its end: a deadlift's at
+        // lockout (the pull), the others' when the bar is back at the top.
         val squatPhases = barTrack?.phases()
-        val squatRepsByEnd = barTrack?.reps.orEmpty().associateBy { it.concentricEnd }
+        val squatRepsByEnd = barTrack?.reps.orEmpty().associateBy { barTrack?.completionIndex(it) }
+        // Bench and deadlift have no depth to judge from the bar track, but the
+        // strategy still validates their form (the deadlift's lockout): its
+        // verdicts are matched to the bar track's reps by time.
+        val strategyVerdicts = if (barTrack != null && strategy !is SquatStrategyBase) {
+            strategyVerdicts(strategy, params, poseResults)
+        } else emptyMap()
         val repEccentricVelocities = mutableListOf<MetersPerSecond>()
         val repPauseMs = mutableListOf<Long>()
         val repEccentricDurations = mutableListOf<Float>()
@@ -381,7 +390,10 @@ class AnalyzeVideoUseCase @Inject constructor(
                 PhaseTransitionResult(
                     newState = phaseState.withCurrentPhase(squatPhases[i]),
                     repCompleted = squatRep != null,
-                    depthValidation = squatRep?.let { squatDepth(it, strategy, params, poseResults, squatContext) }
+                    depthValidation = squatRep?.let {
+                        squatDepth(it, strategy, params, poseResults, squatContext)
+                            ?: strategyVerdicts.entries.firstOrNull { v -> v.key in it.eccentricStart..it.concentricEnd }?.value
+                    }
                 )
             } else strategy.detectPhase(pose, params.calibrationData, phaseState)
             val newPhase = transition.newState.currentPhase
@@ -400,7 +412,8 @@ class AnalyzeVideoUseCase @Inject constructor(
             // lockout, so the lowering afterwards isn't part of it. Timing the pull
             // from here makes it the rep's concentric duration.
             if (params.exerciseType.startsWithConcentric() &&
-                previousPhase == MovementPhase.IDLE && newPhase == MovementPhase.CONCENTRIC
+                (previousPhase == MovementPhase.IDLE || (barTrack != null && previousPhase == MovementPhase.ECCENTRIC)) &&
+                newPhase == MovementPhase.CONCENTRIC
             ) {
                 currentRepBarPoints = mutableListOf()
                 currentRepPoses = mutableListOf()
@@ -690,18 +703,42 @@ class AnalyzeVideoUseCase @Inject constructor(
         return calculator.pixelsToMeters(xy.second, pose, params.calibrationData)
     }
 
+    /**
+     * Each completed rep's depth verdict (a deadlift's lockout) from running
+     * the strategy over the whole set, by the pose index it came at.
+     */
+    private fun strategyVerdicts(
+        strategy: ExerciseStrategy,
+        params: Params,
+        poses: List<PoseResult>
+    ): Map<Int, DepthValidationResult> {
+        var state = ExercisePhaseState.initial()
+        val verdicts = linkedMapOf<Int, DepthValidationResult>()
+        poses.forEachIndexed { i, pose ->
+            val transition = strategy.detectPhase(pose, params.calibrationData, state)
+            state = transition.newState
+            if (transition.repCompleted) transition.depthValidation?.let { verdicts[i] = it }
+        }
+        return verdicts
+    }
+
     /** What a squat's depth checks need from the tracking pass. */
     private class SquatContext(val calculator: IPositionCalculator, val standingTorso: Float?)
 
     /**
-     * A squat's bar track: heights (m, up positive) and signed velocities per
-     * pose, and the reps [RepSegmenter] found in it.
+     * A plate-tracked lift's bar track: heights (m, up positive) and signed
+     * velocities per pose, and the reps [RepSegmenter] found in it.
      */
     private class BarTrack(
         val source: BarTrackSource,
         val samples: List<RepSegmenter.Sample>,
-        val reps: List<RepSegmenter.Rep>
+        val reps: List<RepSegmenter.Rep>,
+        val direction: RepSegmenter.Direction = RepSegmenter.Direction.DOWN_FIRST
     ) {
+        /** The sample a [rep] is complete at: lockout of a pull, else the bar back at the top. */
+        fun completionIndex(rep: RepSegmenter.Rep): Int =
+            if (direction == RepSegmenter.Direction.UP_FIRST) rep.pauseStart else rep.concentricEnd
+
         /** Per-frame speed for the overlay and bar path, 1:1 with the poses; 0 where the bar was not seen. */
         fun velocities(): List<VelocityData> = samples.map {
             val speed = MetersPerSecond(if (it.measured) abs(it.velocity) else 0f)
@@ -715,6 +752,15 @@ class AnalyzeVideoUseCase @Inject constructor(
          */
         fun phases(): List<MovementPhase> {
             val phases = MutableList(samples.size) { MovementPhase.IDLE }
+            if (direction == RepSegmenter.Direction.UP_FIRST) {
+                // The pull, the hold at lockout, then the lowering back to the floor (IDLE).
+                reps.forEach { rep ->
+                    for (i in rep.eccentricStart until rep.pauseStart) phases[i] = MovementPhase.CONCENTRIC
+                    for (i in rep.pauseStart..rep.concentricStart) phases[i] = MovementPhase.TOP
+                    for (i in rep.concentricStart + 1 until rep.concentricEnd) phases[i] = MovementPhase.ECCENTRIC
+                }
+                return phases
+            }
             reps.forEachIndexed { n, rep ->
                 for (i in rep.eccentricStart until rep.pauseStart) phases[i] = MovementPhase.ECCENTRIC
                 for (i in rep.pauseStart..rep.concentricStart) phases[i] = MovementPhase.BOTTOM
@@ -737,14 +783,21 @@ class AnalyzeVideoUseCase @Inject constructor(
      * gaps are interpolated). Otherwise the cleaned landmark track, scaled by
      * the body: an estimate, and its long gaps drop the reps they cross.
      */
-    private suspend fun squatBarTrack(
+    private suspend fun barTrack(
         params: Params,
         poses: List<PoseResult>,
         plates: Map<Long, PlateObservation>,
         landmarks: List<Float?>
     ): BarTrack {
-        val minDescent = ((strategyFactory.getStrategy(params.exerciseType) as? SquatStrategyBase)
-            ?.getCriteria()?.squatDepthType ?: SquatDepthType.DEFAULT).minBarDescent.value
+        val minDescent = when (params.exerciseType) {
+            ExerciseType.BENCH_PRESS -> ExerciseThresholds.BenchPress.MIN_DESCENT_DEPTH.value
+            ExerciseType.DEADLIFT -> ExerciseThresholds.Deadlift.MIN_BAR_PULL.value
+            else -> ((strategyFactory.getStrategy(params.exerciseType) as? SquatStrategyBase)
+                ?.getCriteria()?.squatDepthType ?: SquatDepthType.DEFAULT).minBarDescent.value
+        }
+        val direction = if (params.exerciseType.startsWithConcentric()) {
+            RepSegmenter.Direction.UP_FIRST
+        } else RepSegmenter.Direction.DOWN_FIRST
         val timesUs = poses.map { it.timestampUs }
         // Plates are keyed by frame time in ms.
         val observed = poses.map { plates[it.timestampUs / 1_000] }
@@ -760,7 +813,7 @@ class AnalyzeVideoUseCase @Inject constructor(
             val heights = poses.mapIndexed { i, pose ->
                 observed[i]?.let { -it.cy * pose.imageHeight * diameter / (2f * radius * pose.imageWidth) }
             }
-            val plateTrack = barTrack(BarTrackSource.PLATE, timesUs, heights, PLATE_MEASUREMENT_NOISE, minDescent)
+            val plateTrack = barTrack(BarTrackSource.PLATE, timesUs, heights, PLATE_MEASUREMENT_NOISE, minDescent, direction)
             val repFrames = plateTrack.reps.flatMap { it.eccentricStart..it.concentricEnd }
             val coverage = if (repFrames.isEmpty()) 0f else repFrames.count { observed[it] != null }.toFloat() / repFrames.size
             logger.i(
@@ -771,7 +824,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         }
         logger.i(TAG, "Bar track from the landmarks (no usable plate track)")
         return barTrack(
-            BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE, minDescent
+            BarTrackSource.LANDMARKS, timesUs, landmarks.map { it?.let { y -> -y } }, LANDMARK_MEASUREMENT_NOISE,
+            minDescent, direction
         ).also(::logReps)
     }
 
@@ -785,7 +839,8 @@ class AnalyzeVideoUseCase @Inject constructor(
         timesUs: List<Long>,
         heights: List<Float?>,
         measurementNoise: Float,
-        minDescent: Float
+        minDescent: Float,
+        direction: RepSegmenter.Direction
     ): BarTrack {
         val held = fillTrackGaps(timesUs, heights, MAX_INTERPOLATED_GAP_US).held
         val bridged = fillTrackGaps(timesUs, heights, Long.MAX_VALUE).positions
@@ -797,7 +852,7 @@ class AnalyzeVideoUseCase @Inject constructor(
         val samples = timesUs.indices.map {
             RepSegmenter.Sample(timesUs[it], bridged[it], velocities[it], measured = !held[it])
         }
-        return BarTrack(source, samples, RepSegmenter.segment(samples, minDescent))
+        return BarTrack(source, samples, RepSegmenter.segment(samples, minDescent, direction), direction)
     }
 
     private fun logReps(track: BarTrack) {

@@ -3,8 +3,14 @@ package com.liftr.domain.exercise
 import kotlin.math.abs
 
 /**
- * Finds squat reps in a whole set's bar track and splits each into its phases
- * (video path). Pure: positions in, reps out.
+ * Finds reps in a whole set's bar track (squat, bench press, deadlift) and
+ * splits each into its phases (video path). Pure: positions in, reps out.
+ *
+ * Squat and bench press are [Direction.DOWN_FIRST]: the bar starts at the top,
+ * is lowered (eccentric), may rest at the bottom (the squat's pause, the
+ * bench's pause on the chest) and is driven up (concentric). A deadlift is
+ * [Direction.UP_FIRST]: the bar starts on the floor, is pulled up (concentric),
+ * held at lockout and lowered back (eccentric); see [Direction.UP_FIRST].
  *
  * The standing height is not the first frame: it is the level of the last
  * plateau (|v| under [PLATEAU_MAX_SPEED] for at least [PLATEAU_MIN_US]) before
@@ -57,6 +63,25 @@ object RepSegmenter {
         val peakConcentricVelocity: Float
     )
 
+    /** Which way a rep's first movement goes. */
+    enum class Direction {
+        /** Down, then up: squat and bench press. [Rep.pauseMs] is the rest at the bottom. */
+        DOWN_FIRST,
+
+        /**
+         * Up, then down: the deadlift, resting on the floor. The [Rep] is read
+         * in time order: [Rep.eccentricStart] is where the bar leaves the floor,
+         * [Rep.bottom] its highest point, [Rep.pauseStart]..[Rep.concentricStart]
+         * the hold at lockout and [Rep.concentricEnd] where the lowering ends.
+         * [Rep.meanConcentricVelocity], [Rep.peakConcentricVelocity] and
+         * [Rep.concentricDurationS] describe the pull, the eccentric ones the
+         * lowering, [Rep.rangeOfMotion] the travel from floor to lockout and
+         * [Rep.pauseMs] the rest on the floor before the pull (a dead stop; 0
+         * for the first rep, which has none to measure, and for touch-and-go).
+         */
+        UP_FIRST
+    }
+
     /** Fastest a standing bar moves, m/s. */
     const val PLATEAU_MAX_SPEED = 0.05f
 
@@ -75,10 +100,43 @@ object RepSegmenter {
     private class Plateau(val start: Int, val end: Int, val level: Float)
 
     /**
-     * @param minDescent bar descent below the standing height a rep needs
-     *   (the squat depth type's `minBarDescent`), m
+     * @param minDescent bar travel away from the resting height a rep needs
+     *   (the squat depth type's `minBarDescent`, the bench's descent, the
+     *   deadlift's pull), m
      */
-    fun segment(samples: List<Sample>, minDescent: Float): List<Rep> {
+    fun segment(samples: List<Sample>, minDescent: Float, direction: Direction = Direction.DOWN_FIRST): List<Rep> =
+        if (direction == Direction.UP_FIRST) segmentUpFirst(samples, minDescent) else segmentDownFirst(samples, minDescent)
+
+    /**
+     * A pull is a descent of the negated track: its floor rest is the top
+     * plateau, its pull the eccentric and its lowering the concentric. Mapped
+     * back to physical phases, with the floor rest before each pull as pause.
+     */
+    private fun segmentUpFirst(samples: List<Sample>, minDescent: Float): List<Rep> {
+        val negated = samples.map { it.copy(height = -it.height, velocity = -it.velocity) }
+        var previousEnd = -1
+        return segmentDownFirst(negated, minDescent).map { r ->
+            val restUs = if (previousEnd < 0) 0L else samples[r.eccentricStart].timestampUs - samples[previousEnd].timestampUs
+            previousEnd = r.concentricEnd
+            Rep(
+                eccentricStart = r.eccentricStart,
+                bottom = r.bottom,
+                pauseStart = r.pauseStart,
+                concentricStart = r.concentricStart,
+                concentricEnd = r.concentricEnd,
+                standingHeight = -r.standingHeight,
+                rangeOfMotion = r.rangeOfMotion,
+                eccentricDurationS = r.concentricDurationS,
+                pauseMs = if (restUs >= PLATEAU_MIN_US) restUs / 1_000 else 0L,
+                concentricDurationS = r.eccentricDurationS,
+                meanEccentricVelocity = r.meanConcentricVelocity,
+                meanConcentricVelocity = r.meanEccentricVelocity,
+                peakConcentricVelocity = (r.eccentricStart..r.bottom).maxOf { samples[it].velocity }.coerceAtLeast(0f)
+            )
+        }
+    }
+
+    private fun segmentDownFirst(samples: List<Sample>, minDescent: Float): List<Rep> {
         val plateaus = plateaus(samples)
         val reps = mutableListOf<Rep>()
         var from = 0
