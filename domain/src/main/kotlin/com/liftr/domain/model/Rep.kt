@@ -27,6 +27,8 @@ import com.liftr.domain.value.Percentage
  * @property qualityScore Quality score for this rep (0-100), 0 = not scored
  * @property jump What a jump measured (jump exercises only)
  * @property catchType How the bar was caught (snatch and clean only); null for other lifts and reps saved before it was judged
+ * @property meanEccentricVelocity Mean eccentric speed in m/s, null when not measured
+ * @property bottomPauseMs Bottom pause in milliseconds, null when not measured
  */
 data class Rep(
     val id: Long = 0,
@@ -47,7 +49,11 @@ data class Rep(
     val jump: RepJumpData? = null,
     /** Points per scoring component; null for unscored reps and reps saved before parts were stored. */
     val scoreParts: RepScoreParts? = null,
-    val catchType: CatchType? = null
+    val catchType: CatchType? = null,
+    /** Mean eccentric (descent) speed in m/s; null when not measured (squat video analyses only). */
+    val meanEccentricVelocity: Float? = null,
+    /** Pause at the bottom in milliseconds; null when not measured. */
+    val bottomPauseMs: Long? = null
 ) {
     /**
      * Returns the total duration of the rep in seconds.

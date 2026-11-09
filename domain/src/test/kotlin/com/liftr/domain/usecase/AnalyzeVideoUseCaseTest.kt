@@ -11,14 +11,21 @@ import com.liftr.domain.model.MovementPhase
 import com.liftr.domain.model.PoseKeypoint
 import com.liftr.domain.model.PoseResult
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.model.BarTrackSource
+import com.liftr.domain.model.SetSummary
+import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PlateObservation
 import com.liftr.domain.vision.VideoPoseSource
 import io.mockk.every
+import io.mockk.justRun
 import io.mockk.mockk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -27,20 +34,37 @@ class AnalyzeVideoUseCaseTest {
     private val imageHeight = 1000
     private val pixelsPerMeter = 1000f
 
-    /** Shoulders at normalized [y]; the rest of the body is irrelevant to the tracked point. */
+    /**
+     * Shoulders (the tracked point) at normalized [y]; the head above and the
+     * hips and legs below, so the squat's plausibility gate keeps the frame.
+     */
     private fun poseAt(y: Float, timestampMs: Long): PoseResult {
-        val landmarks = List(33) { PoseKeypoint(0.5f, y, 0f, 1f) }
+        val landmarks = List(33) { i ->
+            val dy = when {
+                i <= PoseResult.RIGHT_EAR -> -0.05f
+                i < PoseResult.LEFT_HIP -> 0f
+                else -> 0.15f
+            }
+            PoseKeypoint(0.5f, y + dy, 0f, 1f)
+        }
         return PoseResult(landmarks, timestampMs, imageWidth = 500, imageHeight = imageHeight)
     }
 
-    @Test
-    fun `a tracked point moving 0_5 m in one second reads about 0_5 m per second`() = runBlocking {
-        // Same contract as the real calculator: normalized y in, meters out.
+    /** Same contract as the real calculator: normalized y in, meters out. */
+    private fun calculator(): IPositionCalculator {
         val calculator = mockk<IPositionCalculator> {
+            justRun { resetScale() }
             every { pixelsToMeters(any(), any(), any()) } answers {
                 firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
             }
         }
+        every { calculator.newSession() } returns calculator
+        return calculator
+    }
+
+    @Test
+    fun `a tracked point moving 0_5 m in one second reads about 0_5 m per second`() = runBlocking {
+        val calculator = calculator()
         val strategy = mockk<ExerciseStrategy> {
             every { detectPhase(any(), any(), any()) } returns
                 PhaseTransitionResult(ExercisePhaseState.initial(), repCompleted = false)
@@ -79,13 +103,10 @@ class AnalyzeVideoUseCaseTest {
         assertEquals(0.5f, middle.average().toFloat(), 0.1f)
     }
 
+    // A lift whose phases come from the strategy; squats take theirs from the bar track.
     @Test
     fun `rep mean velocity covers only the concentric part`() = runBlocking {
-        val calculator = mockk<IPositionCalculator> {
-            every { pixelsToMeters(any(), any(), any()) } answers {
-                firstArg<Float>() * secondArg<PoseResult>().imageHeight / pixelsPerMeter
-            }
-        }
+        val calculator = calculator()
         // Frame 0 idle, 1..40 slow descent, 41..60 fast ascent, 61 lockout.
         val ys = (0..61).map {
             when {
@@ -124,7 +145,7 @@ class AnalyzeVideoUseCaseTest {
         val result = useCase.invoke(
             AnalyzeVideoUseCase.Params(
                 videoFile = File("set.mp4"),
-                exerciseType = ExerciseType.BACK_SQUAT,
+                exerciseType = ExerciseType.BENCH_PRESS,
                 weight = Kilograms(100f),
                 targetReps = 1,
                 calibrationData = CalibrationData(pixelsPerMeter, 1.75f, 0.45f)
@@ -163,5 +184,105 @@ class AnalyzeVideoUseCaseTest {
             assertEquals(true, t.isConcentricPhase(MovementPhase.BOTTOM))
             assertEquals(false, t.isConcentricPhase(c))
         }
+    }
+
+    /**
+     * Two squats at 30 fps, as the drop below standing (m) per frame: 1 s
+     * standing, 0.6 m down at 0.5 m/s, 0.3 s paused, up at 0.6 m/s, 1.5 s
+     * standing; then the same again.
+     */
+    private fun twoSquats(): List<Float> {
+        val drops = mutableListOf<Float>()
+        repeat(2) {
+            repeat(30) { drops += 0f }
+            repeat(36) { drops += 0.6f * (it + 1) / 36 }
+            repeat(9) { drops += 0.6f }
+            repeat(30) { drops += 0.6f - 0.6f * (it + 1) / 30 }
+            repeat(15) { drops += 0f }
+        }
+        repeat(15) { drops += 0f }
+        return drops
+    }
+
+    private suspend fun analyzeSquat(poses: List<PoseResult>, plates: List<PlateObservation?>?): SetSummary {
+        val settings = mockk<SettingsRepository>(relaxed = true) {
+            every { getFloatSetting(any(), any()) } returns flowOf(0.45f)
+        }
+        val strategy = mockk<ExerciseStrategy>(relaxed = true)
+        val factory = mockk<ExerciseStrategyFactory> { every { getStrategy(any()) } returns strategy }
+        val useCase = AnalyzeVideoUseCase(calculator(), factory, mockk(relaxed = true), settings, mockk(relaxed = true))
+        val source = object : VideoPoseSource {
+            override val totalFrames = poses.size
+            override fun poses(include: (Long) -> Boolean): Flow<VideoPoseSource.Frame> = flow {
+                poses.forEachIndexed { i, pose -> emit(VideoPoseSource.Frame(pose.timestamp, pose, plates?.get(i))) }
+            }
+            override fun close() = Unit
+        }
+        return useCase.invoke(
+            AnalyzeVideoUseCase.Params(
+                videoFile = File("set.mp4"),
+                exerciseType = ExerciseType.FRONT_SQUAT,
+                weight = Kilograms(100f),
+                targetReps = 2,
+                calibrationData = CalibrationData(pixelsPerMeter, 1.75f, 0.45f)
+            ),
+            source,
+            onProgress = {}
+        ).getOrThrow()
+    }
+
+    private fun assertTwoSquats(summary: SetSummary) {
+        assertEquals(2, summary.completedReps.value)
+        for (n in 0..1) {
+            assertEquals(0.6f, summary.repRangeOfMotion[n].value, 0.02f)
+            assertEquals(0.5f, summary.repEccentricVelocities[n].value, 0.06f)
+            assertEquals(1.2f, summary.repEccentricDurations[n], 0.1f)
+            assertEquals(300f, summary.repPauseMs[n].toFloat(), 70f)
+            // Mean concentric velocity: the ascent's travel over its time.
+            assertEquals(0.6f, summary.repVelocities[n].value, 0.08f)
+            assertEquals(1.0f, summary.repConcentricDurations[n], 0.15f)
+            assertTrue(summary.repPeakVelocities[n].value in 0.55f..0.9f)
+        }
+    }
+
+    @Test
+    fun `a squat's reps and phases come from the plate when it is tracked`() = runBlocking {
+        // The landmarks stand still; only the plate moves. Plate radius 0.15 of
+        // the 500 px width = 75 px for 0.225 m: 333 px/m, and 1000 px of height.
+        val drops = twoSquats()
+        val poses = drops.indices.map { poseAt(0.3f, it * 33L) }
+        val plates = drops.map { PlateObservation(0.5f, 0.3f + it * 333.33f / imageHeight, 0.15f, 1f) }
+
+        val summary = analyzeSquat(poses, plates)
+
+        assertEquals(BarTrackSource.PLATE, summary.barTrackSource)
+        assertTwoSquats(summary)
+    }
+
+    @Test
+    fun `without a plate a squat is measured on the landmarks`() = runBlocking {
+        val drops = twoSquats()
+        // Shoulders drop with the bar, at 1000 px/m.
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+
+        val summary = analyzeSquat(poses, plates = null)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertTwoSquats(summary)
+    }
+
+    @Test
+    fun `a plate seen on too few of the rep frames falls back to the landmarks`() = runBlocking {
+        val drops = twoSquats()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+        // Seen on every third frame only: its gaps are short and get bridged, but it is mostly guessed.
+        val plates = drops.mapIndexed { i, drop ->
+            if (i % 3 == 0) PlateObservation(0.5f, 0.3f + drop * 333.33f / imageHeight, 0.15f, 1f) else null
+        }
+
+        val summary = analyzeSquat(poses, plates)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertEquals(2, summary.completedReps.value)
     }
 }

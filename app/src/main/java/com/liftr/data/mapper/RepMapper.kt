@@ -39,7 +39,9 @@ class RepMapper @Inject constructor() {
             qualityScore = entity.qualityScore,
             jump = entity.jumpData,
             scoreParts = scoreParts(entity),
-            catchType = entity.catchType
+            catchType = entity.catchType,
+            meanEccentricVelocity = entity.meanEccentricVelocity,
+            bottomPauseMs = entity.bottomPauseMs
         )
     }
 
@@ -81,7 +83,9 @@ class RepMapper @Inject constructor() {
             barPathScore = domain.scoreParts?.barPath,
             tempoScore = domain.scoreParts?.tempo,
             formScore = domain.scoreParts?.form,
-            catchType = domain.catchType
+            catchType = domain.catchType,
+            meanEccentricVelocity = domain.meanEccentricVelocity,
+            bottomPauseMs = domain.bottomPauseMs
         )
     }
 

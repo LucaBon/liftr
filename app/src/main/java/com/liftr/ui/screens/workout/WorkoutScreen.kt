@@ -55,6 +55,7 @@ import com.liftr.domain.model.ScoreBreakdown
 import com.liftr.ui.components.ScoreBreakdownRow
 import com.liftr.ui.common.depthPartLabelRes
 import com.liftr.domain.model.ScoreGrade
+import com.liftr.domain.model.BarTrackSource
 import com.liftr.domain.model.SetSummary
 import com.liftr.domain.model.JumpQuality
 import com.liftr.ui.components.AnalysisProgressBanner
@@ -798,6 +799,11 @@ fun SetSummarySheet(
                 }
             }
 
+            if (!isJump && summary.hasSquatRepMetrics) {
+                Spacer(modifier = Modifier.height(Spacing.md))
+                SquatRepMetricsTable(summary)
+            }
+
             // Bar path replay card
             if (summary.repBarPaths.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(Spacing.md))
@@ -1080,6 +1086,58 @@ fun RepScoreTable(
                 )
                 TableCell(text = marker, weight = 0.6f)
             }
+        }
+    }
+}
+
+/** Squat video analyses fill the phase lists; other lifts leave them empty. */
+private val SetSummary.hasSquatRepMetrics: Boolean
+    get() = repEccentricVelocities.isNotEmpty() || repPauseMs.isNotEmpty()
+
+@Composable
+private fun SquatRepMetricsTable(summary: SetSummary) {
+    val showRom = summary.repRangeOfMotion.isNotEmpty()
+    val rows = maxOf(summary.repEccentricVelocities.size, summary.repPauseMs.size, summary.repVelocities.size)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                .padding(horizontal = 8.dp, vertical = 6.dp)
+        ) {
+            TableCell(text = stringResource(R.string.set_summary_rep_header), weight = 0.8f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_con_mean_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_con_peak_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_ecc_mean_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(R.string.set_summary_pause_header), weight = 1f, bold = true)
+            if (showRom) TableCell(text = stringResource(R.string.set_summary_rom_header), weight = 1f, bold = true)
+        }
+        for (index in 0 until rows) {
+            val rowColor = if (index % 2 == 0) MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(rowColor)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                TableCell(text = "${index + 1}", weight = 0.8f)
+                TableCell(text = summary.repVelocities.getOrNull(index)?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
+                TableCell(text = summary.repPeakVelocities.getOrNull(index)?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
+                TableCell(text = summary.repEccentricVelocities.getOrNull(index)?.let { "%.2f".format(it.value) } ?: "-", weight = 1f)
+                TableCell(text = summary.repPauseMs.getOrNull(index)?.let { "%.1f s".format(it / 1000f) } ?: "-", weight = 1f)
+                if (showRom) {
+                    TableCell(text = summary.repRangeOfMotion.getOrNull(index)?.let { "%.2f m".format(it.value) } ?: "-", weight = 1f)
+                }
+            }
+        }
+        if (summary.barTrackSource == BarTrackSource.LANDMARKS) {
+            Text(
+                text = stringResource(R.string.set_summary_bar_estimated_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Spacing.xs)
+            )
         }
     }
 }

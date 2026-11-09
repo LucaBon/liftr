@@ -54,34 +54,43 @@ object BidirectionalVelocityCalculator {
         processNoise: Float = DEFAULT_PROCESS_NOISE,
         measurementNoise: Float = DEFAULT_MEASUREMENT_NOISE
     ): List<VelocityData> {
-        if (positions.size < 2) {
-            return positions.map { sample ->
-                VelocityData(
-                    instantaneous = MetersPerSecond(0f),
-                    average = MetersPerSecond(0f),
-                    position = Meters(abs(sample.positionMeters)),
-                    timestamp = sample.timestampMs
-                )
-            }
-        }
-
-        val forward = kalmanPass(positions, processNoise, measurementNoise)
-        // The backward pass walks the series in reversed time, so its velocity
-        // sign is flipped relative to the forward pass. Negate it before
-        // averaging, otherwise the two passes cancel each other out.
-        val backward = kalmanPass(positions.reversed(), processNoise, measurementNoise)
-            .reversed()
-            .map { -it }
-
+        val signed = signedVelocities(positions, processNoise, measurementNoise)
         return positions.mapIndexed { i, sample ->
-            val avgVelocity = (forward[i] + backward[i]) / 2f
             VelocityData(
-                instantaneous = MetersPerSecond(abs(avgVelocity)),
-                average = MetersPerSecond(abs(avgVelocity)),
+                instantaneous = MetersPerSecond(abs(signed[i])),
+                average = MetersPerSecond(abs(signed[i])),
                 position = Meters(abs(sample.positionMeters)),
                 timestamp = sample.timestampMs
             )
         }
+    }
+
+    /**
+     * The same smoothed velocities as [calculateVelocities], keeping their
+     * sign: positive where the position grows. Feed it a height (up positive)
+     * and upward motion reads positive. Aligned 1:1 with [positions].
+     *
+     * @param accelerationNoise when set, the filter models white-noise
+     *   acceleration of this spectral density (m²/s³) instead of [processNoise]:
+     *   with the default model the velocity lags a squat's second-long phases
+     *   badly (a 1 m/s ramp reads ~0.6 m/s after a second), with this one it
+     *   follows them within a few frames.
+     */
+    fun signedVelocities(
+        positions: List<PositionSample>,
+        processNoise: Float = DEFAULT_PROCESS_NOISE,
+        measurementNoise: Float = DEFAULT_MEASUREMENT_NOISE,
+        accelerationNoise: Float? = null
+    ): List<Float> {
+        if (positions.size < 2) return positions.map { 0f }
+        val forward = kalmanPass(positions, processNoise, measurementNoise, accelerationNoise)
+        // The backward pass walks the series in reversed time, so its velocity
+        // sign is flipped relative to the forward pass. Negate it before
+        // averaging, otherwise the two passes cancel each other out.
+        val backward = kalmanPass(positions.reversed(), processNoise, measurementNoise, accelerationNoise)
+            .reversed()
+            .map { -it }
+        return forward.indices.map { (forward[it] + backward[it]) / 2f }
     }
 
     /**
@@ -98,11 +107,13 @@ object BidirectionalVelocityCalculator {
      *   constant velocity per second — larger tracks acceleration faster.
      * @param measurementNoise variance of the position measurements — larger
      *   trusts the model over the landmark positions.
+     * @param accelerationNoise see [signedVelocities]; null keeps [processNoise].
      */
     private fun kalmanPass(
         positions: List<PositionSample>,
         processNoise: Float,
-        measurementNoise: Float
+        measurementNoise: Float,
+        accelerationNoise: Float? = null
     ): List<Float> {
         val velocities = ArrayList<Float>(positions.size)
 
@@ -138,11 +149,15 @@ object BidirectionalVelocityCalculator {
             // ── Predict: x = F x, P = F P Fᵀ + Q, with F = [[1, dt], [0, 1]] ──
             position += velocity * dt
 
-            val q = processNoise * dt
-            val predP00 = p00 + dt * (p01 + p10) + dt * dt * p11 + q
-            val predP01 = p01 + dt * p11
-            val predP10 = p10 + dt * p11
-            val predP11 = p11 + q
+            // Q: either the same variance on both states, or white-noise
+            // acceleration, Q = qa * [[dt³/3, dt²/2], [dt²/2, dt]].
+            val q00 = accelerationNoise?.let { it * dt * dt * dt / 3f } ?: (processNoise * dt)
+            val q01 = accelerationNoise?.let { it * dt * dt / 2f } ?: 0f
+            val q11 = accelerationNoise?.let { it * dt } ?: (processNoise * dt)
+            val predP00 = p00 + dt * (p01 + p10) + dt * dt * p11 + q00
+            val predP01 = p01 + dt * p11 + q01
+            val predP10 = p10 + dt * p11 + q01
+            val predP11 = p11 + q11
 
             // ── Update with the position measurement, H = [1, 0] ──
             val innovation = positions[i].positionMeters - position

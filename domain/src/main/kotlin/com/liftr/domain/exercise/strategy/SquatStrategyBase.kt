@@ -25,6 +25,7 @@ import com.liftr.domain.value.Meters
 import com.liftr.domain.value.MetersPerSecond
 import com.liftr.domain.value.Watts
 import com.liftr.domain.vision.IPositionCalculator
+import com.liftr.domain.vision.PoseSanity
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -356,11 +357,14 @@ abstract class SquatStrategyBase(
             )
         }
 
-        // Check if stabilized at top (ready for next rep)
+        // Check if stabilized at top (ready for next rep). The next rep starts
+        // from here: re-anchor the start, so one taken while walking in or
+        // unracking does not time every later rep against the wrong top.
         if (abs(descent) < topStabilizationThreshold) {
             logger.d(tag, "Phase: TOP -> IDLE")
             return PhaseTransitionResult(
-                newState = state.withCurrentPhase(MovementPhase.IDLE),
+                newState = state.withCurrentPhase(MovementPhase.IDLE)
+                    .withStartingPosition(state.currentHeadY, state.currentShouldersY, state.currentHipsY),
                 repCompleted = false,
                 debugInfo = "Stabilized at top"
             )
@@ -371,6 +375,29 @@ abstract class SquatStrategyBase(
             repCompleted = false,
             debugInfo = "At top position"
         )
+    }
+
+    /**
+     * Depth check of a single frame, with positions from [calculator]. The
+     * video path finds the bottom from the bar track and judges its frames
+     * here, with the analysis' own calculator (see [IPositionCalculator.newSession]).
+     */
+    fun validateDepthAt(
+        poseResult: PoseResult,
+        calibrationData: CalibrationData,
+        calculator: IPositionCalculator
+    ): DepthValidationResult? {
+        val positions = calculator.getBodyPartPositions(poseResult) ?: return null
+        fun meters(value: Float?) = value?.let { calculator.pixelsToMeters(it, poseResult, calibrationData) }
+        val state = ExercisePhaseState.initial().withCurrentPositions(
+            headY = meters(positions.headY),
+            shouldersY = meters(positions.shouldersY),
+            hipsY = meters(positions.hipsY),
+            kneesY = meters(positions.kneesY),
+            hipsX = meters(positions.hipsX),
+            kneesX = meters(positions.kneesX)
+        )
+        return validateSquatDepth(state)
     }
 
     /**
@@ -437,6 +464,9 @@ abstract class SquatStrategyBase(
         currentState: ExercisePhaseState?,
         phase: MovementPhase?
     ): FormValidationResult {
+        // A broken skeleton (plate hiding the upper body) would only report its own faults.
+        if (!PoseSanity.isPlausible(poseResult)) return FormValidationResult(isValid = true, issues = emptyList())
+
         val issues = mutableListOf<FormIssue>()
 
         // Knee valgus/varus can only be measured from a frontal view; the app
@@ -522,9 +552,11 @@ abstract class SquatStrategyBase(
         currentState: ExercisePhaseState?
     ): List<FormIssue> {
         // Median-filtered over time so a one-frame landmark jump is not a lift.
+        // Broken skeletons are left out, not read as a foot.
+        val plausible = frames.filter { PoseSanity.isPlausible(it.pose) }
         val slopes = rollingMedianOrNull(
-            frames.map { it.pose.timestampUs },
-            frames.map { footSlope(it.pose) },
+            plausible.map { it.pose.timestampUs },
+            plausible.map { footSlope(it.pose) },
             ExerciseThresholds.SquatForm.HEEL_LIFT_SMOOTH_MS
         ).filterNotNull()
         val reference = slopes.firstOrNull() ?: return emptyList()

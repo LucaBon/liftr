@@ -72,7 +72,7 @@ class VelocityCalculator @Inject constructor(
 
         // 2. Convert to meters
         val positionMeters = positionCalculator.pixelsToMeters(
-            normalizedY = barPositionPixels.second,
+            pixelValue = barPositionPixels.second,
             poseResult = poseResult,
             calibrationData = calibrationData
         )
@@ -264,6 +264,9 @@ class VelocityCalculator @Inject constructor(
 
         // Reset velocity smoothing
         velocitySmoothing.clear()
+
+        // Its own PositionCalculator instance locks a scale too.
+        positionCalculator.resetScale()
 
         startTime = null
     }

@@ -21,6 +21,7 @@ import com.liftr.domain.repository.SettingsRepository
 import com.liftr.domain.repository.VideoStorageRepository
 import com.liftr.domain.usecase.AnalyzeVideoUseCase
 import com.liftr.domain.value.Kilograms
+import com.liftr.domain.vision.PlateTracker
 import com.liftr.vision.camera.LensDistortionCorrector
 import com.liftr.vision.pose.VideoFramePoseDetector
 import com.liftr.vision.recording.AnnotatedVideoGenerator
@@ -268,7 +269,8 @@ class VideoAnalysisService : LifecycleService() {
                     },
                     logger = logger,
                     knownCaptureFps = knownCaptureFps,
-                    beforeFrame = ::waitWhileRecording
+                    beforeFrame = ::waitWhileRecording,
+                    createPlateTracker = if (exerciseType.tracksBarPlate()) ::PlateTracker else null
                 ),
                 onProgress = { progress ->
                     showProgress(progress)

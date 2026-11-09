@@ -45,5 +45,8 @@ data class RepEntity(
     val tempoScore: Int? = null,
     val formScore: Int? = null,
     // How the bar was caught (snatch, clean); null for other lifts and rows saved before version 6
-    val catchType: CatchType? = null
+    val catchType: CatchType? = null,
+    // Squat video analyses; null for other lifts and rows saved before version 7
+    val meanEccentricVelocity: Float? = null,
+    val bottomPauseMs: Long? = null
 )
