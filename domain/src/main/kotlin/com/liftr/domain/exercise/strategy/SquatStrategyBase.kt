@@ -357,11 +357,14 @@ abstract class SquatStrategyBase(
             )
         }
 
-        // Check if stabilized at top (ready for next rep)
+        // Check if stabilized at top (ready for next rep). The next rep starts
+        // from here: re-anchor the start, so one taken while walking in or
+        // unracking does not time every later rep against the wrong top.
         if (abs(descent) < topStabilizationThreshold) {
             logger.d(tag, "Phase: TOP -> IDLE")
             return PhaseTransitionResult(
-                newState = state.withCurrentPhase(MovementPhase.IDLE),
+                newState = state.withCurrentPhase(MovementPhase.IDLE)
+                    .withStartingPosition(state.currentHeadY, state.currentShouldersY, state.currentHipsY),
                 repCompleted = false,
                 debugInfo = "Stabilized at top"
             )

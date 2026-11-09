@@ -116,6 +116,33 @@ class BackSquatStrategyIntegrationTest {
     }
 
     @Test
+    fun `stabilizing at the top re-anchors the start for the next rep`() {
+        every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
+            headY = 100f, shouldersY = 200f, hipsY = 500f, kneesY = 800f
+        )
+        // Back from a rep, 1.5 cm lower than the first frame's start: within
+        // the 2 cm stabilization band.
+        every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.515f
+        every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.015f
+        every { positionCalculator.pixelsToMeters(500f, any(), any()) } returns 2.0f
+        every { positionCalculator.pixelsToMeters(800f, any(), any()) } returns 3.0f
+        val pose = createMockPoseResult()
+        val top = ExercisePhaseState(
+            currentPhase = MovementPhase.TOP, startingHeadY = 0.5f, startingShouldersY = 1.0f, startingHipsY = 2.0f
+        )
+
+        val idle = strategy.detectPhase(pose, calibrationData, top).newState
+        assertEquals(MovementPhase.IDLE, idle.currentPhase)
+        assertEquals(0.515f, idle.startingHeadY!!, 1e-4f)
+        assertEquals(1.015f, idle.startingShouldersY!!, 1e-4f)
+
+        // 4 cm below the new start (5.5 cm below the old one) is not a descent yet.
+        every { positionCalculator.pixelsToMeters(100f, any(), any()) } returns 0.555f
+        every { positionCalculator.pixelsToMeters(200f, any(), any()) } returns 1.055f
+        assertEquals(MovementPhase.IDLE, strategy.detectPhase(pose, calibrationData, idle).newState.currentPhase)
+    }
+
+    @Test
     fun `insufficient depth should prevent transition to BOTTOM phase`() {
         // Setup shallow squat - hips above knees (insufficient depth)
         every { positionCalculator.getBodyPartPositions(any()) } returns BodyPartPositions(
