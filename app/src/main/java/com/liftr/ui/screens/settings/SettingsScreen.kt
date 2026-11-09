@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.liftr.R
 import com.liftr.domain.exercise.VelocityLossState
@@ -42,6 +44,7 @@ fun SettingsScreen(
     val frontSquatDepthType by viewModel.frontSquatDepthType.collectAsState()
     val vbtZonesEnabled by viewModel.vbtZonesEnabled.collectAsState()
     val velocityLossThreshold by viewModel.velocityLossThreshold.collectAsState()
+    val plateDiameterM by viewModel.plateDiameterM.collectAsState()
     val audioFeedbackEnabled by viewModel.audioFeedbackEnabled.collectAsState()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsState()
     val feedbackLanguage by viewModel.feedbackLanguage.collectAsState()
@@ -217,6 +220,13 @@ fun SettingsScreen(
                 title = stringResource(R.string.settings_front_squat_depth),
                 currentDepth = frontSquatDepthType,
                 onDepthSelected = { viewModel.updateFrontSquatDepth(it) }
+            )
+
+            Spacer(modifier = Modifier.height(Spacing.sm + Spacing.xs))
+
+            PlateDiameterSelector(
+                currentDiameterM = plateDiameterM,
+                onDiameterSelected = { viewModel.updatePlateDiameter(it) }
             )
 
             Spacer(modifier = Modifier.height(Spacing.lg))
@@ -826,6 +836,120 @@ fun VelocityLossThresholdSelector(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlateDiameterSelector(
+    currentDiameterM: Float,
+    onDiameterSelected: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var customMode by remember { mutableStateOf(false) }
+    val currentCm = PlateDiameter.metersToCm(currentDiameterM)
+    var customText by remember { mutableStateOf(currentCm.toString()) }
+    val showCustom = customMode || !PlateDiameter.isPreset(currentDiameterM)
+    val customInvalid = showCustom && PlateDiameter.parseCmToMeters(customText) == null
+
+    val currentLabel = if (showCustom) {
+        stringResource(R.string.settings_plate_diameter_custom)
+    } else {
+        stringResource(R.string.settings_plate_diameter_cm, currentCm)
+    }
+
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Spacing.md)) {
+            Text(
+                text = stringResource(R.string.settings_plate_diameter),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = Spacing.xs)
+            )
+            Text(
+                text = stringResource(R.string.settings_plate_diameter_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = Spacing.sm)
+            )
+
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it }
+            ) {
+                OutlinedTextField(
+                    value = currentLabel,
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                    },
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    PlateDiameter.PRESETS_CM.forEach { cm ->
+                        val label = if (cm == 45) {
+                            stringResource(R.string.settings_plate_diameter_standard, cm)
+                        } else {
+                            stringResource(R.string.settings_plate_diameter_cm, cm)
+                        }
+                        DropdownMenuItem(
+                            text = { Text(label, style = MaterialTheme.typography.bodyLarge) },
+                            onClick = {
+                                customMode = false
+                                onDiameterSelected(PlateDiameter.cmToMeters(cm))
+                                expanded = false
+                            },
+                            contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(R.string.settings_plate_diameter_custom),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        },
+                        onClick = {
+                            customMode = true
+                            customText = currentCm.toString()
+                            expanded = false
+                        },
+                        contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
+                    )
+                }
+            }
+
+            if (showCustom) {
+                OutlinedTextField(
+                    value = customText,
+                    onValueChange = { text ->
+                        customText = text.filter { it.isDigit() }.take(3)
+                        PlateDiameter.parseCmToMeters(customText)?.let { onDiameterSelected(it) }
+                    },
+                    label = { Text(stringResource(R.string.settings_plate_diameter_custom_label)) },
+                    isError = customInvalid,
+                    supportingText = if (customInvalid) {
+                        {
+                            Text(
+                                stringResource(
+                                    R.string.settings_plate_diameter_error,
+                                    PlateDiameter.MIN_CM,
+                                    PlateDiameter.MAX_CM
+                                )
+                            )
+                        }
+                    } else null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm)
+                )
             }
         }
     }

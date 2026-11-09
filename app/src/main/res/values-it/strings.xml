@@ -67,4 +67,11 @@
     <string name="jump_contact_rsi">Contatto %1$.0f ms  ·  RSI %2$.2f</string>
     <string name="set_summary_best_rsi">Miglior RSI</string>
     <string name="set_summary_rsi_best_five">RSI (migliori 5)</string>
+    <string name="settings_plate_diameter">Diametro del disco esterno</string>
+    <string name="settings_plate_diameter_description">Il disco più esterno sul bilanciere; scala la velocità del bilanciere nell\'analisi video</string>
+    <string name="settings_plate_diameter_cm">%1$d cm</string>
+    <string name="settings_plate_diameter_standard">%1$d cm (bumper standard / 20–25 kg)</string>
+    <string name="settings_plate_diameter_custom">Personalizzato…</string>
+    <string name="settings_plate_diameter_custom_label">Diametro (cm)</string>
+    <string name="settings_plate_diameter_error">Inserisci un valore tra %1$d e %2$d cm</string>
 </resources>
