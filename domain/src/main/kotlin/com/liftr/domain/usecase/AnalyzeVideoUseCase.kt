@@ -814,6 +814,13 @@ class AnalyzeVideoUseCase @Inject constructor(
                 observed[i]?.let { -it.cy * pose.imageHeight * diameter / (2f * radius * pose.imageWidth) }
             }
             val plateTrack = barTrack(BarTrackSource.PLATE, timesUs, heights, PLATE_MEASUREMENT_NOISE, minDescent, direction)
+            val sortedHeights = heights.filterNotNull().sorted()
+            val travel = sortedHeights[(sortedHeights.size * 0.95f).toInt().coerceAtMost(sortedHeights.size - 1)] -
+                sortedHeights[(sortedHeights.size * 0.05f).toInt()]
+            if (travel < minDescent * MIN_PLATE_TRAVEL_FRACTION) {
+                logger.i(TAG, "Plate ignored: it moved %.3f m, too little to be the bar (a static circle)".format(travel))
+                return landmarkTrack(timesUs, landmarks, minDescent, direction)
+            }
             val repFrames = plateTrack.reps.flatMap { it.eccentricStart..it.concentricEnd }
             val coverage = if (repFrames.isEmpty()) 0f else repFrames.count { observed[it] != null }.toFloat() / repFrames.size
             logger.i(
@@ -1029,6 +1036,13 @@ class AnalyzeVideoUseCase @Inject constructor(
         private const val MIN_PLATE_COVERAGE = 0.8f
 
         /** Plate center measurement variance (m²): about 1 cm. */
+        /**
+         * A plate whose height (95th minus 5th percentile) varies by less than
+         * this fraction of the exercise's minimum descent is not the bar: a
+         * round object that stays put, such as a plate on a rack or a wall clock.
+         */
+        private const val MIN_PLATE_TRAVEL_FRACTION = 0.5f
+
         private const val PLATE_MEASUREMENT_NOISE = 1e-4f
 
         /** Landmark measurement variance (m²): about 2 cm. */

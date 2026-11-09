@@ -388,4 +388,17 @@ class AnalyzeVideoUseCaseTest {
         assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
         assertTwoSquats(summary)
     }
+
+    @Test
+    fun `a plate that does not move is not the bar and the landmarks are used`() = runBlocking {
+        val drops = twoSquats()
+        val poses = drops.mapIndexed { i, drop -> poseAt(0.2f + drop, i * 33L) }
+        // A round object behind the lifter: always at the same place.
+        val plates = drops.map { PlateObservation(0.5f, 0.3f, 0.15f, 1f) }
+
+        val summary = analyzeSquat(poses, plates)
+
+        assertEquals(BarTrackSource.LANDMARKS, summary.barTrackSource)
+        assertEquals(2, summary.completedReps.value)
+    }
 }
