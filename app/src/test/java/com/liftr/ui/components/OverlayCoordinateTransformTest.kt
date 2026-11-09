@@ -89,4 +89,23 @@ class OverlayCoordinateTransformTest {
             }
         }
     }
+
+    @Test
+    fun `fromCanvasOffset inverts toCanvasOffset in a letterboxed canvas`() {
+        // 1080x1920 portrait frame in a wide 900x600 canvas: bars left and right.
+        val scaling = OverlayCoordinateTransform.calculateScaling(1080, 1920, 900f, 600f, 0)
+        for ((x, y) in listOf(0f to 0f, 1f to 1f, 0.5f to 0.5f, 0.2f to 0.8f, 0.9f to 0.1f)) {
+            val canvas = OverlayCoordinateTransform.toCanvasOffset(x, y, scaling, 0, false)
+            val (nx, ny) = OverlayCoordinateTransform.fromCanvasOffset(canvas.x, canvas.y, scaling)
+            assertEquals(x, nx, 1e-4f)
+            assertEquals(y, ny, 1e-4f)
+        }
+    }
+
+    @Test
+    fun `fromCanvasOffset reports letterbox taps outside the frame`() {
+        val scaling = OverlayCoordinateTransform.calculateScaling(1080, 1920, 900f, 600f, 0)
+        val (nx, _) = OverlayCoordinateTransform.fromCanvasOffset(1f, 300f, scaling)
+        assertEquals(true, nx < 0f)
+    }
 }

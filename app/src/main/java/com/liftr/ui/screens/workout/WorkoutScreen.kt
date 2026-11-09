@@ -17,6 +17,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import com.liftr.ui.components.OverlayCoordinateTransform
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -627,6 +634,9 @@ fun WorkoutScreen(
                 summary = summary,
                 annotatedVideo = uiState.annotatedVideo,
                 playbackIsAnnotated = uiState.playbackIsAnnotated,
+                plateReanalysis = uiState.plateReanalysis,
+                loadPlateFrame = viewModel::loadPlateFrame,
+                onPlateTapped = viewModel::reanalyzeWithPlateTap,
                 onShareVideo = { viewModel.shareAnnotatedVideo() },
                 onSaveVideo = { viewModel.saveAnnotatedVideoToGallery() },
                 onDeleteVideo = { viewModel.deleteAnnotatedVideo() },
@@ -662,6 +672,9 @@ fun SetSummarySheet(
     onDismiss: () -> Unit,
     annotatedVideo: AnnotatedVideoInfo? = null,
     playbackIsAnnotated: Boolean = false,
+    plateReanalysis: PlateReanalysis? = null,
+    loadPlateFrame: suspend (String) -> android.graphics.Bitmap? = { null },
+    onPlateTapped: (Pair<Float, Float>) -> Unit = {},
     onShareVideo: () -> Unit = {},
     onSaveVideo: () -> Unit = {},
     onDeleteVideo: () -> Unit = {}
@@ -808,9 +821,13 @@ fun SetSummarySheet(
                 }
             }
 
-            if (!isJump && summary.hasSquatRepMetrics) {
+            if (!isJump && summary.hasPlateRepMetrics) {
                 Spacer(modifier = Modifier.height(Spacing.md))
-                SquatRepMetricsTable(summary)
+                PlateRepMetricsTable(summary)
+            }
+
+            if (!isJump && summary.exerciseType.tracksBarPlate() && summary.barTrackSource == BarTrackSource.LANDMARKS) {
+                PlateNotFoundNotice(plateReanalysis, loadPlateFrame, onPlateTapped)
             }
 
             // Bar path replay card
@@ -1099,12 +1116,12 @@ fun RepScoreTable(
     }
 }
 
-/** Squat video analyses fill the phase lists; other lifts leave them empty. */
-private val SetSummary.hasSquatRepMetrics: Boolean
+/** Plate-tracked video analyses fill the phase lists; other lifts leave them empty. */
+private val SetSummary.hasPlateRepMetrics: Boolean
     get() = repEccentricVelocities.isNotEmpty() || repPauseMs.isNotEmpty()
 
 @Composable
-private fun SquatRepMetricsTable(summary: SetSummary) {
+private fun PlateRepMetricsTable(summary: SetSummary) {
     val showRom = summary.repRangeOfMotion.isNotEmpty()
     val rows = maxOf(summary.repEccentricVelocities.size, summary.repPauseMs.size, summary.repVelocities.size)
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1115,10 +1132,10 @@ private fun SquatRepMetricsTable(summary: SetSummary) {
                 .padding(horizontal = 8.dp, vertical = 6.dp)
         ) {
             TableCell(text = stringResource(R.string.set_summary_rep_header), weight = 0.8f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_con_mean_header), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_con_peak_header), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_ecc_mean_header), weight = 1f, bold = true)
-            TableCell(text = stringResource(R.string.set_summary_pause_header), weight = 1f, bold = true)
+            TableCell(text = stringResource(summary.exerciseType.concentricMeanHeaderRes()), weight = 1f, bold = true)
+            TableCell(text = stringResource(summary.exerciseType.concentricPeakHeaderRes()), weight = 1f, bold = true)
+            TableCell(text = stringResource(summary.exerciseType.eccentricHeaderRes()), weight = 1f, bold = true)
+            TableCell(text = stringResource(summary.exerciseType.pauseLabelRes()), weight = 1f, bold = true)
             if (showRom) TableCell(text = stringResource(R.string.set_summary_rom_header), weight = 1f, bold = true)
         }
         for (index in 0 until rows) {
@@ -1139,14 +1156,6 @@ private fun SquatRepMetricsTable(summary: SetSummary) {
                     TableCell(text = summary.repRangeOfMotion.getOrNull(index)?.let { "%.2f m".format(it.value) } ?: "-", weight = 1f)
                 }
             }
-        }
-        if (summary.barTrackSource == BarTrackSource.LANDMARKS) {
-            Text(
-                text = stringResource(R.string.set_summary_bar_estimated_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = Spacing.xs)
-            )
         }
     }
 }
@@ -1549,3 +1558,96 @@ class WorkoutCameraViewModel @Inject constructor(
     val videoRecordingManager: com.liftr.vision.camera.VideoRecordingManager,
     val previewPoseSampler: PreviewPoseSampler
 ) : androidx.lifecycle.ViewModel()
+
+/** Says the speeds are estimated (the plate was not found) and offers the tap fallback while the recording is kept. */
+@Composable
+private fun PlateNotFoundNotice(
+    plateReanalysis: PlateReanalysis?,
+    loadPlateFrame: suspend (String) -> android.graphics.Bitmap?,
+    onPlateTapped: (Pair<Float, Float>) -> Unit
+) {
+    var showTapDialog by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm)) {
+        Text(
+            text = stringResource(
+                if (plateReanalysis?.tapped == true) R.string.set_summary_bar_still_estimated_hint
+                else R.string.set_summary_bar_estimated_hint
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (plateReanalysis != null && java.io.File(plateReanalysis.videoPath).exists()) {
+            TextButton(onClick = { showTapDialog = true }) {
+                Text(stringResource(R.string.set_summary_tap_plate))
+            }
+        }
+    }
+    if (showTapDialog && plateReanalysis != null) {
+        TapPlateDialog(
+            videoPath = plateReanalysis.videoPath,
+            loadFrame = loadPlateFrame,
+            onTap = { seed ->
+                showTapDialog = false
+                onPlateTapped(seed)
+            },
+            onDismiss = { showTapDialog = false }
+        )
+    }
+}
+
+/** The first decoded frame, shown fitted; a tap becomes normalized frame coordinates. */
+@Composable
+private fun TapPlateDialog(
+    videoPath: String,
+    loadFrame: suspend (String) -> android.graphics.Bitmap?,
+    onTap: (Pair<Float, Float>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var frame by remember(videoPath) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var failed by remember(videoPath) { mutableStateOf(false) }
+    LaunchedEffect(videoPath) {
+        val loaded = loadFrame(videoPath)
+        frame = loaded
+        failed = loaded == null
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.tap_plate_dialog_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(
+                        if (failed) R.string.tap_plate_frame_failed else R.string.tap_plate_dialog_hint
+                    ),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                frame?.let { bitmap ->
+                    Spacer(modifier = Modifier.height(Spacing.sm))
+                    var boxSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 480.dp)
+                            .onSizeChanged { boxSize = it }
+                            .pointerInput(bitmap) {
+                                detectTapGestures { tap ->
+                                    val scaling = OverlayCoordinateTransform.calculateScaling(
+                                        bitmap.width, bitmap.height,
+                                        boxSize.width.toFloat(), boxSize.height.toFloat(), 0
+                                    )
+                                    val (x, y) = OverlayCoordinateTransform.fromCanvasOffset(tap.x, tap.y, scaling)
+                                    // Taps on the letterbox bars are not on the frame.
+                                    if (x in 0f..1f && y in 0f..1f) onTap(Pair(x, y))
+                                }
+                            }
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } }
+    )
+}

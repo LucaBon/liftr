@@ -74,6 +74,8 @@ data class WorkoutState(
     // Playable set video (raw recording or annotated export when enabled).
     val annotatedVideo: AnnotatedVideoInfo? = null,
     val playbackIsAnnotated: Boolean = false,
+    // Plate not found on a plate-tracked lift: the raw recording is kept for a tap re-analysis.
+    val plateReanalysis: PlateReanalysis? = null,
     val videoMessage: String? = null,
     // One-shot snackbar when analysis finishes while the banner was dismissed.
     val analysisCompleteMessage: String? = null,
@@ -103,7 +105,8 @@ data class WorkoutState(
         lastSetSummary = result.summary,
         isSetSummaryVisible = true,
         annotatedVideo = result.annotatedVideo,
-        playbackIsAnnotated = result.playbackIsAnnotated
+        playbackIsAnnotated = result.playbackIsAnnotated,
+        plateReanalysis = result.plateReanalysis
     )
 }
 
@@ -111,7 +114,8 @@ data class WorkoutState(
 data class PendingSetResult(
     val summary: SetSummary,
     val annotatedVideo: AnnotatedVideoInfo?,
-    val playbackIsAnnotated: Boolean
+    val playbackIsAnnotated: Boolean,
+    val plateReanalysis: PlateReanalysis? = null
 )
 
 /**

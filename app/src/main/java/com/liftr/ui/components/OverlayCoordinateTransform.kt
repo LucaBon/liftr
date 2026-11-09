@@ -100,4 +100,14 @@ object OverlayCoordinateTransform {
             y = ty * scaling.rotatedImageHeight * scaling.scale + scaling.offsetY
         )
     }
+
+    /**
+     * Inverse of [toCanvasOffset] for an unrotated, unmirrored image: maps a
+     * canvas pixel to normalized image coordinates. The result is outside
+     * 0..1 when the point is in the letterbox bars around the image.
+     */
+    fun fromCanvasOffset(canvasX: Float, canvasY: Float, scaling: OverlayScaling): Pair<Float, Float> = Pair(
+        (canvasX - scaling.offsetX) / (scaling.rotatedImageWidth * scaling.scale),
+        (canvasY - scaling.offsetY) / (scaling.rotatedImageHeight * scaling.scale)
+    )
 }
