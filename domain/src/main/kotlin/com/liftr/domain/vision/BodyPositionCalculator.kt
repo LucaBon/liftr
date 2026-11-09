@@ -1,6 +1,8 @@
 package com.liftr.domain.vision
 
+import com.liftr.domain.calculator.CoordinateCalculator
 import com.liftr.domain.logging.Logger
+import com.liftr.domain.model.AnthropometricData
 import com.liftr.domain.model.BodyPartPositions
 import com.liftr.domain.model.CalibrationData
 import com.liftr.domain.model.CalibrationQuality
@@ -219,12 +221,12 @@ open class BodyPositionCalculator(
         }
         if (head.isNotEmpty() && hips.isNotEmpty()) {
             return CalibrationResult(
-                span(head, hips) / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED
+                span(head, hips) / headToHipShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED
             )
         }
         if (hips.isNotEmpty() && ankles.isNotEmpty()) {
             return CalibrationResult(
-                span(hips, ankles) / LEGS_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED
+                span(hips, ankles) / hipToAnkleShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED
             )
         }
         return CalibrationResult(calibrationData.pixelsPerMeter, CalibrationQuality.FALLBACK)
@@ -250,7 +252,7 @@ open class BodyPositionCalculator(
             val body = torso + distancePx(hips, knees, poseResult) + distancePx(knees, ankles, poseResult)
             CalibrationResult(body / HEAD_TO_ANKLE_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.OPTIMAL)
         } else {
-            CalibrationResult(torso / TORSO_SHARE_OF_HEIGHT / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
+            CalibrationResult(torso / headToHipShare(calibrationData) / calibrationData.userHeight, CalibrationQuality.ESTIMATED)
         }
     }
 
@@ -274,6 +276,26 @@ open class BodyPositionCalculator(
     private fun distancePx(a: Pair<Float, Float>, b: Pair<Float, Float>, poseResult: PoseResult): Float =
         hypot((a.first - b.first) * poseResult.imageWidth, (a.second - b.second) * poseResult.imageHeight)
 
+    /** The body capture, unless it failed and holds the average ratios. */
+    private fun capture(calibrationData: CalibrationData): AnthropometricData? =
+        calibrationData.anthropometricData?.takeIf {
+            it.captureQuality == CalibrationQuality.OPTIMAL || it.captureQuality == CalibrationQuality.ESTIMATED
+        }
+
+    /** Head landmarks to hips as a share of stature: the person's, when captured and believable. */
+    private fun headToHipShare(calibrationData: CalibrationData): Float =
+        capture(calibrationData)
+            ?.let { it.headHeightRatio + it.neckHeightRatio + it.torsoHeightRatio - CoordinateCalculator.FACE_TO_HEAD_TOP_RATIO }
+            ?.takeIf { it in HEAD_TO_HIP_RANGE }
+            ?: AVERAGE_HEAD_TO_HIP_SHARE
+
+    /** Hips to ankles as a share of stature: the person's, when captured and believable. */
+    private fun hipToAnkleShare(calibrationData: CalibrationData): Float =
+        capture(calibrationData)
+            ?.let { it.upperLegHeightRatio + it.lowerLegHeightRatio }
+            ?.takeIf { it in HIP_TO_ANKLE_RANGE }
+            ?: AVERAGE_HIP_TO_ANKLE_SHARE
+
     private fun visible(landmarks: List<PoseKeypoint>, vararg ids: Int): List<PoseKeypoint> =
         ids.map { landmarks.getOrNull(it) }.filterNotNull().filter { it.visibility >= PoseKeypoint.VISIBILITY_THRESHOLD }
 
@@ -296,19 +318,28 @@ open class BodyPositionCalculator(
         const val STANDING_MEMORY_US = 8_000_000L
 
         /**
-         * The head landmarks (nose, eyes, ears) to the ankle joint span about
-         * 89% of standing height: they sit below the crown and above the sole.
+         * The head landmarks (nose, eyes, ears) to the ankle joint, as a share
+         * of stature: below the crown and above the sole. The same for
+         * everyone, because a body capture estimates the crown and the sole
+         * from these very proportions.
          */
-        private const val HEAD_TO_ANKLE_SHARE_OF_HEIGHT = 0.89f
+        private const val HEAD_TO_ANKLE_SHARE_OF_HEIGHT =
+            1f - CoordinateCalculator.FACE_TO_HEAD_TOP_RATIO - CoordinateCalculator.ANKLE_HEIGHT_RATIO
 
-        /** Head to hip is about 52% of standing height. */
-        private const val TORSO_SHARE_OF_HEIGHT = 0.52f
+        /** Average head landmarks to hips, as a share of stature, without a body capture. */
+        private const val AVERAGE_HEAD_TO_HIP_SHARE = 0.415f
+
+        /** Captured head-to-hip shares outside this are a bad capture. */
+        private val HEAD_TO_HIP_RANGE = 0.30f..0.52f
+
+        /** Captured hip-to-ankle shares outside this are a bad capture. */
+        private val HIP_TO_ANKLE_RANGE = 0.40f..0.58f
 
         /** tan(30°): torso tilt below which the lifter counts as lying down. */
         private const val LYING_MAX_TILT_TAN = 0.577f
 
-        /** Hip to ankle is about 48% of standing height. */
-        private const val LEGS_SHARE_OF_HEIGHT = 0.48f
+        /** Average hips to ankles, as a share of stature, without a body capture. */
+        private const val AVERAGE_HIP_TO_ANKLE_SHARE = 0.48f
 
         private val HEAD = intArrayOf(
             PoseResult.NOSE, PoseResult.LEFT_EYE, PoseResult.RIGHT_EYE, PoseResult.LEFT_EAR, PoseResult.RIGHT_EAR

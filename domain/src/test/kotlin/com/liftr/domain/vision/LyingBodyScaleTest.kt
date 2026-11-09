@@ -17,7 +17,7 @@ class LyingBodyScaleTest {
 
     private lateinit var calculator: BodyPositionCalculator
     /** Head landmarks to ankles: 89% of the 1.75 m height. */
-    private val bodySpanM = 0.89f * 1.75f
+    private val bodySpanM = 0.895f * 1.75f
     private val calibration = CalibrationData.fromUserInput(heightCm = 175f)
 
     @Before
